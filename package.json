@@ -1,0 +1,38 @@
+{
+  "name": "ai-vision",
+  "version": "0.1.0",
+  "description": "AI-driven browser automation platform with multi-engine support",
+  "main": "dist/index.js",
+  "bin": {
+    "ai-vision": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "cli": "ts-node src/cli/index.ts",
+    "test": "jest --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^1.13.0",
+    "axios": "^1.7.0",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^25.5.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/*.test.ts"
+    ]
+  }
+}

@@ -1,0 +1,150 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  AutomationEngine,
+  AutomationError,
+  ClickOptions,
+  EngineId,
+  EngineNotReadyError,
+  NavigateOptions,
+  NavigationError,
+  Screenshot,
+  TaskResult,
+  TypeOptions,
+} from '../interface';
+
+export class StagehandEngine implements AutomationEngine {
+  readonly id: EngineId = 'stagehand';
+  private _ready = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private stagehand: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private page: any = null;
+  private readonly sessionDir: string;
+
+  constructor() {
+    this.sessionDir = process.env.SESSION_DIR ?? './sessions';
+  }
+
+  get ready(): boolean {
+    return this._ready;
+  }
+
+  async initialize(): Promise<void> {
+    if (this._ready) return;
+    const { Stagehand } = await import('@browserbasehq/stagehand');
+    type AvailableModel = import('@browserbasehq/stagehand').AvailableModel;
+    const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'openai') as 'openai' | 'anthropic';
+    const model = (process.env.STAGEHAND_LLM_MODEL ?? 'gpt-4o') as AvailableModel;
+
+    this.stagehand = new Stagehand({
+      env: 'LOCAL',
+      modelName: model,
+      modelClientOptions: {
+        apiKey: provider === 'anthropic'
+          ? process.env.ANTHROPIC_API_KEY
+          : process.env.OPENAI_API_KEY,
+      },
+    });
+
+    await this.stagehand.init();
+    this.page = this.stagehand.page;
+    this._ready = true;
+    fs.mkdirSync(this.sessionDir, { recursive: true });
+  }
+
+  async close(): Promise<void> {
+    if (!this._ready) return;
+    try {
+      await this.stagehand.close();
+    } finally {
+      this._ready = false;
+      this.stagehand = null;
+      this.page = null;
+    }
+  }
+
+  async navigate(url: string, options?: NavigateOptions): Promise<void> {
+    this._assertReady();
+    try {
+      await this.page.goto(url, {
+        waitUntil: options?.waitUntil ?? 'load',
+      });
+    } catch (e) {
+      throw new NavigationError(this.id, url, e);
+    }
+  }
+
+  async click(selector: string, options?: ClickOptions): Promise<void> {
+    this._assertReady();
+    try {
+      if (options?.description) {
+        // Use Stagehand AI-powered act for natural language targets
+        await this.page.act({ action: `click ${options.description}` });
+      } else {
+        await this.page.click(selector);
+      }
+    } catch (e) {
+      throw new AutomationError(`Click failed on '${selector}'`, this.id, e);
+    }
+  }
+
+  async type(selector: string, text: string, options?: TypeOptions): Promise<void> {
+    this._assertReady();
+    try {
+      if (options?.description) {
+        await this.page.act({
+          action: `type "${text}" into ${options.description}`,
+        });
+      } else {
+        if (options?.clearFirst) {
+          await this.page.fill(selector, '');
+        }
+        await this.page.type(selector, text);
+      }
+    } catch (e) {
+      throw new AutomationError(`Type failed on '${selector}'`, this.id, e);
+    }
+  }
+
+  async screenshot(outputPath?: string): Promise<Screenshot> {
+    this._assertReady();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';
+    const filePath = outputPath ?? path.join(this.sessionDir, `stagehand-${timestamp}.png`);
+    await this.page.screenshot({ path: filePath });
+    return {
+      path: filePath,
+      takenAt: new Date(),
+    };
+  }
+
+  async runTask(prompt: string): Promise<TaskResult> {
+    this._assertReady();
+    const start = Date.now();
+    const screenshots: Screenshot[] = [];
+    try {
+      // Stagehand's agent() runs a full agentic loop
+      const agent = this.stagehand.agent();
+      const result = await agent.execute(prompt);
+      const shot = await this.screenshot();
+      screenshots.push(shot);
+      return {
+        success: true,
+        output: typeof result === 'string' ? result : JSON.stringify(result),
+        screenshots,
+        durationMs: Date.now() - start,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : String(e),
+        screenshots,
+        durationMs: Date.now() - start,
+      };
+    }
+  }
+
+  private _assertReady(): void {
+    if (!this._ready) throw new EngineNotReadyError(this.id);
+  }
+}

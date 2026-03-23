@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+*.db
+sessions/
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+.venv/
+
+# FORGE memory DB — runtime working directory, not source of record
+forge-memory.db
+forge-memory.db-shm
+forge-memory.db-wal
+forge-startup-report.md

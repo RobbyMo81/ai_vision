@@ -1,0 +1,13 @@
+[2026-03-22] Project Initialized
+- PRD generated from 'Idea' file.
+- Git repository initialized and connected to GitHub.
+- FORGE build loop scaffolded.
+
+[2026-03-22] MVP Architecture Implemented
+- Unified Automation Interface defined.
+- Browser-use and Skyvern wrappers implemented via Python FastAPI bridge (PythonBridgeEngine).
+- Stagehand wrapper implemented natively in TypeScript.
+- CLI entry point created with history tracking in SQLite.
+- Switched to 'node:sqlite' (Node 24) to resolve native binding issues with 'better-sqlite3'.
+- All tests passed. Quality gates verified.
+- US-001, US-002, US-003, US-004 marked as complete.

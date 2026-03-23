@@ -1,0 +1,69 @@
+{
+  "projectName": "AI-Vision Browser Automation",
+  "branchName": "forge/mvp-setup",
+  "description": "Build an AI-driven browser automation platform integrating Browser-use and Stagehand with a unified interface.",
+  "techStack": ["TypeScript", "Node.js 24 (node:sqlite)", "Python", "Playwright", "Browser-use", "Stagehand", "SQLite"],
+  "qualityGates": ["npx tsc --noEmit", "npm test"],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Unified Automation Interface",
+      "priority": 1,
+      "passes": true,
+      "description": "Define a core architecture and unified TypeScript interface that abstracts different browser automation engines (Browser-use, Stagehand, etc.).",
+      "acceptanceCriteria": [
+        "Create 'AutomationEngine' interface with methods like navigate(), click(), type(), and screenshot()",
+        "Implement a factory or registry to load specific engine wrappers",
+        "Define common error types for automation failures",
+        "Unit test: interface methods are correctly defined and typed"
+      ],
+      "technicalNotes": "Use TypeScript interfaces. Ensure abstraction is generic enough for both DOM-based and vision-based engines.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-002",
+      "title": "Browser-use Engine Wrapper",
+      "priority": 2,
+      "passes": true,
+      "description": "Implement a wrapper for the Browser-use Python library, allowing it to be controlled through the unified interface.",
+      "acceptanceCriteria": [
+        "Implement 'BrowserUseEngine' class satisfying 'AutomationEngine' interface",
+        "Bridge TypeScript calls to Python 'browser-use' (via shell/IPC or a lightweight API)",
+        "Handle session state and screenshot capture from Browser-use",
+        "Verify basic navigation and click operations through the wrapper"
+      ],
+      "technicalNotes": "Browser-use is Python-based; implemented via a FastAPI bridge server managed by a PythonBridgeEngine base class.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-003",
+      "title": "Stagehand Engine Wrapper",
+      "priority": 3,
+      "passes": true,
+      "description": "Implement a wrapper for the Stagehand (Playwright-based) framework, integrating it into the unified interface.",
+      "acceptanceCriteria": [
+        "Implement 'StagehandEngine' class satisfying 'AutomationEngine' interface",
+        "Initialize Stagehand/Playwright context and handle page lifecycle",
+        "Implement core actions (click, type, navigate) using Stagehand's high-level API",
+        "Verify reliable selector-based or AI-based actions via Stagehand"
+      ],
+      "technicalNotes": "Stagehand is Node.js-native, integrated directly using its Playwright-based API.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-004",
+      "title": "Natural Language CLI Entry Point",
+      "priority": 4,
+      "passes": true,
+      "description": "Create a basic CLI that accepts natural language commands and routes them to the appropriate engine.",
+      "acceptanceCriteria": [
+        "CLI tool 'ai-vision' that takes a text prompt as input",
+        "Basic routing logic to select an engine (or default to Browser-use)",
+        "Log execution steps to the console and to a local SQLite database",
+        "Basic session summary output after task completion"
+      ],
+      "technicalNotes": "Uses 'commander' and 'node:sqlite' (built-in Node 24 feature) for history tracking.",
+      "safetyGates": []
+    }
+  ]
+}
