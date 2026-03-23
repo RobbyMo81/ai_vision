@@ -1,0 +1,7 @@
+Of the tools mentioned,
+Browser-use, Stagehand, and Skyvern are open-source. Browserbase and MultiOn are primarily proprietary, though Browserbase maintains the open-source Stagehand framework. 
+Open-Source Tools
+
+    Browser-use: A popular open-source Python library. It allows you to build agents that control a browser using LLMs and is available on GitHub.
+    Stagehand: An open-source browser automation SDK built on Playwright. While created by the Browserbase team, the framework itself is free and open-source.
+    Skyvern: An open-source framework that uses computer vision and LLMs to automate browser workflows. You can find its source code on GitHub. 
