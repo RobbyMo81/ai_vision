@@ -65,6 +65,13 @@ export class NavigationError extends AutomationError {
 export interface AutomationEngine {
   readonly id: EngineId;
 
+  /**
+   * Returns true if all dependencies required by this engine are present.
+   * Engines whose optional packages (e.g. skyvern) are not installed return false.
+   * The default expectation is true; engines override when they need a runtime check.
+   */
+  available(): Promise<boolean>;
+
   /** Start the engine (launch browser, warm up subprocess, etc.) */
   initialize(): Promise<void>;
 

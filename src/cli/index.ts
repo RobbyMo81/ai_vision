@@ -7,7 +7,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EngineId } from '../engines/interface';
 import { registry } from '../engines/registry';
-import { SessionRepository } from '../db/repository';
 
 // Resolve the project root (works from both src/ and dist/)
 const PROJECT_ROOT = (() => {
@@ -25,7 +24,13 @@ const CONFIG_BIN = path.join(
 );
 
 const program = new Command();
-const repo = new SessionRepository();
+// Lazy — only open the DB for commands that actually need it (run, history).
+// We also use a dynamic import so the node:sqlite module — and its
+// ExperimentalWarning — is never loaded for commands that don't touch the DB.
+async function getRepo() {
+  const { SessionRepository } = await import('../db/repository');
+  return new SessionRepository();
+}
 
 program
   .name('ai-vision')
@@ -58,7 +63,7 @@ program
 
     const result = await engine.runTask(prompt);
     const sessionId = crypto.randomUUID();
-    repo.save(sessionId, engineId, prompt, result);
+    (await getRepo()).save(sessionId, engineId, prompt, result);
 
     if (result.success) {
       console.log('Status  : success');
@@ -86,8 +91,8 @@ program
   .command('history')
   .description('Show recent task history')
   .option('-n, --limit <n>', 'Number of sessions to show', '10')
-  .action((opts: { limit: string }) => {
-    const sessions = repo.list(parseInt(opts.limit, 10));
+  .action(async (opts: { limit: string }) => {
+    const sessions = (await getRepo()).list(parseInt(opts.limit, 10));
     if (sessions.length === 0) {
       console.log('No sessions recorded yet.');
       return;
@@ -101,11 +106,14 @@ program
 
 program
   .command('engines')
-  .description('List available engines')
-  .action(() => {
+  .description('List available engines and their dependency status')
+  .action(async () => {
     console.log('Available engines:');
     for (const id of registry.availableEngines()) {
-      console.log(`  ${id}`);
+      const engine = registry.get(id);
+      const ok = await engine.available();
+      const tag = ok ? '[ready]' : '[not installed — run: npm run setup or check README]';
+      console.log(`  ${id.padEnd(12)} ${tag}`);
     }
   });
 
@@ -113,6 +121,11 @@ program
   .command('config')
   .description('Open interactive TUI to configure LLM provider, model, and API key')
   .action(() => {
+    if (!process.stdout.isTTY) {
+      console.error('The config GUI requires an interactive terminal (TTY).');
+      console.error('To configure manually, copy .env.example to .env and fill in the values.');
+      process.exit(1);
+    }
     if (!fs.existsSync(CONFIG_BIN)) {
       console.error(`Config GUI binary not found at: ${CONFIG_BIN}`);
       console.error('Run: npm run config:build');

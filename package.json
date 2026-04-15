@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc && npm run copy-python",
-    "copy-python": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/",
+    "copy-python": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/ && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "config:build": "cargo build --release --manifest-path tools/config-gui/Cargo.toml",
     "config": "ts-node src/cli/index.ts config",
     "dev": "ts-node src/index.ts",

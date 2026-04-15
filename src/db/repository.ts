@@ -61,22 +61,24 @@ export class SessionRepository {
   }
 
   list(limit = 20): SessionRecord[] {
+    // FIX-10: Use json_group_array instead of GROUP_CONCAT to safely handle
+    // screenshot paths that contain commas (the old comma-split was lossy).
     const rows = this.db.prepare(`
-      SELECT s.*, GROUP_CONCAT(ss.path) as screenshot_paths
+      SELECT s.*, json_group_array(ss.path) FILTER (WHERE ss.path IS NOT NULL) as screenshot_paths
       FROM sessions s
       LEFT JOIN session_screenshots ss ON ss.session_id = s.id
       GROUP BY s.id
       ORDER BY s.created_at DESC
       LIMIT ?
     `).all(limit) as Array<{
-      id: string; 
-      engine: string; 
-      prompt: string; 
+      id: string;
+      engine: string;
+      prompt: string;
       success: number;
-      output: string | null; 
-      error: string | null; 
+      output: string | null;
+      error: string | null;
       duration_ms: number | null;
-      created_at: string; 
+      created_at: string;
       screenshot_paths: string | null;
     }>;
 
@@ -89,7 +91,7 @@ export class SessionRepository {
       error: r.error ?? undefined,
       durationMs: r.duration_ms ?? undefined,
       createdAt: r.created_at,
-      screenshots: r.screenshot_paths ? r.screenshot_paths.split(',') : [],
+      screenshots: r.screenshot_paths ? (JSON.parse(r.screenshot_paths) as string[]) : [],
     }));
   }
 
