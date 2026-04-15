@@ -7,7 +7,10 @@
     "ai-vision": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-python",
+    "copy-python": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/",
+    "config:build": "cargo build --release --manifest-path tools/config-gui/Cargo.toml",
+    "config": "ts-node src/cli/index.ts config",
     "dev": "ts-node src/index.ts",
     "cli": "ts-node src/cli/index.ts",
     "test": "jest --passWithNoTests",

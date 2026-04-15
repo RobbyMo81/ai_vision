@@ -1,9 +1,9 @@
 """
 Browser-use FastAPI bridge server.
 Exposes REST endpoints that the TypeScript AutomationEngine client calls.
+Updated for browser-use 0.12.x API (BrowserSession replaces Browser/BrowserConfig).
 """
 
-import asyncio
 import base64
 import os
 import time
@@ -14,39 +14,35 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Lazy imports — browser-use and playwright are optional at import time
+# Globals
 # ---------------------------------------------------------------------------
-_agent = None
-_browser = None
-_controller = None
+_session = None  # BrowserSession instance
+
+SESSION_DIR = Path(os.getenv("SESSION_DIR", "./sessions"))
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Cleanup on shutdown
-    global _browser
-    if _browser is not None:
+    global _session
+    if _session is not None:
         try:
-            await _browser.close()
+            await _session.stop()
         except Exception:
             pass
 
 
 app = FastAPI(title="browser-use bridge", lifespan=lifespan)
 
-SESSION_DIR = Path(os.getenv("SESSION_DIR", "./sessions"))
-SESSION_DIR.mkdir(parents=True, exist_ok=True)
-
 
 # ---------------------------------------------------------------------------
-# Models
+# Request models
 # ---------------------------------------------------------------------------
 
 class TaskRequest(BaseModel):
@@ -80,28 +76,34 @@ class ScreenshotRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _llm():
-    """Return a LangChain LLM based on env config."""
-    provider = os.getenv("STAGEHAND_LLM_PROVIDER", "openai")
+    """Return a browser-use native LLM client based on env config."""
+    provider = os.getenv("STAGEHAND_LLM_PROVIDER", "anthropic")
     if provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
+        from browser_use.llm.anthropic.chat import ChatAnthropic
         return ChatAnthropic(
-            model=os.getenv("STAGEHAND_LLM_MODEL", "claude-opus-4-6"),
+            model=os.getenv("STAGEHAND_LLM_MODEL", "claude-sonnet-4-6"),
             api_key=os.getenv("ANTHROPIC_API_KEY"),
         )
     else:
-        from langchain_openai import ChatOpenAI
+        from browser_use.llm.openai.chat import ChatOpenAI
         return ChatOpenAI(
             model=os.getenv("STAGEHAND_LLM_MODEL", "gpt-4o"),
             api_key=os.getenv("OPENAI_API_KEY"),
         )
 
 
-async def _get_browser():
-    global _browser
-    if _browser is None:
-        from browser_use import Browser, BrowserConfig
-        _browser = Browser(config=BrowserConfig(headless=True))
-    return _browser
+async def _get_session():
+    global _session
+    if _session is None:
+        from browser_use.browser.session import BrowserSession
+        _session = BrowserSession(headless=True)
+        await _session.start()
+    return _session
+
+
+async def _get_page():
+    session = await _get_session()
+    return await session.get_current_page()
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +118,7 @@ def health():
 @app.post("/initialize")
 async def initialize():
     try:
-        await _get_browser()
+        await _get_session()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -124,12 +126,11 @@ async def initialize():
 
 @app.post("/close")
 async def close():
-    global _browser, _agent
+    global _session
     try:
-        if _browser is not None:
-            await _browser.close()
-            _browser = None
-        _agent = None
+        if _session is not None:
+            await _session.stop()
+            _session = None
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -140,10 +141,10 @@ async def run_task(req: TaskRequest):
     start = time.time()
     screenshots: list[dict] = []
     try:
-        from browser_use import Agent
-        browser = await _get_browser()
+        from browser_use.agent.service import Agent
+        session = await _get_session()
         llm = _llm()
-        agent = Agent(task=req.prompt, llm=llm, browser=browser)
+        agent = Agent(task=req.prompt, llm=llm, browser_session=session)
         result = await agent.run()
         duration_ms = int((time.time() - start) * 1000)
         return {
@@ -165,9 +166,7 @@ async def run_task(req: TaskRequest):
 @app.post("/navigate")
 async def navigate(req: NavigateRequest):
     try:
-        from browser_use import Browser
-        browser = await _get_browser()
-        page = await browser.get_current_page()
+        page = await _get_page()
         await page.goto(req.url)
         return {"success": True}
     except Exception as e:
@@ -177,8 +176,7 @@ async def navigate(req: NavigateRequest):
 @app.post("/click")
 async def click(req: ClickRequest):
     try:
-        browser = await _get_browser()
-        page = await browser.get_current_page()
+        page = await _get_page()
         await page.click(req.selector)
         return {"success": True}
     except Exception as e:
@@ -188,8 +186,7 @@ async def click(req: ClickRequest):
 @app.post("/type")
 async def type_text(req: TypeRequest):
     try:
-        browser = await _get_browser()
-        page = await browser.get_current_page()
+        page = await _get_page()
         if req.clear_first:
             await page.fill(req.selector, "")
         await page.type(req.selector, req.text)
@@ -201,8 +198,7 @@ async def type_text(req: TypeRequest):
 @app.post("/screenshot")
 async def screenshot(req: ScreenshotRequest):
     try:
-        browser = await _get_browser()
-        page = await browser.get_current_page()
+        page = await _get_page()
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         path = req.output_path or str(SESSION_DIR / f"browser-use-{timestamp}.png")
         await page.screenshot(path=path)

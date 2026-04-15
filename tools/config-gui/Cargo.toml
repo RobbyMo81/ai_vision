@@ -1,0 +1,13 @@
+[package]
+name = "ai-vision-config"
+version = "0.1.0"
+edition = "2021"
+description = "Interactive TUI for configuring ai-vision LLM provider, model, and API keys"
+
+[[bin]]
+name = "ai-vision-config"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"

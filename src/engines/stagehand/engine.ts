@@ -34,8 +34,8 @@ export class StagehandEngine implements AutomationEngine {
     if (this._ready) return;
     const { Stagehand } = await import('@browserbasehq/stagehand');
     type AvailableModel = import('@browserbasehq/stagehand').AvailableModel;
-    const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'openai') as 'openai' | 'anthropic';
-    const model = (process.env.STAGEHAND_LLM_MODEL ?? 'gpt-4o') as AvailableModel;
+    const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'anthropic') as 'openai' | 'anthropic';
+    const model = (process.env.STAGEHAND_LLM_MODEL ?? 'claude-sonnet-4-6') as AvailableModel;
 
     this.stagehand = new Stagehand({
       env: 'LOCAL',

@@ -2,9 +2,27 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import * as crypto from 'crypto';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { EngineId } from '../engines/interface';
 import { registry } from '../engines/registry';
 import { SessionRepository } from '../db/repository';
+
+// Resolve the project root (works from both src/ and dist/)
+const PROJECT_ROOT = (() => {
+  let dir = __dirname;
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return __dirname;
+})();
+
+const CONFIG_BIN = path.join(
+  PROJECT_ROOT,
+  'tools', 'config-gui', 'target', 'release', 'ai-vision-config'
+);
 
 const program = new Command();
 const repo = new SessionRepository();
@@ -89,6 +107,19 @@ program
     for (const id of registry.availableEngines()) {
       console.log(`  ${id}`);
     }
+  });
+
+program
+  .command('config')
+  .description('Open interactive TUI to configure LLM provider, model, and API key')
+  .action(() => {
+    if (!fs.existsSync(CONFIG_BIN)) {
+      console.error(`Config GUI binary not found at: ${CONFIG_BIN}`);
+      console.error('Run: npm run config:build');
+      process.exit(1);
+    }
+    const result = spawnSync(CONFIG_BIN, { stdio: 'inherit' });
+    process.exit(result.status ?? 0);
   });
 
 program.parseAsync(process.argv).catch((e) => {

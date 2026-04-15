@@ -7,6 +7,18 @@ import axios, { AxiosInstance } from 'axios';
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// Resolve the project root (works from both src/ and dist/)
+const PROJECT_ROOT = (() => {
+  let dir = __dirname;
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return __dirname;
+})();
+
+const VENV_PYTHON = path.join(PROJECT_ROOT, '.venv', 'bin', 'python3');
 import {
   AutomationEngine,
   AutomationError,
@@ -39,7 +51,7 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     this.config = { startupTimeoutMs: 30_000, ...config };
     this.http = axios.create({
       baseURL: `http://127.0.0.1:${config.port}`,
-      timeout: 120_000,
+      timeout: 600_000, // 10 min — agent tasks can be long-running
     });
   }
 
@@ -162,7 +174,8 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
         return;
       }
 
-      const proc = spawn('python3', [this.config.serverScript], {
+      const pythonBin = fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python3';
+      const proc = spawn(pythonBin, [this.config.serverScript], {
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
