@@ -29,6 +29,13 @@ export interface TaskResult {
   durationMs: number;
 }
 
+/** Optional context passed to runTask() by the workflow engine. */
+export interface TaskContext {
+  /** Cookies extracted from the shared SessionManager browser — injected into
+   *  agent engines that spawn their own browser so auth state is preserved. */
+  cookies?: Array<{ name: string; value: string; domain: string; path: string }>;
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -84,7 +91,14 @@ export interface AutomationEngine {
   screenshot(outputPath?: string): Promise<Screenshot>;
 
   /** Run a free-form natural language task end-to-end */
-  runTask(prompt: string): Promise<TaskResult>;
+  runTask(prompt: string, context?: TaskContext): Promise<TaskResult>;
+
+  /**
+   * Extract information from the current page using natural language.
+   * Used by the workflow engine for 'extract' and 'conditional' steps.
+   * Default implementation throws NotImplemented — override in vision engines.
+   */
+  extractText?(instruction: string): Promise<string>;
 
   /** True after initialize() has been called and before close() */
   readonly ready: boolean;

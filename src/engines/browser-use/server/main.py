@@ -104,12 +104,21 @@ def _llm():
 
 async def _get_session():
     """Return (or lazily create) the global BrowserSession.
-    FIX-08: Protected by asyncio.Lock to prevent concurrent init race."""
+    FIX-08: Protected by asyncio.Lock to prevent concurrent init race.
+
+    If BROWSER_CDP_URL is set (by SessionManager when running under ai-vision serve),
+    attach to the existing shared Chrome instance so auth cookies are preserved
+    across HITL handoffs.  Otherwise launch a standalone headless browser."""
     global _session
     async with _session_lock:
         if _session is None:
             from browser_use.browser.session import BrowserSession
-            _session = BrowserSession(headless=True)
+            cdp_url = os.getenv("BROWSER_CDP_URL", "")
+            if cdp_url:
+                # Connect to the shared Chrome session managed by SessionManager
+                _session = BrowserSession(cdp_url=cdp_url)
+            else:
+                _session = BrowserSession(headless=True)
             await _session.start()
     return _session
 

@@ -212,8 +212,15 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     }
 
     const pythonBin = fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python3';
+
+    // If a shared Chrome session is running (ai-vision serve), pass its CDP URL
+    // so the Python bridge attaches to the same browser instead of spawning a new one.
+    // This preserves cookies and auth state across HITL handoffs.
+    // BROWSER_CDP_URL is set in process.env by the serve command before any engines are started.
+    const cdpUrl = process.env.BROWSER_CDP_URL ?? '';
+
     const proc = spawn(pythonBin, [this.config.serverScript], {
-      env: { ...process.env },
+      env: { ...process.env, ...(cdpUrl ? { BROWSER_CDP_URL: cdpUrl } : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

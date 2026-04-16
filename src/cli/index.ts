@@ -135,6 +135,112 @@ program
     process.exit(result.status ?? 0);
   });
 
+// ---------------------------------------------------------------------------
+// serve — starts the MCP server (stdio) + HITL web UI (HTTP) in one process
+// ---------------------------------------------------------------------------
+
+program
+  .command('serve')
+  .description('Start the MCP server and HITL web UI (for use with Claude Code MCP integration)')
+  .option('--headed', 'Launch the browser in headed (visible window) mode — required for interactive HITL login flows', false)
+  .option('--ui-port <port>', 'Port for the HITL web UI', '3000')
+  .option('--cdp-port <port>', 'Chrome remote debugging port (for Python bridge session sharing)', '9223')
+  .action(async (opts: { headed: boolean; uiPort: string; cdpPort: string }) => {
+    const uiPort = parseInt(opts.uiPort, 10);
+    // Set env vars BEFORE any module imports that read them in their constructors
+    process.env.AI_VISION_UI_PORT = String(uiPort);
+    process.env.AI_VISION_CDP_PORT = opts.cdpPort;
+    if (opts.headed) process.env.AI_VISION_HEADED = 'true';
+
+    const { startUiServer } = await import('../ui/server');
+    await startUiServer(uiPort);
+
+    const { createMcpServer } = await import('../mcp/server');
+    await createMcpServer();
+  });
+
+// ---------------------------------------------------------------------------
+// workflow — run a named workflow directly from the CLI (without MCP)
+// ---------------------------------------------------------------------------
+
+program
+  .command('workflow <workflow-id>')
+  .description('Run a built-in workflow by ID (use --list to see available workflows)')
+  .option('-p, --param <key=value>', 'Workflow parameter (repeatable)', (v: string, acc: string[]) => [...acc, v], [] as string[])
+  .option('--headed', 'Launch the browser in headed mode (required for HITL login steps)', false)
+  .option('--ui-port <port>', 'Port for the HITL web UI', '3000')
+  .option('--list', 'List available workflows and exit')
+  .action(async (workflowId: string, opts: { param: string[]; headed: boolean; uiPort: string; list: boolean }) => {
+    const { BUILTIN_WORKFLOWS } = await import('../workflow/types');
+
+    if (opts.list) {
+      console.log('Available workflows:');
+      for (const wf of BUILTIN_WORKFLOWS) {
+        console.log(`  ${wf.id.padEnd(24)} ${wf.name}`);
+        if (wf.description) console.log(`  ${''.padEnd(24)} ${wf.description}`);
+      }
+      return;
+    }
+
+    const definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflowId);
+    if (!definition) {
+      console.error(`Unknown workflow: '${workflowId}'. Run with --list to see available workflows.`);
+      process.exit(1);
+    }
+
+    // Parse key=value params
+    const params: Record<string, string> = {};
+    for (const p of opts.param) {
+      const idx = p.indexOf('=');
+      if (idx < 0) { console.error(`Invalid param format: '${p}' (expected key=value)`); process.exit(1); }
+      params[p.slice(0, idx)] = p.slice(idx + 1);
+    }
+
+    const uiPort = parseInt(opts.uiPort, 10);
+    // Set env vars BEFORE module imports so SessionManager singleton reads them in its constructor
+    process.env.AI_VISION_UI_PORT = String(uiPort);
+    if (opts.headed) process.env.AI_VISION_HEADED = 'true';
+
+    const { startUiServer } = await import('../ui/server');
+    await startUiServer(uiPort);
+
+    const { workflowEngine } = await import('../workflow/engine');
+    const sessionId = crypto.randomUUID();
+    console.log(`\nWorkflow : ${definition.name}`);
+    console.log(`Session  : ${sessionId}`);
+    if (opts.headed) {
+      console.log(`Browser  : headed (browser window will open)`);
+    }
+    console.log(`UI       : http://localhost:${uiPort}`);
+    console.log('');
+
+    const result = await workflowEngine.run(definition, params, sessionId);
+    (await getRepo()).save(sessionId, 'workflow', JSON.stringify({ workflowId, params }), {
+      success: result.success,
+      output: JSON.stringify(result.outputs),
+      screenshots: result.screenshots.map((s) => ({ path: s.path, takenAt: new Date() })),
+      error: result.error,
+      durationMs: result.durationMs,
+    });
+
+    if (result.success) {
+      console.log('Status   : complete');
+      if (Object.keys(result.outputs).length > 0) {
+        console.log('Outputs  :');
+        for (const [k, v] of Object.entries(result.outputs)) {
+          console.log(`  ${k}: ${v}`);
+        }
+      }
+    } else {
+      console.error('Status   : failed');
+      console.error(`Error    : ${result.error}`);
+    }
+
+    console.log(`Duration : ${result.durationMs}ms`);
+    await registry.closeAll();
+    process.exit(result.success ? 0 : 1);
+  });
+
 program.parseAsync(process.argv).catch((e) => {
   console.error(e);
   process.exit(1);

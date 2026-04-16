@@ -134,6 +134,22 @@ export class StagehandEngine implements AutomationEngine {
     };
   }
 
+  /**
+   * AI-powered structured extraction using Stagehand page.extract().
+   * Called by the workflow engine for 'extract' and 'conditional' steps.
+   */
+  async extractText(instruction: string): Promise<string> {
+    this._assertReady();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (this.page as any).extract({ instruction });
+      if (typeof result === 'string') return result;
+      return JSON.stringify(result);
+    } catch (e) {
+      throw new AutomationError(`Extract failed: ${instruction}`, this.id, e);
+    }
+  }
+
   async runTask(prompt: string): Promise<TaskResult> {
     this._assertReady();
     const start = Date.now();
