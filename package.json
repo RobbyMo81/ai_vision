@@ -7,7 +7,7 @@
     "ai-vision": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc && npm run copy-assets",
+    "build": "node --max-old-space-size=8192 node_modules/.bin/tsc && npm run copy-assets",
     "copy-assets": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/ && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "serve": "node dist/cli/index.js serve",
     "serve:headed": "node dist/cli/index.js serve --headed",

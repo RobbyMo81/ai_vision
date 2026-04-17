@@ -20,6 +20,7 @@ export interface SessionState {
   currentStep?: string;
   stepIndex?: number;
   totalSteps?: number;
+  completedSteps?: number;
   /** Human-readable reason shown to the user when awaiting_human */
   hitlReason?: string;
   /** Optional additional instructions shown in the HITL UI */

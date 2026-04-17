@@ -295,7 +295,9 @@ fetchScreenshot();
 
 export async function startUiServer(port = 3000): Promise<void> {
   // Lazy import ws to avoid loading it during CLI commands that don't need it
-  const { WebSocketServer } = await import('ws') as typeof import('ws');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wsModule = (await import('ws')) as any;
+  const WebSocketServer = (wsModule.WebSocketServer ?? wsModule.default?.WebSocketServer ?? wsModule.Server) as typeof import('ws').WebSocketServer;
 
   const wss = new WebSocketServer({ noServer: true });
 

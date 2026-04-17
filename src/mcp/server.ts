@@ -5,7 +5,7 @@
  * Uses stdio transport — Claude (or any MCP client) spawns this process and
  * communicates over stdin/stdout.
  *
- * Add to Claude Code's MCP config:
+ * Add to Claude Code's MCP config (~/.claude.json):
  *   {
  *     "mcpServers": {
  *       "ai-vision": {
@@ -16,15 +16,15 @@
  *     }
  *   }
  *
- * Available tools:
+ * Tools:
  *   browser_navigate          — Navigate to a URL
- *   browser_click             — Click an element
+ *   browser_click             — Click an element by CSS selector
  *   browser_type              — Type text into an element
- *   browser_screenshot        — Capture the current page (returns base64 image)
- *   browser_extract           — Extract structured data from the page
+ *   browser_screenshot        — Capture the current page as a JPEG image
+ *   browser_extract           — Extract text/data from the page
  *   browser_run_task          — Run a natural-language agent task
  *   browser_request_handoff   — Pause for user interaction (HITL)
- *   workflow_run              — Execute a named or inline workflow definition
+ *   workflow_run              — Execute a named or inline workflow
  *   workflow_list             — List available built-in workflows
  *   session_status            — Get the current session state
  */
@@ -36,10 +36,6 @@ import { workflowEngine } from '../workflow/engine';
 import { BUILTIN_WORKFLOWS, WorkflowDefinitionSchema } from '../workflow/types';
 import { registry } from '../engines/registry';
 
-// ---------------------------------------------------------------------------
-// Lazy MCP server creation (avoids loading the SDK until serve is called)
-// ---------------------------------------------------------------------------
-
 export async function createMcpServer(): Promise<void> {
   const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
@@ -50,26 +46,27 @@ export async function createMcpServer(): Promise<void> {
   });
 
   // -------------------------------------------------------------------------
-  // Tool: browser_navigate
+  // browser_navigate
   // -------------------------------------------------------------------------
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore TS2589 — MCP SDK generic depth false positive with zod .describe()
   server.tool(
     'browser_navigate',
-    'Navigate the browser to a URL. The shared session preserves cookies and auth state.',
+    'Navigate the browser to a URL. The shared session preserves cookies and auth state across all tools.',
     {
       url: z.string().describe('The URL to navigate to'),
-      wait_until: z.enum(['load', 'domcontentloaded', 'networkidle'])
-        .optional()
-        .describe('When to consider navigation complete'),
+      wait_until: z.string().describe('When to consider navigation complete: load | domcontentloaded | networkidle (default: load)'),
     },
     async ({ url, wait_until }) => {
-      await sessionManager.navigate(url, wait_until ?? 'load');
+      const w = (wait_until || 'load') as 'load' | 'domcontentloaded' | 'networkidle';
+      await sessionManager.navigate(url, w);
       const currentUrl = await sessionManager.currentUrl();
       return { content: [{ type: 'text' as const, text: `Navigated to: ${currentUrl}` }] };
     }
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_click
+  // browser_click
   // -------------------------------------------------------------------------
   server.tool(
     'browser_click',
@@ -84,73 +81,72 @@ export async function createMcpServer(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_type
+  // browser_type
   // -------------------------------------------------------------------------
   server.tool(
     'browser_type',
-    'Type text into an input field on the current page.',
+    'Type text into an input field. Pass clear_first=true to clear the field before typing.',
     {
       selector: z.string().describe('CSS selector of the input element'),
       text: z.string().describe('Text to type'),
-      clear_first: z.boolean().optional().describe('Clear the field before typing'),
+      clear_first: z.string().describe('Pass "true" to clear the field before typing'),
     },
     async ({ selector, text, clear_first }) => {
-      await sessionManager.type(selector, text, clear_first);
+      await sessionManager.type(selector, text, clear_first === 'true');
       return { content: [{ type: 'text' as const, text: `Typed into: ${selector}` }] };
     }
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_screenshot
+  // browser_screenshot
   // -------------------------------------------------------------------------
   server.tool(
     'browser_screenshot',
-    'Capture a screenshot of the current browser page. Returns a base64 JPEG image.',
+    'Capture a screenshot of the current browser page.',
     {},
     async () => {
       const base64 = await sessionManager.screenshot();
       return {
-        content: [
-          { type: 'image' as const, data: base64, mimeType: 'image/jpeg' },
-        ],
+        content: [{ type: 'image' as const, data: base64, mimeType: 'image/jpeg' }],
       };
     }
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_extract
+  // browser_extract
   // -------------------------------------------------------------------------
   server.tool(
     'browser_extract',
-    'Extract structured information from the current page using natural language.',
+    'Extract the text content of the current page. Returns raw page text for you to process.',
     {
-      instruction: z.string().describe('What to extract — e.g. "Extract the order total and confirmation number"'),
+      max_chars: z.string().describe('Maximum characters to return (default: 4000)'),
     },
-    async ({ instruction }) => {
-      const engine = await registry.getReady('stagehand') as import('../engines/stagehand/engine').StagehandEngine;
-      const result = await engine.extractText(instruction);
-      return { content: [{ type: 'text' as const, text: result }] };
+    async ({ max_chars }) => {
+      const page = await sessionManager.getPage();
+      const pageText = await page.evaluate(
+        () => document.body.innerText.replace(/\s{3,}/g, '\n').trim()
+      ) as string;
+      const limit = parseInt(max_chars || '4000', 10);
+      return { content: [{ type: 'text' as const, text: pageText.slice(0, limit) }] };
     }
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_run_task
+  // browser_run_task
   // -------------------------------------------------------------------------
   server.tool(
     'browser_run_task',
-    'Run a natural-language browser automation task using the best available AI engine. Use this for ad-hoc tasks that do not require user authentication.',
+    'Run a natural-language browser automation task using the best available AI engine.',
     {
-      prompt: z.string().describe('Natural language description of what to do in the browser'),
-      engine: z.enum(['auto', 'browser-use', 'stagehand', 'skyvern'])
-        .optional()
-        .describe('Force a specific engine (default: auto-select based on task type)'),
+      prompt: z.string().describe('Natural language description of what to do'),
+      engine: z.string().describe('Engine override: auto | browser-use | stagehand | skyvern (default: auto)'),
     },
     async ({ prompt, engine }) => {
       const { routeAgentTask } = await import('../workflow/engine');
-      const engineId = await routeAgentTask(prompt, engine ?? 'auto');
+      const engineId = await routeAgentTask(prompt, (engine || 'auto') as 'auto');
       const eng = await registry.getReady(engineId);
       const result = await eng.runTask(prompt);
-      const lines: string[] = [
+      const lines = [
         `Engine: ${engineId}`,
         `Status: ${result.success ? 'success' : 'failed'}`,
         result.output ? `Output: ${result.output}` : '',
@@ -162,24 +158,23 @@ export async function createMcpServer(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
-  // Tool: browser_request_handoff
+  // browser_request_handoff
   // -------------------------------------------------------------------------
   server.tool(
     'browser_request_handoff',
-    'Pause autonomous execution and hand control to the user. Use this when the task requires human authentication or sensitive input. The browser session is preserved — cookies and page state remain intact when control is returned.',
+    'Pause and hand control to the user. Use when authentication or sensitive input is needed. The browser session (cookies, page state) is preserved when control is returned. The user sees a live browser view at the HITL UI URL.',
     {
-      reason: z.string().describe('Short message shown to the user explaining why their input is needed (e.g. "Please log in to your account")'),
-      instructions: z.string().optional().describe('Additional instructions shown to the user (e.g. "Once logged in, click Return Control to Claude")'),
-      ui_port: z.number().optional().describe('Port of the HITL UI (default: 3000)'),
+      reason: z.string().describe('Message shown to the user: why their input is needed'),
+      instructions: z.string().describe('Additional instructions for the user (e.g. "Click Return Control when logged in")'),
     },
-    async ({ reason, instructions, ui_port }) => {
-      const port = ui_port ?? parseInt(process.env.AI_VISION_UI_PORT ?? '3000', 10);
+    async ({ reason, instructions }) => {
+      const port = parseInt(process.env.AI_VISION_UI_PORT ?? '3000', 10);
       const uiUrl = `http://localhost:${port}`;
 
-      // Signal the UI over WebSocket
-      await hitlCoordinator.requestTakeover(reason, instructions);
+      console.error(`[hitl] Waiting for user — visit ${uiUrl}`);
+      // Blocks until the user clicks "Return Control to Claude" in the web UI
+      await hitlCoordinator.requestTakeover(reason, instructions || undefined);
 
-      // This line is reached AFTER the user clicks "Return Control"
       const currentUrl = await sessionManager.currentUrl().catch(() => 'unknown');
       return {
         content: [{
@@ -195,80 +190,70 @@ export async function createMcpServer(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
-  // Tool: workflow_run
+  // workflow_run
   // -------------------------------------------------------------------------
   server.tool(
     'workflow_run',
-    'Execute a workflow — a named sequence of browser automation steps with human-in-the-loop checkpoints. Workflows are engine-agnostic and parameter-driven.',
+    'Execute a workflow — a named sequence of steps with HITL checkpoints, intelligent engine routing, and param substitution. Use workflow_list to see available workflows.',
     {
-      workflow_id: z.string().optional().describe('ID of a built-in workflow (e.g. "dispute_charge", "authenticated_task"). Omit to provide an inline definition.'),
-      workflow_definition: z.string().optional().describe('JSON string of a WorkflowDefinition for one-off or custom workflows'),
-      params: z.record(z.unknown()).optional().describe('Parameter values for the workflow'),
+      workflow_id: z.string().describe('ID of a built-in workflow (e.g. dispute_charge, authenticated_task). Pass "inline" to provide a custom definition.'),
+      params: z.string().describe('JSON object of parameter key/value pairs (e.g. {"portal_url":"https://...","charge_amount":"$47.99"})'),
+      workflow_definition: z.string().describe('JSON WorkflowDefinition (only used when workflow_id is "inline")'),
     },
-    async ({ workflow_id, workflow_definition, params }) => {
-      let definition = workflow_id
-        ? BUILTIN_WORKFLOWS.find((w) => w.id === workflow_id)
-        : undefined;
+    async ({ workflow_id, params, workflow_definition }) => {
+      let definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflow_id);
 
-      if (!definition && workflow_definition) {
+      if (!definition && workflow_id === 'inline' && workflow_definition) {
         try {
-          const parsed = JSON.parse(workflow_definition);
-          definition = WorkflowDefinitionSchema.parse(parsed);
+          definition = WorkflowDefinitionSchema.parse(JSON.parse(workflow_definition));
         } catch (e) {
           return { content: [{ type: 'text' as const, text: `Invalid workflow definition: ${e instanceof Error ? e.message : String(e)}` }] };
         }
       }
 
       if (!definition) {
-        return { content: [{ type: 'text' as const, text: `Workflow not found: '${workflow_id}'. Use workflow_list to see available workflows.` }] };
+        return { content: [{ type: 'text' as const, text: `Workflow not found: '${workflow_id}'. Use workflow_list to see available IDs.` }] };
       }
 
-      const result = await workflowEngine.run(definition, params ?? {});
+      let parsedParams: Record<string, unknown> = {};
+      if (params) {
+        try { parsedParams = JSON.parse(params); } catch { /* ignore */ }
+      }
 
-      const lines: string[] = [
+      const result = await workflowEngine.run(definition, parsedParams);
+      const lines = [
         `Workflow: ${definition.name}`,
         `Status: ${result.success ? 'complete' : 'failed'}`,
         `Steps: ${result.stepResults.filter((s) => s.success).length}/${result.stepResults.length} succeeded`,
         `Duration: ${result.durationMs}ms`,
       ];
-
       if (Object.keys(result.outputs).length > 0) {
         lines.push('\nOutputs:');
-        for (const [key, value] of Object.entries(result.outputs)) {
-          lines.push(`  ${key}: ${value}`);
-        }
+        for (const [k, v] of Object.entries(result.outputs)) lines.push(`  ${k}: ${v}`);
       }
-
       if (result.screenshots.length > 0) {
-        lines.push(`\nScreenshots saved: ${result.screenshots.length}`);
-        for (const s of result.screenshots) {
-          lines.push(`  ${s.path}`);
-        }
+        lines.push(`\nScreenshots: ${result.screenshots.map((s) => s.path).join(', ')}`);
       }
-
       if (result.error) lines.push(`\nError: ${result.error}`);
-
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );
 
   // -------------------------------------------------------------------------
-  // Tool: workflow_list
+  // workflow_list
   // -------------------------------------------------------------------------
   server.tool(
     'workflow_list',
-    'List all available built-in workflow templates with their parameters.',
+    'List all available built-in workflow templates with their IDs, descriptions, and parameters.',
     {},
     async () => {
-      const lines: string[] = ['Available workflows:\n'];
+      const lines = ['Available workflows:\n'];
       for (const wf of BUILTIN_WORKFLOWS) {
-        lines.push(`  ${wf.id}`);
-        lines.push(`    Name: ${wf.name}`);
-        if (wf.description) lines.push(`    ${wf.description}`);
-        const paramKeys = Object.keys(wf.params ?? {});
-        if (paramKeys.length > 0) {
-          lines.push(`    Parameters: ${paramKeys.join(', ')}`);
-        }
+        lines.push(`  id: ${wf.id}`);
+        lines.push(`  name: ${wf.name}`);
+        if (wf.description) lines.push(`  ${wf.description}`);
+        const pKeys = Object.keys(wf.params ?? {});
+        if (pKeys.length > 0) lines.push(`  params: ${pKeys.join(', ')}`);
         lines.push('');
       }
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
@@ -276,7 +261,7 @@ export async function createMcpServer(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
-  // Tool: session_status
+  // session_status
   // -------------------------------------------------------------------------
   server.tool(
     'session_status',
@@ -285,21 +270,18 @@ export async function createMcpServer(): Promise<void> {
     async () => {
       const state = workflowEngine.currentState;
       const currentUrl = await sessionManager.currentUrl().catch(() => 'not started');
-      const lines: string[] = [
+      const lines = [
         `Phase: ${state?.phase ?? 'idle'}`,
-        `Current URL: ${currentUrl}`,
-        `Browser active: ${sessionManager.isStarted}`,
+        `URL: ${currentUrl}`,
+        `Browser: ${sessionManager.isStarted ? 'running' : 'not started'}`,
+        `HITL UI: http://localhost:${process.env.AI_VISION_UI_PORT ?? '3000'}`,
       ];
-      if (state?.currentStep) lines.push(`Current step: ${state.currentStep} (${state.stepIndex}/${state.totalSteps})`);
+      if (state?.currentStep) lines.push(`Step: ${state.currentStep} (${state.stepIndex ?? '?'}/${state.totalSteps ?? '?'})`);
       if (state?.hitlReason) lines.push(`Awaiting human: ${state.hitlReason}`);
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );
 
-  // -------------------------------------------------------------------------
-  // Connect and serve
-  // -------------------------------------------------------------------------
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // server.connect() keeps the process alive via stdin
 }

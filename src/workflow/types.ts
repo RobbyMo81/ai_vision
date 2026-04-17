@@ -5,34 +5,11 @@
  * parameters and ordered steps.  Steps are engine-agnostic — the workflow
  * engine's router picks the right browser automation engine per step.
  *
- * Parameter substitution:  any string value in a step can contain {{param_name}}
+ * Parameter substitution: any string value in a step can contain {{param_name}}
  * placeholders which are replaced with the caller-supplied params at runtime.
- *
- * Example (credit card dispute):
- *
- *   {
- *     id: 'dispute_charge',
- *     name: 'Credit Card Charge Dispute',
- *     params: {
- *       portal_url: { type: 'string' },
- *       charge_amount: { type: 'string' },
- *       dispute_reason: { type: 'string' },
- *     },
- *     steps: [
- *       { id: 'go', type: 'navigate', url: '{{portal_url}}' },
- *       { id: 'login', type: 'human_takeover', reason: 'Please log in to your account' },
- *       { id: 'dispute', type: 'agent_task',
- *         prompt: 'Find the charge for {{charge_amount}} and dispute it. Reason: {{dispute_reason}}' },
- *       { id: 'confirm', type: 'extract',
- *         instruction: 'Extract the dispute confirmation number',
- *         outputKey: 'confirmation_number' },
- *       { id: 'shot', type: 'screenshot' },
- *     ]
- *   }
  */
 
 import { z } from 'zod';
-import { EngineId } from '../engines/interface';
 
 // ---------------------------------------------------------------------------
 // Step schemas
@@ -50,7 +27,6 @@ export const ClickStepSchema = z.object({
   type: z.literal('click'),
   id: z.string(),
   description: z.string().optional(),
-  /** CSS/XPath selector OR natural language description of the element */
   selector: z.string(),
 });
 
@@ -67,14 +43,14 @@ export const ScreenshotStepSchema = z.object({
   type: z.literal('screenshot'),
   id: z.string(),
   description: z.string().optional(),
-  outputKey: z.string().optional(), // key in workflow result to store path
+  outputKey: z.string().optional(),
 });
 
 export const ExtractStepSchema = z.object({
   type: z.literal('extract'),
   id: z.string(),
   description: z.string().optional(),
-  /** Natural language instruction describing what to extract */
+  /** Natural language hint about what to extract (returned as context in the output) */
   instruction: z.string(),
   /** Key in the workflow result outputs map to store extracted value */
   outputKey: z.string(),
@@ -84,13 +60,10 @@ export const AgentTaskStepSchema = z.object({
   type: z.literal('agent_task'),
   id: z.string(),
   description: z.string().optional(),
-  /** Natural language task prompt — may include {{param}} substitutions */
   prompt: z.string(),
   /**
-   * Engine override.  'auto' (default) lets the router pick based on heuristics:
-   *   - Long exploratory tasks          → browser-use (agent loop)
-   *   - Precision UI interactions       → stagehand (page.act)
-   *   - SOP / structured processes      → skyvern (workflow)
+   * 'auto' (default) lets the router pick based on heuristics.
+   * Override to force a specific engine.
    */
   engine: z.enum(['auto', 'browser-use', 'stagehand', 'skyvern']).optional(),
 });
@@ -98,28 +71,11 @@ export const AgentTaskStepSchema = z.object({
 export const HumanTakeoverStepSchema = z.object({
   type: z.literal('human_takeover'),
   id: z.string(),
-  /** Message shown prominently in the HITL UI */
   reason: z.string(),
-  /** Additional guidance shown below the reason */
   instructions: z.string().optional(),
 });
 
-export const ConditionalStepSchema = z.object({
-  type: z.literal('conditional'),
-  id: z.string(),
-  description: z.string().optional(),
-  /**
-   * Natural language condition evaluated against the current page state.
-   * e.g. "Is the user logged in?" — evaluated by Stagehand page.extract()
-   */
-  condition: z.string(),
-  /** Steps to run if condition is true */
-  ifTrue: z.array(z.lazy(() => WorkflowStepSchema)),
-  /** Steps to run if condition is false (optional) */
-  ifFalse: z.array(z.lazy(() => WorkflowStepSchema)).optional(),
-});
-
-export const WorkflowStepSchema: z.ZodType<WorkflowStep> = z.discriminatedUnion('type', [
+export const WorkflowStepSchema = z.discriminatedUnion('type', [
   NavigateStepSchema,
   ClickStepSchema,
   TypeStepSchema,
@@ -127,7 +83,6 @@ export const WorkflowStepSchema: z.ZodType<WorkflowStep> = z.discriminatedUnion(
   ExtractStepSchema,
   AgentTaskStepSchema,
   HumanTakeoverStepSchema,
-  ConditionalStepSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -137,7 +92,8 @@ export const WorkflowStepSchema: z.ZodType<WorkflowStep> = z.discriminatedUnion(
 export const ParamDefinitionSchema = z.object({
   type: z.enum(['string', 'number', 'boolean']),
   description: z.string().optional(),
-  required: z.boolean().optional().default(true),
+  /** If false, the param is optional (default: true) */
+  required: z.boolean().optional(),
   default: z.unknown().optional(),
 });
 
@@ -146,17 +102,15 @@ export const ParamDefinitionSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const WorkflowDefinitionSchema = z.object({
-  /** Unique identifier used to look up the workflow by name */
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
-  /** Declared parameters — validated before execution starts */
   params: z.record(ParamDefinitionSchema).optional().default({}),
   steps: z.array(WorkflowStepSchema),
 });
 
 // ---------------------------------------------------------------------------
-// TypeScript types (inferred from schemas)
+// TypeScript types
 // ---------------------------------------------------------------------------
 
 export type NavigateStep = z.infer<typeof NavigateStepSchema>;
@@ -166,18 +120,8 @@ export type ScreenshotStep = z.infer<typeof ScreenshotStepSchema>;
 export type ExtractStep = z.infer<typeof ExtractStepSchema>;
 export type AgentTaskStep = z.infer<typeof AgentTaskStepSchema>;
 export type HumanTakeoverStep = z.infer<typeof HumanTakeoverStepSchema>;
-export type ConditionalStep = z.infer<typeof ConditionalStepSchema>;
 
-export type WorkflowStep =
-  | NavigateStep
-  | ClickStep
-  | TypeStep
-  | ScreenshotStep
-  | ExtractStep
-  | AgentTaskStep
-  | HumanTakeoverStep
-  | ConditionalStep;
-
+export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
 export type ParamDefinition = z.infer<typeof ParamDefinitionSchema>;
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 
@@ -189,7 +133,6 @@ export interface StepResult {
   stepId: string;
   success: boolean;
   durationMs: number;
-  /** Extracted values from 'extract' steps */
   output?: string;
   screenshotPath?: string;
   screenshotBase64?: string;
@@ -212,10 +155,6 @@ export interface WorkflowResult {
 // Built-in workflow templates
 // ---------------------------------------------------------------------------
 
-/**
- * Registry of built-in workflow templates.
- * Users can also pass inline WorkflowDefinitions to run_workflow.
- */
 export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
   {
     id: 'dispute_charge',
@@ -252,7 +191,7 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
         type: 'extract',
         id: 'get_confirmation',
         description: 'Extract dispute confirmation details',
-        instruction: 'Extract the dispute case number or confirmation number from the page. Also extract the estimated resolution timeframe if visible.',
+        instruction: 'Extract the dispute case number or confirmation number',
         outputKey: 'confirmation',
       },
       {
@@ -271,7 +210,7 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
     params: {
       url: { type: 'string', description: 'URL to navigate to' },
       task: { type: 'string', description: 'What to do after authentication' },
-      login_instructions: { type: 'string', description: 'Instructions to show the user during login', required: false, default: 'Please log in and click Return Control when ready.' },
+      login_instructions: { type: 'string', description: 'Instructions shown during login', required: false, default: 'Please log in and click Return Control when ready.' },
     },
     steps: [
       {

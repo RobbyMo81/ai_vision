@@ -164,16 +164,16 @@ program
 // ---------------------------------------------------------------------------
 
 program
-  .command('workflow <workflow-id>')
+  .command('workflow [workflow-id]')
   .description('Run a built-in workflow by ID (use --list to see available workflows)')
   .option('-p, --param <key=value>', 'Workflow parameter (repeatable)', (v: string, acc: string[]) => [...acc, v], [] as string[])
   .option('--headed', 'Launch the browser in headed mode (required for HITL login steps)', false)
   .option('--ui-port <port>', 'Port for the HITL web UI', '3000')
   .option('--list', 'List available workflows and exit')
-  .action(async (workflowId: string, opts: { param: string[]; headed: boolean; uiPort: string; list: boolean }) => {
+  .action(async (workflowId: string | undefined, opts: { param: string[]; headed: boolean; uiPort: string; list: boolean }) => {
     const { BUILTIN_WORKFLOWS } = await import('../workflow/types');
 
-    if (opts.list) {
+    if (opts.list || !workflowId) {
       console.log('Available workflows:');
       for (const wf of BUILTIN_WORKFLOWS) {
         console.log(`  ${wf.id.padEnd(24)} ${wf.name}`);
@@ -182,9 +182,9 @@ program
       return;
     }
 
-    const definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflowId);
+    const definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflowId!);
     if (!definition) {
-      console.error(`Unknown workflow: '${workflowId}'. Run with --list to see available workflows.`);
+      console.error(`Unknown workflow: '${workflowId}'. Run 'ai-vision workflow --list' to see available workflows.`);
       process.exit(1);
     }
 
@@ -215,7 +215,7 @@ program
     console.log('');
 
     const result = await workflowEngine.run(definition, params, sessionId);
-    (await getRepo()).save(sessionId, 'workflow', JSON.stringify({ workflowId, params }), {
+    (await getRepo()).save(sessionId, 'stagehand' /* closest engine-id proxy */, JSON.stringify({ workflowId, params }), {
       success: result.success,
       output: JSON.stringify(result.outputs),
       screenshots: result.screenshots.map((s) => ({ path: s.path, takenAt: new Date() })),

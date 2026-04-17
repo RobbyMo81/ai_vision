@@ -198,27 +198,6 @@ async function executeStep(
         return { stepId: sub.id, success: true, durationMs: Date.now() - start };
       }
 
-      // ----- conditional ----------------------------------------------------
-      case 'conditional': {
-        // Evaluate condition from shared-session page content (not Stagehand's separate browser)
-        const page = await sessionManager.getPage();
-        const pageText: string = await page.evaluate(() =>
-          (document.body as HTMLElement).innerText.replace(/\s{3,}/g, '\n').trim()
-        );
-        // Simple heuristic: check if condition keyword appears in the page text.
-        // For more sophisticated evaluation, the agent_task step with a short prompt works better.
-        const condKeyword = sub.condition.replace(/\?$/, '').toLowerCase().trim();
-        const condResult = pageText.toLowerCase().includes(condKeyword) ? 'yes' : 'no';
-        const isTrue = condResult.toLowerCase().trim().startsWith('yes');
-        const branchSteps = isTrue ? sub.ifTrue : (sub.ifFalse ?? []);
-
-        for (const branchStep of branchSteps) {
-          const stepResult = await executeStep(branchStep, params, screenshots, outputs, onStateUpdate);
-          if (!stepResult.success) return stepResult;
-        }
-        return { stepId: sub.id, success: true, output: `condition=${isTrue}`, durationMs: Date.now() - start };
-      }
-
       default:
         return {
           stepId: (step as { id: string }).id,
