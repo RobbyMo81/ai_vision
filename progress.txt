@@ -11,3 +11,38 @@
 - Switched to 'node:sqlite' (Node 24) to resolve native binding issues with 'better-sqlite3'.
 - All tests passed. Quality gates verified.
 - US-001, US-002, US-003, US-004 marked as complete.
+
+[2026-04-18] Production HITL Hardening
+- Added explicit workflow intent metadata for sensitive fields (`field` / `targets`) to avoid regex-based PII detection.
+- Added encrypted pre-flight storage, scratch pad planning/investigation notes, and redacted prompt injection in short-term memory.
+- Extended HITL with secure PII input flow, QA acknowledgment capture, and additional runtime phases (`pre_flight`, `investigation`, `pii_wait`, `hitl_qa`).
+- Introduced `src/workflow/wrap-up.ts` as the workflow ETL layer for long-term memory, SQLite workflow runs, SIC triggers, and task metadata persistence.
+- Added task correlation scaffolding via `src/memory/indexer.ts` and `src/memory/metadata.ts`.
+- Made browser profile persistence durable in both startup paths.
+- Build passed and test suite expanded to cover crypto round-trip and short-term memory redaction behavior.
+
+[2026-04-18] Layered Telemetry Added
+- Added a typed telemetry subsystem with centralized emission, detail redaction, SQLite persistence, NDJSON archival, and issue detection.
+- Instrumented workflow phases, step execution, engine routing, browser lifecycle, HITL waits, secure input, wrap-up completion, and UI failures.
+- Added telemetry tables to SQLite and surfaced recent alerts through a new UI/API path.
+- Fixed the HITL UI boot gap by fetching current state on load instead of waiting only for future WebSocket events.
+- Build passed and tests expanded to cover telemetry alert detection and redaction behavior.
+
+[2026-04-19] HITL Terminal-State UX Fix
+- Confirmed the X functional test completed successfully; the apparent localhost failure was the workflow CLI exiting immediately after wrap-up, which took the co-hosted HITL UI down with it.
+- Updated the HITL UI client to treat `complete` and `error` as terminal states, stop reconnecting, and stop telemetry polling once the workflow is done.
+- Added a short CLI shutdown grace period (`AI_VISION_UI_SHUTDOWN_GRACE_MS`, default `1500`) so the final terminal-state update reaches the browser before process exit.
+- Build passed and test suite remained green after the lifecycle fix.
+
+[2026-04-19] Final-Step HITL Confirmation Model
+- Added `human_takeover.mode = "confirm_completion"` so workflows can require HITL verification after the agent performs the irreversible final action.
+- Extended the HITL coordinator and UI with a dedicated final-step confirmation path and a negative confirmation path that fails the workflow instead of silently passing.
+- Stopped `/api/acknowledge` from mutating the workflow phase, so optional HITL notes no longer interfere with the real final confirmation state.
+- Migrated the `post_to_x` workflow so the agent now publishes the post itself and HITL confirms the visible published result afterward.
+- Build passed and tests remained green after the contract change.
+
+[2026-04-19] SIC Self-Heal On Final-Step Rejection
+- Final-step rejection now carries a structured reason from the HITL UI instead of collapsing into a generic failure.
+- The workflow engine emits a dedicated `workflow.hitl_confirmation.rejected` error event, records an immediate improvement/self-heal pattern, and stores the rejection reason on live session state.
+- Wrap-up now forces a SIC trigger for rejection-driven failures even if no optional QA notes were submitted, including failure reason, failed step id, and a self-heal instruction.
+- Build passed and tests remained green after the rejection-path SIC/self-heal patch.

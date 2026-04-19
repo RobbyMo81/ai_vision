@@ -68,7 +68,7 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     this.config = { startupTimeoutMs: 30_000, ...config };
     this.http = axios.create({
       baseURL: `http://127.0.0.1:${config.port}`,
-      timeout: 600_000, // 10 min — agent tasks can be long-running
+      timeout: 1_800_000, // 30 min — complex form-filling tasks can take a while
     });
   }
 

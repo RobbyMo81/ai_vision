@@ -14,8 +14,8 @@
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { ChildProcess, spawn } from 'child_process';
+import { telemetry } from '../telemetry';
 
 export interface SessionManagerOptions {
   /** Show the browser window (required for HITL so the user can interact). */
@@ -38,7 +38,12 @@ export class SessionManager extends EventEmitter {
     super();
     this.headed = opts.headed ?? process.env.AI_VISION_HEADED === 'true';
     this.cdpPort = opts.cdpPort ?? parseInt(process.env.AI_VISION_CDP_PORT ?? '9223', 10);
-    this.userDataDir = path.join(os.tmpdir(), `ai-vision-chrome-${process.pid}`);
+    // Durable profile directory so Chrome "Saved Data" (cookies, credentials,
+    // payment autofill) can persist across restarts.
+    const home = process.env.HOME ?? process.cwd();
+    this.userDataDir =
+      process.env.AI_VISION_PROFILE_DIR ??
+      path.join(home, '.ai-vision', 'profiles', 'default');
   }
 
   // ---------------------------------------------------------------------------
@@ -47,6 +52,15 @@ export class SessionManager extends EventEmitter {
 
   async start(): Promise<void> {
     if (this._started) return;
+    telemetry.emit({
+      source: 'session',
+      name: 'session.browser.starting',
+      details: {
+        headed: this.headed,
+        cdpPort: this.cdpPort,
+        profileDir: this.userDataDir,
+      },
+    });
 
     const { chromium } = await import('playwright-core');
 
@@ -60,6 +74,7 @@ export class SessionManager extends EventEmitter {
     }
 
     if (chromiumExecPath && fs.existsSync(chromiumExecPath)) {
+      fs.mkdirSync(this.userDataDir, { recursive: true });
       // Launch Chrome directly with a remote debugging port so Python bridges
       // can attach to the same session via CDP.
       this.chromeProcess = spawn(chromiumExecPath, [
@@ -74,6 +89,12 @@ export class SessionManager extends EventEmitter {
       this.chromeProcess.on('exit', (code) => {
         if (this._started) {
           console.error(`[session] Chrome exited with code ${code}`);
+          telemetry.emit({
+            source: 'session',
+            name: 'session.browser.exited',
+            level: 'error',
+            details: { code: code ?? 'unknown' },
+          });
           this._started = false;
         }
       });
@@ -85,29 +106,56 @@ export class SessionManager extends EventEmitter {
       const pages = this._context.pages();
       this._page = pages[0] ?? await this._context.newPage();
     } else {
-      // Fallback: let Playwright manage the browser lifecycle (no CDP sharing)
-      this._browser = await chromium.launch({
+      // Fallback: use a persistent context so saved browser data survives even
+      // when direct CDP boot is unavailable.
+      fs.mkdirSync(this.userDataDir, { recursive: true });
+      this._context = await chromium.launchPersistentContext(this.userDataDir, {
         headless: !this.headed,
         args: ['--no-sandbox', '--disable-dev-shm-usage'],
       });
-      this._context = await this._browser.newContext();
-      this._page = await this._context.newPage();
+      this._browser = this._context.browser();
+      const pages = this._context.pages();
+      this._page = pages[0] ?? await this._context.newPage();
     }
 
     this._started = true;
     // Publish the CDP URL so PythonBridgeEngine subprocesses can attach to this browser
     process.env.BROWSER_CDP_URL = this.getCdpUrl();
     this.emit('started');
+    telemetry.emit({
+      source: 'session',
+      name: 'session.browser.started',
+      details: {
+        headed: this.headed,
+        cdpPort: this.cdpPort,
+        profileDir: this.userDataDir,
+        cdpUrl: this.getCdpUrl(),
+      },
+    });
   }
 
   async close(): Promise<void> {
     this._started = false;
+    telemetry.emit({
+      source: 'session',
+      name: 'session.browser.closing',
+      details: {
+        profileDir: this.userDataDir,
+      },
+    });
     try { await this._context?.close(); } catch { /* ignore */ }
     try { await this._browser?.close(); } catch { /* ignore */ }
     this.chromeProcess?.kill('SIGTERM');
     this._browser = null;
     this._context = null;
     this._page = null;
+    telemetry.emit({
+      source: 'session',
+      name: 'session.browser.closed',
+      details: {
+        profileDir: this.userDataDir,
+      },
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -155,8 +203,20 @@ export class SessionManager extends EventEmitter {
   /** Returns base64-encoded JPEG screenshot (80% quality for transport efficiency). */
   async screenshot(): Promise<string> {
     const page = await this.getPage();
-    const buf = await page.screenshot({ type: 'jpeg', quality: 80 });
-    return buf.toString('base64');
+    try {
+      const buf = await page.screenshot({ type: 'jpeg', quality: 80 });
+      return buf.toString('base64');
+    } catch (error) {
+      telemetry.emit({
+        source: 'session',
+        name: 'session.browser.screenshot_failed',
+        level: 'warn',
+        details: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
   }
 
   async currentUrl(): Promise<string> {

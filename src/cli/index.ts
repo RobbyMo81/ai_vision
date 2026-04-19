@@ -24,6 +24,10 @@ const CONFIG_BIN = path.join(
 );
 
 const program = new Command();
+const WORKFLOW_UI_SHUTDOWN_GRACE_MS = parseInt(
+  process.env.AI_VISION_UI_SHUTDOWN_GRACE_MS ?? '1500',
+  10,
+);
 // Lazy — only open the DB for commands that actually need it (run, history).
 // We also use a dynamic import so the node:sqlite module — and its
 // ExperimentalWarning — is never loaded for commands that don't touch the DB.
@@ -237,6 +241,9 @@ program
     }
 
     console.log(`Duration : ${result.durationMs}ms`);
+    if (WORKFLOW_UI_SHUTDOWN_GRACE_MS > 0) {
+      await new Promise((resolve) => setTimeout(resolve, WORKFLOW_UI_SHUTDOWN_GRACE_MS));
+    }
     await registry.closeAll();
     process.exit(result.success ? 0 : 1);
   });

@@ -12,6 +12,7 @@
  *   GET  /api/status    — Current session state (JSON)
  *   GET  /api/screenshot — Current browser screenshot (base64 JSON)
  *   POST /api/return-control — User signals they've finished; resumes workflow
+ *   POST /api/confirm-final-step — User confirms or rejects the final agent-executed action
  *   WS   /ws           — Push channel for state/screenshot updates
  */
 
@@ -21,6 +22,7 @@ import { sessionManager } from '../session/manager';
 import { hitlCoordinator } from '../session/hitl';
 import { workflowEngine } from '../workflow/engine';
 import { HitlEventPayload, SessionState } from '../session/types';
+import { telemetry } from '../telemetry';
 
 // ---------------------------------------------------------------------------
 // Inline HTML (single-file, no build step)
@@ -45,8 +47,12 @@ const HTML = `<!DOCTYPE html>
   header h1 { font-size: 18px; font-weight: 600; color: var(--accent); }
   .phase-badge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
   .phase-idle     { background: #2d3148; color: var(--muted); }
+  .phase-pre-flight { background: #0f3b2d; color: #7dd3a7; }
+  .phase-investigation { background: #2f2348; color: #c4b5fd; }
   .phase-running  { background: #1e3a5f; color: #60a5fa; }
   .phase-awaiting { background: #3d2b05; color: var(--warn); animation: pulse 1.5s infinite; }
+  .phase-pii-wait { background: #4a1022; color: #fda4af; animation: pulse 1.5s infinite; }
+  .phase-hitl-qa { background: #12324a; color: #7dd3fc; }
   .phase-complete { background: #064e3b; color: var(--success); }
   .phase-error    { background: #450a0a; color: var(--danger); }
   @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.6 } }
@@ -68,6 +74,19 @@ const HTML = `<!DOCTYPE html>
   }
   .return-btn:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
   .return-btn:disabled { background: #3d3d5c; color: var(--muted); cursor: not-allowed; transform: none; }
+  .ack-box { background: #0b2030; border: 1px solid #1e3a5f; border-radius: 8px; padding: 14px; }
+  .ack-input { width: 100%; margin-top: 6px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
+  .ack-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .ack-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 13px; }
+  .ack-btn:hover { border-color: var(--accent); }
+  .secure-box { background: #33111a; border: 1px solid #7f1d1d; border-radius: 8px; padding: 14px; display: none; }
+  .secure-box.visible { display: block; }
+  .secure-input { width: 100%; margin-top: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: #090c15; color: var(--text); font-size: 14px; }
+  .telemetry-box { background: #10161f; border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .telemetry-entry { font-size: 12px; color: var(--muted); padding: 6px 0; border-bottom: 1px solid #1a1d27; }
+  .telemetry-entry:last-child { border-bottom: none; }
+  .telemetry-entry.error { color: var(--danger); }
+  .telemetry-entry.warn { color: var(--warn); }
   .step-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
   .step-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 10px; border-radius: 6px; background: var(--bg); }
   .step-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -112,6 +131,41 @@ const HTML = `<!DOCTYPE html>
       <button id="returnBtn" class="return-btn" onclick="returnControl()">
         Return Control to Claude
       </button>
+      <button id="rejectBtn" class="ack-btn" onclick="confirmFinalStep(false)" style="display:none;margin-top:8px">
+        Mark Final Step Failed
+      </button>
+    </div>
+
+    <div id="secureInputBox" class="secure-box">
+      <div class="section-title">Secure Input</div>
+      <div id="secureInputLabel" class="hitl-reason" style="font-size:15px"></div>
+      <div style="font-size:12px;color:#fda4af;line-height:1.4">
+        Value is submitted to the local server only and excluded from prompts and long-term artifacts.
+      </div>
+      <input id="secureInput" type="password" class="secure-input" placeholder="Enter sensitive value..." />
+      <div class="ack-actions">
+        <button class="ack-btn" onclick="submitSecureInput()">Submit Secure Value</button>
+        <button class="ack-btn" onclick="clearSecureInput()">Clear</button>
+      </div>
+    </div>
+
+    <!-- HITL acknowledgment / QA (optional) -->
+    <div class="ack-box">
+      <div class="section-title">HITL QA</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.4">
+        Optional: capture Definition of Done and notes for wrap-up/SIC.
+      </div>
+      <input id="dodInput" class="ack-input" placeholder="Definition of Done (DoD)..." />
+      <textarea id="commentsInput" class="ack-input" rows="4" placeholder="HITL comments..."></textarea>
+      <div class="ack-actions">
+        <button class="ack-btn" onclick="acknowledge()">Submit QA</button>
+        <button class="ack-btn" onclick="clearAck()">Clear</button>
+      </div>
+    </div>
+
+    <div class="telemetry-box">
+      <div class="section-title">Telemetry Alerts</div>
+      <div id="telemetryList" style="display:flex;flex-direction:column;gap:0"></div>
     </div>
 
     <!-- Current step info -->
@@ -157,7 +211,9 @@ const HTML = `<!DOCTYPE html>
 <script>
 let ws = null;
 let autoRefreshTimer = null;
+let telemetryRefreshTimer = null;
 let isAwaiting = false;
+let isTerminalState = false;
 
 function connectWs() {
   const wsUrl = 'ws://' + location.host + '/ws';
@@ -168,6 +224,10 @@ function connectWs() {
   };
   ws.onclose = () => {
     document.getElementById('wsIndicator').className = 'ws-indicator disconnected';
+    if (isTerminalState) {
+      log('Session finished. UI server closed normally.', 'ok');
+      return;
+    }
     log('Disconnected — reconnecting in 3s...', 'warn');
     setTimeout(connectWs, 3000);
   };
@@ -197,14 +257,36 @@ function handleEvent(payload) {
   }
 }
 
+async function fetchStatus() {
+  try {
+    const resp = await fetch('/api/status');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const state = await resp.json();
+    if (state && state.phase && state.phase !== 'idle') {
+      updateState(state);
+    } else {
+      log('No active workflow state on initial UI load', 'warn');
+    }
+  } catch (e) {
+    log('Failed to fetch current state: ' + e.message, 'err');
+  }
+}
+
 function updateState(state) {
   const phase = state.phase ?? 'idle';
-  isAwaiting = phase === 'awaiting_human';
+  const hitlAction = state.hitlAction ?? null;
+  isAwaiting = phase === 'awaiting_human' || phase === 'pii_wait' || phase === 'hitl_qa';
+  isTerminalState = phase === 'complete' || phase === 'error';
 
   // Phase badge
   const badge = document.getElementById('phaseBadge');
   badge.textContent = phase.replace('_', ' ');
-  badge.className = 'phase-badge phase-' + (phase === 'awaiting_human' ? 'awaiting' : phase);
+  let phaseClass = phase;
+  if (phase === 'awaiting_human') phaseClass = 'awaiting';
+  if (phase === 'pre_flight') phaseClass = 'pre-flight';
+  if (phase === 'pii_wait') phaseClass = 'pii-wait';
+  if (phase === 'hitl_qa') phaseClass = 'hitl-qa';
+  badge.className = 'phase-badge phase-' + phaseClass;
 
   // URL
   if (state.currentUrl) {
@@ -222,15 +304,74 @@ function updateState(state) {
 
   // HITL box
   const hitlBox = document.getElementById('hitlBox');
+  const secureInputBox = document.getElementById('secureInputBox');
   const returnBtn = document.getElementById('returnBtn');
-  if (isAwaiting && state.hitlReason) {
+  const rejectBtn = document.getElementById('rejectBtn');
+  if (phase === 'pii_wait' && state.hitlFieldLabel) {
+    document.getElementById('secureInputLabel').textContent = state.hitlFieldLabel;
+    secureInputBox.classList.add('visible');
+  } else {
+    secureInputBox.classList.remove('visible');
+  }
+
+  if ((phase === 'awaiting_human' || phase === 'hitl_qa') && state.hitlReason) {
     document.getElementById('hitlReason').textContent = state.hitlReason;
     document.getElementById('hitlInstructions').textContent = state.hitlInstructions ?? '';
     hitlBox.classList.add('visible');
     returnBtn.disabled = false;
+    if (hitlAction === 'confirm_completion') {
+      returnBtn.textContent = 'Confirm Final Step';
+      returnBtn.onclick = () => confirmFinalStep(true);
+      rejectBtn.style.display = 'block';
+    } else if (hitlAction === 'capture_notes') {
+      returnBtn.textContent = 'Continue Wrap-up';
+      returnBtn.onclick = () => returnControl();
+      rejectBtn.style.display = 'none';
+    } else {
+      returnBtn.textContent = 'Return Control to Claude';
+      returnBtn.onclick = () => returnControl();
+      rejectBtn.style.display = 'none';
+    }
   } else {
     hitlBox.classList.remove('visible');
     returnBtn.disabled = true;
+    rejectBtn.style.display = 'none';
+  }
+
+  if (isTerminalState) {
+    clearInterval(autoRefreshTimer);
+    clearInterval(telemetryRefreshTimer);
+  }
+}
+
+function renderTelemetry(entries) {
+  const list = document.getElementById('telemetryList');
+  list.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'telemetry-entry';
+    empty.textContent = 'No telemetry alerts yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const item = document.createElement('div');
+    item.className = 'telemetry-entry ' + (entry.issue?.severity ?? '');
+    item.textContent = '[' + new Date(entry.createdAt).toLocaleTimeString() + '] ' + (entry.issue?.message ?? entry.name);
+    list.appendChild(item);
+  });
+}
+
+async function fetchTelemetry() {
+  try {
+    const resp = await fetch('/api/telemetry/recent');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    renderTelemetry(data.alerts ?? []);
+  } catch (e) {
+    if (isTerminalState) return;
+    log('Failed to fetch telemetry: ' + e.message, 'err');
   }
 }
 
@@ -272,6 +413,66 @@ async function returnControl() {
   }
 }
 
+async function confirmFinalStep(confirmed) {
+  const reason = document.getElementById('commentsInput').value ?? '';
+  document.getElementById('returnBtn').disabled = true;
+  document.getElementById('rejectBtn').disabled = true;
+  try {
+    const resp = await fetch('/api/confirm-final-step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmed, reason }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    log(confirmed ? 'Final step confirmed by HITL' : 'Final step rejected by HITL', confirmed ? 'ok' : 'warn');
+  } catch (e) {
+    log('Failed to submit final-step confirmation: ' + e.message, 'err');
+    document.getElementById('returnBtn').disabled = false;
+    document.getElementById('rejectBtn').disabled = false;
+  }
+}
+
+async function acknowledge() {
+  const dod = document.getElementById('dodInput').value ?? '';
+  const comments = document.getElementById('commentsInput').value ?? '';
+  try {
+    const resp = await fetch('/api/acknowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dod, comments }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    log('HITL QA submitted', 'ok');
+  } catch (e) {
+    log('Failed to submit QA: ' + e.message, 'err');
+  }
+}
+
+function clearAck() {
+  document.getElementById('dodInput').value = '';
+  document.getElementById('commentsInput').value = '';
+}
+
+async function submitSecureInput() {
+  const value = document.getElementById('secureInput').value ?? '';
+  try {
+    const resp = await fetch('/api/pii-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    clearSecureInput();
+    log('Secure value submitted', 'ok');
+  } catch (e) {
+    log('Failed to submit secure value: ' + e.message, 'err');
+  }
+}
+
+function clearSecureInput() {
+  document.getElementById('secureInput').value = '';
+}
+
 function log(message, level = 'info') {
   const pane = document.getElementById('logPane');
   const entry = document.createElement('div');
@@ -283,8 +484,11 @@ function log(message, level = 'info') {
 
 // Boot
 connectWs();
+fetchStatus();
 toggleAutoRefresh(true);
 fetchScreenshot();
+fetchTelemetry();
+telemetryRefreshTimer = setInterval(fetchTelemetry, 5000);
 </script>
 </body>
 </html>`;
@@ -300,6 +504,11 @@ export async function startUiServer(port = 3000): Promise<void> {
   const WebSocketServer = (wsModule.WebSocketServer ?? wsModule.default?.WebSocketServer ?? wsModule.Server) as typeof import('ws').WebSocketServer;
 
   const wss = new WebSocketServer({ noServer: true });
+  telemetry.emit({
+    source: 'ui',
+    name: 'ui.server.started',
+    details: { port },
+  });
 
   // Broadcast to all connected WebSocket clients
   function broadcast(payload: HitlEventPayload): void {
@@ -374,6 +583,15 @@ export async function startUiServer(port = 3000): Promise<void> {
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/telemetry/recent') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        alerts: telemetry.recentAlerts(10),
+        events: telemetry.recent(25),
+      }));
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/screenshot') {
       if (!sessionManager.isStarted) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -387,6 +605,14 @@ export async function startUiServer(port = 3000): Promise<void> {
           res.end(JSON.stringify({ base64, url: currentUrl }));
         })
         .catch((e) => {
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.screenshot.failed',
+            level: 'warn',
+            details: {
+              error: e instanceof Error ? e.message : String(e),
+            },
+          });
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: String(e) }));
         });
@@ -397,6 +623,86 @@ export async function startUiServer(port = 3000): Promise<void> {
       hitlCoordinator.returnControl();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/confirm-final-step') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as { confirmed?: boolean; reason?: string };
+          const current = workflowEngine.currentState;
+          const reason = parsed.reason?.trim() ?? '';
+          if (current) {
+            (current as SessionState).hitlAckAt = new Date().toISOString();
+            (current as SessionState).hitlOutcomeConfirmed = Boolean(parsed.confirmed);
+            if (!parsed.confirmed) {
+              (current as SessionState).hitlComments =
+                reason || (current as SessionState).hitlComments || '';
+              (current as SessionState).hitlFailureReason = reason || 'HITL rejected the final outcome.';
+              (current as SessionState).hitlFailureStepId =
+                (current as SessionState).currentStep ?? (current as SessionState).hitlFailureStepId;
+            }
+          }
+          hitlCoordinator.confirmCompletion(Boolean(parsed.confirmed), reason);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, confirmed: Boolean(parsed.confirmed), reason }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/pii-input') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as { value?: string };
+          hitlCoordinator.submitSensitiveValue(parsed.value ?? '');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/acknowledge') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as { dod?: string; comments?: string };
+          const now = new Date().toISOString();
+          const current = workflowEngine.currentState;
+          if (current) {
+            // Store on the live session state for later ETL pickup.
+            (current as SessionState).hitlDod = parsed.dod ?? '';
+            (current as SessionState).hitlComments = parsed.comments ?? '';
+            (current as SessionState).hitlAckAt = now;
+            hitlCoordinator.emit('phase_changed', current);
+          }
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.hitl.acknowledged',
+            details: {
+              hasDod: Boolean(parsed.dod),
+              hasComments: Boolean(parsed.comments),
+            },
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, at: now }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
       return;
     }
 
@@ -412,6 +718,22 @@ export async function startUiServer(port = 3000): Promise<void> {
     } else {
       socket.destroy();
     }
+  });
+
+  wss.on('connection', (ws) => {
+    telemetry.emit({
+      source: 'ui',
+      name: 'ui.ws.connected',
+      details: {},
+    });
+    ws.on('close', () => {
+      telemetry.emit({
+        source: 'ui',
+        name: 'ui.ws.disconnected',
+        level: 'warn',
+        details: {},
+      });
+    });
   });
 
   await new Promise<void>((resolve) => server.listen(port, resolve));
