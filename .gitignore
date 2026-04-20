@@ -9,6 +9,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# Rust build artifacts
+tools/config-gui/target/
+
 # FORGE memory DB — runtime working directory, not source of record
 forge-memory.db
 forge-memory.db-shm

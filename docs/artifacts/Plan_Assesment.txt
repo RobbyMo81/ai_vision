@@ -1,0 +1,83 @@
+Yes, this plan adds the right structural guardrails, and you can keep latency low for standard workflows if you make the phase transitions mostly conditional (skip work unless signals require it). The biggest remaining risk is trying to infer too
+  much from unstructured agent_task prompts; for reliability and performance, the engine needs explicit metadata to know when to enter PRE_FLIGHT/INVESTIGATION and when a step targets PII_FIELDS.
+
+  Where it’s strong
+
+  - Moving persistence to wrap-up.ts + keeping src/memory/long-term.ts as a logic layer (file IO) removes the “runtime mutates source code” anti-pattern cleanly.
+  - Adding PII_FIELDS + redaction at both prompt-injection (getContextPrompt()) and ETL transform prevents most accidental PII propagation.
+  - A local indexer.ts over stories/improvements gives you a cheap, explainable correlation primitive to decide “known vs bespoke” without calling out to an LLM.
+
+  Key gaps / failure modes to address (otherwise you’ll get either hallucination or latency)
+
+  - PII detection: Intercepting “agent actions targeting PII” is ambiguous unless the workflow schema carries a fieldLabel/fieldType/sensitivity annotation for type and a structured “field intents” list for agent_task. Without that, you’ll end up
+    with brittle regex over prompts and false positives/negatives.
+  - UI secure input: POST /api/acknowledge is good for DoD/comments, but PII_WAIT needs a separate secure path (server-side only, never broadcast over WS, never stored in long-term artifacts) and a clear contract for where the decrypted value is
+    held (in-memory only, TTL, zeroize).
+  - Key derivation: “derived from a local machine ID” is not enough by itself. You need a stable secret source (OS keychain, protected file with perms, or user passphrase) or else encryption becomes security theater (machine IDs are often guessable
+    and not secret).
+  - Indexer/metadata scope: metadata.ts needs an ownership model and versioning (portal URL + stable identifiers + timestamps). Otherwise correlations rot quickly and you’ll oscillate into INVESTIGATION too often (latency) or too rarely
+    (hallucination).
+  - State machine propagation: Adding PRE_FLIGHT/INVESTIGATION/PII_WAIT/HITL_QA to src/session/types.ts is necessary but not sufficient; every producer/consumer (workflowEngine, hitlCoordinator, UI rendering, MCP status) must understand and display
+    those states, or operators won’t know what they’re unblocking.
+
+  Latency control (practical guardrails)
+
+  - Enter PRE_FLIGHT only if (a) task declares it needs PII, or (b) correlation score is below a threshold, or (c) domain is unseen.
+  - Enter INVESTIGATION only when bespoke is true and the workflow step is an agent_task that would otherwise do multi-page exploration.
+  - Cache indexer results and domain metadata with TTL so “known workflows” stay fast.
+
+Comment (Spec-to-Code Handoff + Guardrail Anchors)
+
+  Current “handoff” points are already cleanly centralized; the main missing piece is explicit structured metadata so the engine can gate PII and switch phases without guessing from freeform prompts.
+
+  - Agent prompt injection (memory + SIC + output format) happens in src/workflow/engine.ts:123 (buildEnhancedPrompt) and is used in the agent_task executor path src/workflow/engine.ts:359 → src/workflow/engine.ts:369.
+  - Agent → memory capture is currently a single post-step hook: recordAgentStepMemory at src/workflow/engine.ts:199, called after agent tasks at src/workflow/engine.ts:383. This is where “Scratch Pad” and “Pre-Flight” extraction should plug in
+    (and where PII redaction must be enforced).
+  - PII leak surface today is src/memory/short-term.ts:205/src/memory/short-term.ts:213, which injects completed field values into future prompts (✓ ${f.label}: ${f.value}), so any DOB/SSN emitted by an agent will be re-broadcast into the next
+    model prompt unless filtered.
+  - Engine → HITL blocking handoff is explicit and already synchronous: src/workflow/engine.ts:401 calls hitlCoordinator.requestTakeover(...); the blocking behavior is defined at src/session/hitl.ts:53.
+  - UI → Engine resume handoff is a single endpoint today: src/ui/server.ts:396 (POST /api/return-control) which calls hitlCoordinator.returnControl() and resumes the blocked promise.
+  - Post-run persistence + teardown ordering is currently: story write src/workflow/engine.ts:561 then short-term reset src/workflow/engine.ts:568. Any ETL “wrap-up” must run before src/workflow/engine.ts:568 (and ideally replace/mediate src/
+    workflow/engine.ts:561 depending on your final storage contract).
+  - Schema gap causing heuristic fragility: workflow steps do not carry sensitivity/field identity metadata. src/workflow/types.ts:33 (TypeStepSchema) is only { selector, text } and src/workflow/types.ts:59 (AgentTaskStepSchema) is only { prompt,
+    engine?, memorySection? }. Without adding structured fieldLabel/fieldKind/sensitivity, PII gating will devolve into regex over prompts (high false +/- and latency).
+  - Persistent browser profile anchor: current Chrome profile is per-process temp: src/session/manager.ts:41 uses os.tmpdir(); the durable-profile change should target that line and the launch arg at src/session/manager.ts:70.
+
+  References (file:line)
+
+  - src/workflow/engine.ts:123, src/workflow/engine.ts:359, src/workflow/engine.ts:369, src/workflow/engine.ts:199, src/workflow/engine.ts:383, src/workflow/engine.ts:401, src/workflow/engine.ts:561, src/workflow/engine.ts:568
+  - src/memory/short-term.ts:205, src/memory/short-term.ts:213
+  - src/session/hitl.ts:53
+  - src/ui/server.ts:396
+  - src/workflow/types.ts:33, src/workflow/types.ts:59
+  - src/session/manager.ts:41, src/session/manager.ts:70
+
+Add an explicit, engine-readable “intent” contract to both steps: a target field descriptor plus a sensitivity tag. The
+  engine should gate purely on these fields, never on prompt text.
+
+  TypeStepSchema (direct Playwright typing)
+
+  - Add field (required):
+      - id: stable key ("applicant_dob")
+      - label: human label ("Date of Birth")
+      - kind: enum ("name" | "address" | "dob" | "ssn" | "email" | "phone" | "credentials" | "credit_card" | "freeform")
+      - sensitivity: enum ("none" | "pii" | "spi" | "credentials" | "payment")
+      - source: enum ("params" | "hitl" | "derived") (tells engine where value must come from)
+  - Keep text but treat it as a template only when source === "params"; if source === "hitl", engine blocks before
+    executing.
+
+  AgentTaskStepSchema (LLM-driven actions)
+
+  - Add targets (required, array of the same field object):
+      - Declares which fields the agent is expected to interact with in this step (even if it’s multi-action).
+  - Add requiresHITL: optional boolean for “must confirm with human regardless of sensitivity” (your DoD gate hooks here).
+  - Optionally add portal: { domain: string; urlHint?: string } to support indexer correlation without parsing the prompt.
+
+  Engine rule
+
+  - Gate when any field.kind is "dob" or "ssn" (or field.sensitivity === "spi"), and field.source !== "params".
+  - Redact any field.sensitivity !== "none" from ShortTermMemory prompt injection (don’t store values, store "REDACTED" or
+    just completion markers).
+
+  This makes PII detection a pure schema check (step.field.kind) instead of regex over selectors/prompts, and it gives
+  wrap-up/indexer stable keys for correlation.

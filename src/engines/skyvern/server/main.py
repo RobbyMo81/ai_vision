@@ -2,6 +2,10 @@
 Skyvern FastAPI bridge server.
 Skyvern uses computer vision + LLMs to interact with browser UIs.
 Exposes the same REST shape as the browser-use bridge for a consistent TS client contract.
+
+Fixes applied (see Application_Fixes.md):
+  FIX-08 — asyncio lock protects global _skyvern_app from concurrent init race
+  FIX-09 — Microsecond timestamp precision prevents screenshot filename collisions
 """
 
 import asyncio
@@ -9,7 +13,7 @@ import base64
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +27,7 @@ SESSION_DIR = Path(os.getenv("SESSION_DIR", "./sessions"))
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 _skyvern_app = None
+_skyvern_lock = asyncio.Lock()  # FIX-08: prevent concurrent initialisation race
 
 
 @asynccontextmanager
@@ -74,15 +79,24 @@ class ScreenshotRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _now_us() -> str:
+    """FIX-09: Microsecond-precision UTC timestamp for unique filenames.
+    Uses timezone-aware datetime to avoid DeprecationWarning in Python 3.12+."""
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
 async def _get_skyvern():
+    """Return (or lazily create) the global Skyvern instance.
+    FIX-08: Protected by asyncio.Lock to prevent concurrent init race."""
     global _skyvern_app
-    if _skyvern_app is None:
-        from skyvern import Skyvern
-        _skyvern_app = Skyvern(
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-        )
-        await _skyvern_app.initialize()
+    async with _skyvern_lock:
+        if _skyvern_app is None:
+            from skyvern import Skyvern
+            _skyvern_app = Skyvern(
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+            )
+            await _skyvern_app.initialize()
     return _skyvern_app
 
 
@@ -107,13 +121,14 @@ async def initialize():
 @app.post("/close")
 async def close():
     global _skyvern_app
-    try:
-        if _skyvern_app is not None:
-            await _skyvern_app.close()
-            _skyvern_app = None
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    async with _skyvern_lock:
+        try:
+            if _skyvern_app is not None:
+                await _skyvern_app.close()
+                _skyvern_app = None
+            return {"success": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/task")
@@ -130,7 +145,7 @@ async def run_task(req: TaskRequest):
         # Collect any screenshots produced by Skyvern
         if hasattr(result, "screenshots"):
             for s in result.screenshots:
-                timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+                timestamp = _now_us()  # FIX-09
                 path = str(SESSION_DIR / f"skyvern-{timestamp}.png")
                 if isinstance(s, bytes):
                     with open(path, "wb") as f:
@@ -191,9 +206,10 @@ async def type_text(req: TypeRequest):
 
 @app.post("/screenshot")
 async def screenshot(req: ScreenshotRequest):
+    # FIX-09: use microsecond timestamp to prevent filename collisions
     try:
         skyvern = await _get_skyvern()
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        timestamp = _now_us()
         path = req.output_path or str(SESSION_DIR / f"skyvern-{timestamp}.png")
         image_bytes = await skyvern.screenshot()
         with open(path, "wb") as f:

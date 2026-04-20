@@ -7,6 +7,7 @@ export class BrowserUseEngine extends PythonBridgeEngine {
       engineId: 'browser-use',
       port: parseInt(process.env.BROWSER_USE_PORT ?? '8001', 10),
       serverScript: path.resolve(__dirname, 'server/main.py'),
+      startupTimeoutMs: 90_000, // extensions download on first run
     });
   }
 }

@@ -4,9 +4,39 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as path from 'path';
+
+// Resolve the project root (works from both src/ and dist/)
+const PROJECT_ROOT = (() => {
+  let dir = __dirname;
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return __dirname;
+})();
+
+// Platform-aware path to the venv Python binary
+const VENV_PYTHON = process.platform === 'win32'
+  ? path.join(PROJECT_ROOT, '.venv', 'Scripts', 'python.exe')
+  : path.join(PROJECT_ROOT, '.venv', 'bin', 'python3');
+
+/**
+ * Check whether a Python module is importable in the project venv (or system Python).
+ * Used by engines that have optional Python package dependencies.
+ */
+export function checkPythonModule(moduleName: string): boolean {
+  const pythonBin = fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python3';
+  const result = spawnSync(pythonBin, ['-c', `import ${moduleName}`], {
+    timeout: 5_000,
+    stdio: 'ignore',
+  });
+  return result.status === 0;
+}
 import {
   AutomationEngine,
   AutomationError,
@@ -27,6 +57,33 @@ interface BridgeConfig {
   startupTimeoutMs?: number;
 }
 
+export interface BridgeExitEvent {
+  engineId: EngineId;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  unexpected: boolean;
+}
+
+/**
+ * Process-level lifecycle events for Python bridges.
+ * Consumers (UI/MCP) can subscribe to propagate bridge failures immediately.
+ */
+export const bridgeLifecycleEvents = new EventEmitter();
+let latestBridgeExitEvent: BridgeExitEvent | null = null;
+
+export function getLatestBridgeExitEvent(): BridgeExitEvent | null {
+  return latestBridgeExitEvent;
+}
+
+export function recordBridgeExitEvent(event: BridgeExitEvent): void {
+  latestBridgeExitEvent = event;
+  bridgeLifecycleEvents.emit('bridge_exit', event);
+}
+
+export function resetLatestBridgeExitEventForTest(): void {
+  latestBridgeExitEvent = null;
+}
+
 export abstract class PythonBridgeEngine implements AutomationEngine {
   readonly id: EngineId;
   private _ready = false;
@@ -39,12 +96,17 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     this.config = { startupTimeoutMs: 30_000, ...config };
     this.http = axios.create({
       baseURL: `http://127.0.0.1:${config.port}`,
-      timeout: 120_000,
+      timeout: 1_800_000, // 30 min — complex form-filling tasks can take a while
     });
   }
 
   get ready(): boolean {
     return this._ready;
+  }
+
+  /** Default: all bridge engines are considered available unless overridden. */
+  async available(): Promise<boolean> {
+    return true;
   }
 
   async initialize(): Promise<void> {
@@ -69,10 +131,10 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     }
   }
 
-  async navigate(url: string, _options?: NavigateOptions): Promise<void> {
+  async navigate(url: string, options?: NavigateOptions): Promise<void> {
     this._assertReady();
     try {
-      await this._post('/navigate', { url });
+      await this._post('/navigate', { url, wait_until: options?.waitUntil ?? 'load' });
     } catch (e) {
       throw new NavigationError(this.id, url, e);
     }
@@ -150,37 +212,106 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     }
   }
 
-  private _startSubprocess(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!fs.existsSync(this.config.serverScript)) {
-        reject(
-          new AutomationError(
-            `Bridge server script not found: ${this.config.serverScript}`,
-            this.id
-          )
-        );
-        return;
-      }
-
-      const proc = spawn('python3', [this.config.serverScript], {
-        env: { ...process.env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      proc.stdout?.on('data', (d) => process.stdout.write(`[${this.id}] ${d}`));
-      proc.stderr?.on('data', (d) => process.stderr.write(`[${this.id}] ${d}`));
-      proc.on('error', (e) => reject(new AutomationError(`Failed to start bridge: ${e.message}`, this.id, e)));
-      proc.on('exit', (code) => {
-        if (this._ready) {
-          // Unexpected exit after initialization
-          console.error(`[${this.id}] bridge exited with code ${code}`);
-          this._ready = false;
-        }
-      });
-
-      this.process = proc;
-      resolve();
+  /** FIX-12: Check if a TCP port is already in use before spawning. */
+  private _checkPortFree(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const probe = net.createConnection({ host: '127.0.0.1', port: this.config.port });
+      probe.once('connect', () => { probe.destroy(); resolve(false); }); // port occupied
+      probe.once('error', () => resolve(true));                          // port free
     });
+  }
+
+  /**
+   * Recover from an orphaned bridge that still owns the configured port.
+   * If the process responds to our health endpoint, ask it to shut down
+   * cleanly before spawning a replacement.
+   */
+  private async _recoverOccupiedPort(): Promise<boolean> {
+    const probe = axios.create({
+      baseURL: `http://127.0.0.1:${this.config.port}`,
+      timeout: 1_000,
+      validateStatus: () => true,
+    });
+
+    try {
+      const health = await probe.get('/health');
+      if (health.status !== 200) return false;
+    } catch {
+      return false;
+    }
+
+    try {
+      await probe.post('/close');
+    } catch {
+      return false;
+    }
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (await this._checkPortFree()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return false;
+  }
+
+  private async _startSubprocess(): Promise<void> {
+    // FIX-12: Fail fast with a clear message instead of silently timing out
+    const portFree = await this._checkPortFree();
+    if (!portFree) {
+      const recovered = await this._recoverOccupiedPort();
+      if (recovered) {
+        return this._startSubprocess();
+      }
+      throw new AutomationError(
+        `Port ${this.config.port} is already in use. ` +
+        `A previous '${this.id}' bridge may still be running, or another process holds this port.`,
+        this.id
+      );
+    }
+
+    if (!fs.existsSync(this.config.serverScript)) {
+      throw new AutomationError(
+        `Bridge server script not found: ${this.config.serverScript}`,
+        this.id
+      );
+    }
+
+    const pythonBin = fs.existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python3';
+
+    // If a shared Chrome session is running (ai-vision serve), pass its CDP URL
+    // so the Python bridge attaches to the same browser instead of spawning a new one.
+    // This preserves cookies and auth state across HITL handoffs.
+    // BROWSER_CDP_URL is set in process.env by the serve command before any engines are started.
+    const cdpUrl = process.env.BROWSER_CDP_URL ?? '';
+
+    const proc = spawn(pythonBin, [this.config.serverScript], {
+      env: { ...process.env, ...(cdpUrl ? { BROWSER_CDP_URL: cdpUrl } : {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    proc.stdout?.on('data', (d) => process.stdout.write(`[${this.id}] ${d}`));
+    proc.stderr?.on('data', (d) => process.stderr.write(`[${this.id}] ${d}`));
+    proc.on('error', (e) => {
+      throw new AutomationError(`Failed to start bridge: ${e.message}`, this.id, e);
+    });
+    proc.on('exit', (code, signal) => {
+      const unexpected = this._ready;
+      const event: BridgeExitEvent = {
+        engineId: this.id,
+        code: code ?? null,
+        signal: signal ?? null,
+        unexpected,
+      };
+      recordBridgeExitEvent(event);
+      if (unexpected) {
+        // Unexpected exit after initialization
+        console.error(`[${this.id}] bridge exited with code ${code}`);
+        this._ready = false;
+      }
+    });
+
+    this.process = proc;
   }
 
   private async _waitForHealth(): Promise<void> {

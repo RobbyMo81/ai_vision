@@ -1,0 +1,36 @@
+For context HITL determine that the application did not meet the definetion of "Done" after the Dot_Complaint test. Claude refactored the application, Referenced file 'src/workflow/engine.ts'. HITL reviewed the enhancements for the
+  'src/workflow/engine.ts' work and determine the following enhacements are required. 
+  
+  
+  HITL Acknowledgment - This file '/home/spoq/ai-vision/src/ui/server.ts' needs to be enhanced with a 'HITL Acknowledgment' function. This 'HITL Acknowledgment' acts as the final QA and defines the task as "Done" and generates a SIC trigger which is saved in the 'Short Term Memory', The trigger includes HITL comments, the web page that triggered the comment, How the agent determined the task was completed satisfactory, and Why the agent proceeded to the next step. If the task is not done, the HITL can navigate the web portal to the page requiring additional input. 
+
+Post Session Warp-up - Is a new module with the following functions: Reviews 'Agent Scratch Pad', 'tokenizer_ledger.db' and 'Short Term Memory'. The function of this review is to package the data for prepare the information to append the data in 'index.ts' and 'long-term.ts' 
+
+Agent Scratch Pad - Agent hellucination is a real problem, agent thinking can increase task completion time, and toke I/O create lag. 'Agent Scratch Pad' aims to solve this issue by giving the agent a space for raw unedited notes. The 'Agent Scratch Pad' is allows the agent to write down their hypothesis on the task to be completed and how the agent defines that "Done" looks like. The agent can review the 'Agent Scratch Pad' whenever the agent needs to remind themselves task meta data. The 'Agent Scratch Pad' includes a 'tokenizer_ledger.db' which captures the agent request to LLM model mothership. This 'tokenizer_ledger.db' aims to shorten the path between request and answer tokens and speed up task completion. The 'tokenizer_ledger.db', 'Agent Scratch Pad' are all part of the 'Short Term Memory' family of agent tools.    
+
+Short Term Memory Enhancement - Include a 'Pre-Flight' container block, an agent thinking 'Agent Scratch Pad' in the 'Short Term Memory'. This 'Pre-Flight' container block must be secured cryptographically as not to accidentally leak User PII. The 'Pre-Flight' container block is TTL requirement of 'Session Complete' as determined by HITL The enhancement will have the following blocks related to the 'User':
+	> Name:
+	> Address:
+	> DOB: Triggers a the agent to 'Pause' wait for User input
+	> SSN: Triggers a the agent to 'Pause' Wait for User Input
+	> Phone Number: 
+	> Email Address:
+	> Credit Card: Use Chrome saved data 
+	> Passwords / Credentials: Use saved Chrome saved data
+	
+
+
+Memory Indexer - Machine readable file for agent use only. 'Memory Indexer' is a memory map used to help give the agent direction on specific memory data the agent can use to aid task completion.  
+
+Task Meta Data - Is a type of memory related past task. 'Task Meta Data' saves web portal metal data to include the shapes and layers of specific web portals. 'Task Meta Data' stores information about past web portals the agent visited mapping out the number of many steps it took to complete the transit through the web portal. Information includes steps from start to finish, What user data is required to complete the task, and what data does the agent have to create to complete the task. 
+
+Pre-Flight - Occurs immediately after the trigger, the agent plans out the task steps using information from the trigger. Reviews 'Memory Indexer'-->'Task Meta Data' for correlations. Then uses 'Short Term Memory' container as the scratch pad to save the 'Pre-Flight' plans which will be used to complete task. If the agent determines the task is bespoke, then it triggers the 'Investigation'.
+
+Investigation - If during the 'Pre-Flight' planning mode the agent determines the task is bespoke, then using information from the found in the 'Short Term Memory'-->'Pre-Flight' container, the agent will review the plan, the agent conducts an 'Investigation' of the task steps found in the 'Short Term Memory' container known as 'Pre-Flight' to gather information about which web portal that agent will be visiting.Layers and shape, checks 'Task Meta Data' for prior task correlations 
+
+
+
+
+
+
+

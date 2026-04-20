@@ -30,12 +30,68 @@ export class StagehandEngine implements AutomationEngine {
     return this._ready;
   }
 
+  async available(): Promise<boolean> {
+    return true;
+  }
+
   async initialize(): Promise<void> {
     if (this._ready) return;
-    const { Stagehand } = await import('@browserbasehq/stagehand');
+    const { Stagehand, AvailableModelSchema } = await import('@browserbasehq/stagehand');
     type AvailableModel = import('@browserbasehq/stagehand').AvailableModel;
-    const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'openai') as 'openai' | 'anthropic';
-    const model = (process.env.STAGEHAND_LLM_MODEL ?? 'gpt-4o') as AvailableModel;
+    type Provider = 'openai' | 'anthropic';
+
+    const normalizeProvider = (value?: string): Provider | null => {
+      if (!value) return null;
+      const lowered = value.trim().toLowerCase();
+      if (lowered === 'openai' || lowered === 'anthropic') return lowered;
+      return null;
+    };
+
+    const hasKey = (provider: Provider): boolean =>
+      Boolean(provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY);
+
+    const configuredPrimary = normalizeProvider(process.env.STAGEHAND_LLM_PROVIDER);
+    const configuredFallback = normalizeProvider(process.env.STAGEHAND_LLM_FALLBACK_PROVIDER);
+
+    const candidates: Provider[] = [];
+    if (configuredPrimary) candidates.push(configuredPrimary);
+    if (configuredFallback && !candidates.includes(configuredFallback)) candidates.push(configuredFallback);
+    for (const provider of ['openai', 'anthropic'] as Provider[]) {
+      if (!candidates.includes(provider)) candidates.push(provider);
+    }
+
+    const provider = candidates.find(hasKey);
+    if (!provider) {
+      throw new AutomationError(
+        'No LLM credentials configured for Stagehand. Set OPENAI_API_KEY and/or ANTHROPIC_API_KEY.',
+        this.id,
+      );
+    }
+
+    const genericModel = (process.env.STAGEHAND_LLM_MODEL ?? '').trim();
+    const rawModel = (
+      provider === 'anthropic'
+        ? process.env.STAGEHAND_LLM_MODEL_ANTHROPIC
+        : process.env.STAGEHAND_LLM_MODEL_OPENAI
+    )
+      ?? genericModel
+      ?? '';
+
+    const fallbackModel = provider === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o';
+    const selectedModel = rawModel.trim() || fallbackModel;
+
+    // FIX-14: Validate model name against Stagehand's schema at init time
+    // to surface config errors before the browser is launched.
+    const parsed = AvailableModelSchema.safeParse(selectedModel);
+    if (!parsed.success) {
+      throw new AutomationError(
+        `Invalid model '${selectedModel}' for Stagehand provider '${provider}'. ` +
+        `Check STAGEHAND_LLM_MODEL${provider === 'anthropic' ? '_ANTHROPIC' : '_OPENAI'} ` +
+        `or STAGEHAND_LLM_MODEL in .env. Run 'node dist/cli/index.js config' to reconfigure.`,
+        this.id
+      );
+    }
+    const model = parsed.data as AvailableModel;
 
     this.stagehand = new Stagehand({
       env: 'LOCAL',
@@ -118,19 +174,44 @@ export class StagehandEngine implements AutomationEngine {
     };
   }
 
+  /**
+   * AI-powered structured extraction using Stagehand page.extract().
+   * Called by the workflow engine for 'extract' and 'conditional' steps.
+   */
+  async extractText(instruction: string): Promise<string> {
+    this._assertReady();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (this.page as any).extract({ instruction });
+      if (typeof result === 'string') return result;
+      return JSON.stringify(result);
+    } catch (e) {
+      throw new AutomationError(`Extract failed: ${instruction}`, this.id, e);
+    }
+  }
+
   async runTask(prompt: string): Promise<TaskResult> {
     this._assertReady();
     const start = Date.now();
     const screenshots: Screenshot[] = [];
     try {
-      // Stagehand's agent() runs a full agentic loop
-      const agent = this.stagehand.agent();
-      const result = await agent.execute(prompt);
+      // Extract the first URL from the prompt and navigate to it first.
+      // Stagehand's page.act() operates on the current page, so we need
+      // to be somewhere meaningful before issuing the action instruction.
+      const urlMatch = prompt.match(/https?:\/\/[^\s,)>]+/);
+      if (urlMatch) {
+        await this.page.goto(urlMatch[0], { waitUntil: 'domcontentloaded' });
+      }
+
+      // page.act() is the correct Stagehand v1.x API for natural-language
+      // browser actions. stagehand.agent() does not exist in this version.
+      await this.page.act({ action: prompt });
+
       const shot = await this.screenshot();
       screenshots.push(shot);
       return {
         success: true,
-        output: typeof result === 'string' ? result : JSON.stringify(result),
+        output: `Task completed: ${prompt}`,
         screenshots,
         durationMs: Date.now() - start,
       };

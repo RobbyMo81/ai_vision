@@ -11,3 +11,100 @@
 - Switched to 'node:sqlite' (Node 24) to resolve native binding issues with 'better-sqlite3'.
 - All tests passed. Quality gates verified.
 - US-001, US-002, US-003, US-004 marked as complete.
+
+[2026-04-18] Production HITL Hardening
+- Added explicit workflow intent metadata for sensitive fields (`field` / `targets`) to avoid regex-based PII detection.
+- Added encrypted pre-flight storage, scratch pad planning/investigation notes, and redacted prompt injection in short-term memory.
+- Extended HITL with secure PII input flow, QA acknowledgment capture, and additional runtime phases (`pre_flight`, `investigation`, `pii_wait`, `hitl_qa`).
+- Introduced `src/workflow/wrap-up.ts` as the workflow ETL layer for long-term memory, SQLite workflow runs, SIC triggers, and task metadata persistence.
+- Added task correlation scaffolding via `src/memory/indexer.ts` and `src/memory/metadata.ts`.
+- Made browser profile persistence durable in both startup paths.
+- Build passed and test suite expanded to cover crypto round-trip and short-term memory redaction behavior.
+
+[2026-04-18] Layered Telemetry Added
+- Added a typed telemetry subsystem with centralized emission, detail redaction, SQLite persistence, NDJSON archival, and issue detection.
+- Instrumented workflow phases, step execution, engine routing, browser lifecycle, HITL waits, secure input, wrap-up completion, and UI failures.
+- Added telemetry tables to SQLite and surfaced recent alerts through a new UI/API path.
+- Fixed the HITL UI boot gap by fetching current state on load instead of waiting only for future WebSocket events.
+- Build passed and tests expanded to cover telemetry alert detection and redaction behavior.
+
+[2026-04-19] HITL Terminal-State UX Fix
+- Confirmed the X functional test completed successfully; the apparent localhost failure was the workflow CLI exiting immediately after wrap-up, which took the co-hosted HITL UI down with it.
+- Updated the HITL UI client to treat `complete` and `error` as terminal states, stop reconnecting, and stop telemetry polling once the workflow is done.
+- Added a short CLI shutdown grace period (`AI_VISION_UI_SHUTDOWN_GRACE_MS`, default `1500`) so the final terminal-state update reaches the browser before process exit.
+- Build passed and test suite remained green after the lifecycle fix.
+
+[2026-04-19] Final-Step HITL Confirmation Model
+- Added `human_takeover.mode = "confirm_completion"` so workflows can require HITL verification after the agent performs the irreversible final action.
+- Extended the HITL coordinator and UI with a dedicated final-step confirmation path and a negative confirmation path that fails the workflow instead of silently passing.
+- Stopped `/api/acknowledge` from mutating the workflow phase, so optional HITL notes no longer interfere with the real final confirmation state.
+- Migrated the `post_to_x` workflow so the agent now publishes the post itself and HITL confirms the visible published result afterward.
+- Build passed and tests remained green after the contract change.
+
+[2026-04-19] SIC Self-Heal On Final-Step Rejection
+- Final-step rejection now carries a structured reason from the HITL UI instead of collapsing into a generic failure.
+- The workflow engine emits a dedicated `workflow.hitl_confirmation.rejected` error event, records an immediate improvement/self-heal pattern, and stores the rejection reason on live session state.
+- Wrap-up now forces a SIC trigger for rejection-driven failures even if no optional QA notes were submitted, including failure reason, failed step id, and a self-heal instruction.
+- Build passed and tests remained green after the rejection-path SIC/self-heal patch.
+
+[2026-04-19] HITL QA Pause And Authenticated Login Skip
+- Added a dedicated HITL QA pause before wrap-up so operators can write notes in the QA section and then click `Continue Wrap-up`.
+- Extended session state with a `hitlAction` discriminator so the UI can distinguish return-control, final-confirmation, secure-input, and notes-capture pauses cleanly.
+- Refactored recurring authenticated login detection into a generic `authVerification` contract so the pattern reads as a first-class cross-workflow schema instead of an X-specific convenience.
+- Build passed and tests remained green after the recurring-workflow usability patch.
+
+[2026-04-19] Browser-Use Sequential Session Recovery And X Fine-Tuning Handoff
+- Fixed the live X workflow blocker where the second `browser-use` task failed after the first one succeeded by teaching the Python bridge to detect stale/reset `BrowserSession` objects and recreate them before the next task.
+- Confirmed the rerun now crosses `publish_post`, clicks `Post`, and reaches the final HITL confirmation gate; the remaining failure was external platform behavior (`Whoops! You already said that.`), not application handoff logic.
+- Produced a dedicated markdown handoff for a follow-on team covering fine-tuning priorities: duplicate-post precheck, copy-mutation fallback, startup prompt cleanup, richer final-failure capture, and social outcome classification.
+- Build passed and tests remained green after the bridge recovery patch.
+
+[2026-04-19] Telemetry Alert Noise And Bridge Port Recovery
+- Confirmed the perceived idle-time issue was not a workflow inter-step gap; recent X runs started the next step within ~12ms, so the visible delay lives inside the browser-use task itself rather than the workflow engine.
+- Taught the Python bridge launcher to recover from an orphaned bridge that still owns the engine port by probing `/health`, issuing `/close`, and retrying startup before failing the workflow.
+- Tightened telemetry alerting so expected business outcomes like final HITL confirmation rejection and confirm-step workflow failure no longer surface as incident alerts in the HITL UI.
+- Expanded social outcome classification to include `write_and_post_to_*` workflows and base the classification on terminal failure context instead of every prior step output.
+- Telemetry tests passed and `npm run typecheck` stayed clean after the alert-classification and stale-port recovery patch.
+
+[2026-04-19] First-Class SIC Refactor Enhancement Tracker
+- Promoted the Gemini workflow-layer memory finding into a first-class engineering tracker at `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`.
+- Seeded the tracker with explicit refactor items, enhancement backlog entries, SIC candidate rows, and contributor governance sections.
+- Linked the tracker from `README.md` so future contributors can discover and update it during normal development flow.
+- Added `.github/PULL_REQUEST_TEMPLATE.md` to require tracker ID linkage (`RF-*`, `EN-*`, `SIC-*`), evidence, SIC notes, and contributor attribution on every PR.
+
+[2026-04-19] RF-001 Runtime Output-Aware Step Substitution
+- Implemented runtime output-aware step substitution in the workflow engine so downstream placeholders can resolve from same-run generated outputs.
+- Updated step execution to merge resolved params with live `outputs` before resolving and executing each step.
+- Added regression test `src/workflow/engine.test.ts` proving an `extract` step receives `{{x_post_text}}` produced by a prior `generate_content` step in the same run.
+- Validation passed: `npm test -- src/workflow/engine.test.ts` and `npm run typecheck`.
+
+[2026-04-19] FORGE-Backed SIC Storage And Governance Law
+- Remapped long-term SIC improvement persistence to use `forge-memory.db` (`context_store` key `sic.improvements.store`) as the primary store, with local-file fallback only when FORGE DB is unavailable.
+- Extended wrap-up so every SIC trigger is mirrored into FORGE memory (`context_store` key `sic.trigger.<sessionId>`) and optionally logged to FORGE discoveries when available.
+- Added explicit FORGE governance requirements to `FORGE.md`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `README.md`, and `.github/PULL_REQUEST_TEMPLATE.md` so refactors/enhancements/version upgrades must carry tracker linkage and FORGE memory evidence.
+
+[2026-04-19] FORGE-Only SIC Cutover (Single Source of Truth)
+- Enforced strict FORGE SIC mode (`AI_VISION_SIC_FORGE_STRICT`, default true) so missing/invalid `forge-memory.db` becomes a hard failure for SIC persistence instead of silently falling back.
+- Removed mirrored SIC trigger writes from application storage paths: `workflow_runs.sic_trigger_json` is now set to NULL during app writes, and local `sic-triggers/*.json` artifacts are no longer emitted by wrap-up.
+- Added one-time migration utility `scripts/forge/migrate-sic-to-forge.ts` and npm command `npm run sic:migrate:forge` to import legacy `improvements.json` and `workflow_runs.sic_trigger_json` records into FORGE context store keys.
+- Updated tracker and documentation to reflect RF-003 completion and FORGE-only SIC policy.
+
+[2026-04-19] Bridge Disconnect Signal Parity (UI + MCP)
+- Added explicit bridge lifecycle helpers in `src/engines/python-bridge.ts` so unexpected vs expected bridge exits are tracked and emitted through one path.
+- Added HITL-to-MCP status parity by surfacing latest unexpected bridge disconnect details in `session_status` output.
+- Extracted a pure `buildSessionStatusLines` helper in `src/mcp/server.ts` to make session-status formatting deterministic and unit-testable.
+- Added focused regression tests: `src/engines/python-bridge.test.ts` (unexpected/expected exit behavior) and `src/mcp/server.test.ts` (bridge alert line inclusion/omission).
+- Validation passed: `npm test -- src/engines/python-bridge.test.ts src/mcp/server.test.ts` and `npm run typecheck`.
+
+[2026-04-19] Local Secrets Vault Container Baseline
+- Added a local HashiCorp Vault container stack via `docker-compose.vault.yml` (dev mode, port `8200`) so secrets can be managed outside `.env`.
+- Added `scripts/secrets/vault-init.sh` to seed `secret/data/ai-vision` from shell env and `scripts/secrets/vault-export-env.sh` to print `export` statements for runtime loading.
+- Added npm workflows: `vault:up`, `vault:down`, `vault:init`, `vault:export`.
+- Updated `.env.example` with optional Vault settings and `GEMINI_API_KEY` placeholder; documented full Vault-first workflow in `README.md`.
+- Validation passed: `npm run typecheck` and `npm test -- src/engines/python-bridge.test.ts src/mcp/server.test.ts`.
+
+[2026-04-19] GitHub Actions CI Baseline
+- Added `.github/workflows/ci.yml` to run automated validation on pushes and pull requests for `main` and `forge/**`.
+- Standardized CI on the repo's declared `pnpm` toolchain (`pnpm@10.32.1`, Node.js 24) so remote validation matches local development and lockfile resolution.
+- Wired the workflow to run `pnpm run typecheck`, `pnpm test`, and `pnpm run build` after a frozen-lockfile install.
+- Updated `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with EN-004 so the CI baseline is tracked as a first-class completed enhancement.
