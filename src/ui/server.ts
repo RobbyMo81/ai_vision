@@ -23,6 +23,7 @@ import { hitlCoordinator } from '../session/hitl';
 import { workflowEngine } from '../workflow/engine';
 import { HitlEventPayload, SessionState } from '../session/types';
 import { telemetry } from '../telemetry';
+import { bridgeLifecycleEvents, BridgeExitEvent } from '../engines/python-bridge';
 
 // ---------------------------------------------------------------------------
 // Inline HTML (single-file, no build step)
@@ -131,7 +132,10 @@ const HTML = `<!DOCTYPE html>
       <button id="returnBtn" class="return-btn" onclick="returnControl()">
         Return Control to Claude
       </button>
-      <button id="rejectBtn" class="ack-btn" onclick="confirmFinalStep(false)" style="display:none;margin-top:8px">
+      <div id="rejectHint" style="display:none;margin-top:10px;font-size:12px;color:#fda4af;line-height:1.4">
+        Enter a failure reason in the HITL QA comments below before rejecting.
+      </div>
+      <button id="rejectBtn" class="ack-btn" onclick="confirmFinalStep(false)" style="display:none;margin-top:6px">
         Mark Final Step Failed
       </button>
     </div>
@@ -255,6 +259,9 @@ function handleEvent(payload) {
   if (payload.type === 'step_complete') {
     log('Step complete: ' + (payload.state?.currentStep ?? ''), 'info');
   }
+  if (payload.type === 'bridge_disconnected') {
+    log(payload.state?.error ?? 'Automation bridge disconnected.', 'err');
+  }
 }
 
 async function fetchStatus() {
@@ -323,6 +330,11 @@ function updateState(state) {
       returnBtn.textContent = 'Confirm Final Step';
       returnBtn.onclick = () => confirmFinalStep(true);
       rejectBtn.style.display = 'block';
+      document.getElementById('rejectHint').style.display = 'block';
+    } else if (hitlAction === 'verify_authentication') {
+      returnBtn.textContent = 'Verified / Continue';
+      returnBtn.onclick = () => returnControl();
+      rejectBtn.style.display = 'none';
     } else if (hitlAction === 'capture_notes') {
       returnBtn.textContent = 'Continue Wrap-up';
       returnBtn.onclick = () => returnControl();
@@ -336,9 +348,10 @@ function updateState(state) {
     hitlBox.classList.remove('visible');
     returnBtn.disabled = true;
     rejectBtn.style.display = 'none';
+    document.getElementById('rejectHint').style.display = 'none';
   }
 
-  if (isTerminalState) {
+  if (isTerminalState && !isAwaiting) {
     clearInterval(autoRefreshTimer);
     clearInterval(telemetryRefreshTimer);
   }
@@ -414,7 +427,12 @@ async function returnControl() {
 }
 
 async function confirmFinalStep(confirmed) {
-  const reason = document.getElementById('commentsInput').value ?? '';
+  const reason = (document.getElementById('commentsInput').value ?? '').trim();
+  if (!confirmed && !reason) {
+    log('A failure reason is required before rejecting. Enter it in the HITL QA comments.', 'warn');
+    document.getElementById('commentsInput').focus();
+    return;
+  }
   document.getElementById('returnBtn').disabled = true;
   document.getElementById('rejectBtn').disabled = true;
   try {
@@ -565,6 +583,34 @@ export async function startUiServer(port = 3000): Promise<void> {
 
   hitlCoordinator.on('phase_changed', (state: SessionState) => {
     broadcast({ type: 'phase_changed', state });
+  });
+
+  bridgeLifecycleEvents.on('bridge_exit', (event: BridgeExitEvent) => {
+    if (!event.unexpected) return;
+
+    const now = new Date();
+    const current = workflowEngine.currentState;
+    const disconnectedState: SessionState = {
+      id: current?.id ?? 'bridge-disconnected',
+      phase: 'error',
+      startedAt: current?.startedAt ?? now,
+      lastUpdatedAt: now,
+      ...current,
+      error: `Automation bridge '${event.engineId}' disconnected unexpectedly (code=${event.code ?? 'null'}, signal=${event.signal ?? 'null'}).`,
+    };
+
+    telemetry.emit({
+      source: 'ui',
+      name: 'ui.bridge.disconnected',
+      level: 'error',
+      details: {
+        engineId: event.engineId,
+        code: event.code ?? 'null',
+        signal: event.signal ?? 'null',
+      },
+    });
+
+    broadcast({ type: 'bridge_disconnected', state: disconnectedState });
   });
 
   const server = http.createServer((req, res) => {

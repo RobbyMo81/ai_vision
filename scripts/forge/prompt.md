@@ -196,6 +196,11 @@ Also update `AGENTS.md`:
 [list]
 ```
 
+Artifact policy (mandatory):
+- Save all agent-generated explainers/reports under `docs/artifacts/`.
+- Use date-prefixed filenames, e.g. `docs/artifacts/2026-04-19-topic-report.md`.
+- Do not place new explainer/report artifacts in repo root.
+
 ---
 
 ## SECTION 6 — GIT DISCIPLINE

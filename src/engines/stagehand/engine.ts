@@ -38,16 +38,56 @@ export class StagehandEngine implements AutomationEngine {
     if (this._ready) return;
     const { Stagehand, AvailableModelSchema } = await import('@browserbasehq/stagehand');
     type AvailableModel = import('@browserbasehq/stagehand').AvailableModel;
-    const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'anthropic') as 'openai' | 'anthropic';
-    const rawModel = process.env.STAGEHAND_LLM_MODEL ?? 'claude-sonnet-4-6';
+    type Provider = 'openai' | 'anthropic';
+
+    const normalizeProvider = (value?: string): Provider | null => {
+      if (!value) return null;
+      const lowered = value.trim().toLowerCase();
+      if (lowered === 'openai' || lowered === 'anthropic') return lowered;
+      return null;
+    };
+
+    const hasKey = (provider: Provider): boolean =>
+      Boolean(provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY);
+
+    const configuredPrimary = normalizeProvider(process.env.STAGEHAND_LLM_PROVIDER);
+    const configuredFallback = normalizeProvider(process.env.STAGEHAND_LLM_FALLBACK_PROVIDER);
+
+    const candidates: Provider[] = [];
+    if (configuredPrimary) candidates.push(configuredPrimary);
+    if (configuredFallback && !candidates.includes(configuredFallback)) candidates.push(configuredFallback);
+    for (const provider of ['openai', 'anthropic'] as Provider[]) {
+      if (!candidates.includes(provider)) candidates.push(provider);
+    }
+
+    const provider = candidates.find(hasKey);
+    if (!provider) {
+      throw new AutomationError(
+        'No LLM credentials configured for Stagehand. Set OPENAI_API_KEY and/or ANTHROPIC_API_KEY.',
+        this.id,
+      );
+    }
+
+    const genericModel = (process.env.STAGEHAND_LLM_MODEL ?? '').trim();
+    const rawModel = (
+      provider === 'anthropic'
+        ? process.env.STAGEHAND_LLM_MODEL_ANTHROPIC
+        : process.env.STAGEHAND_LLM_MODEL_OPENAI
+    )
+      ?? genericModel
+      ?? '';
+
+    const fallbackModel = provider === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o';
+    const selectedModel = rawModel.trim() || fallbackModel;
 
     // FIX-14: Validate model name against Stagehand's schema at init time
     // to surface config errors before the browser is launched.
-    const parsed = AvailableModelSchema.safeParse(rawModel);
+    const parsed = AvailableModelSchema.safeParse(selectedModel);
     if (!parsed.success) {
       throw new AutomationError(
-        `Invalid model '${rawModel}' for Stagehand. ` +
-        `Check STAGEHAND_LLM_MODEL in .env. Run 'node dist/cli/index.js config' to reconfigure.`,
+        `Invalid model '${selectedModel}' for Stagehand provider '${provider}'. ` +
+        `Check STAGEHAND_LLM_MODEL${provider === 'anthropic' ? '_ANTHROPIC' : '_OPENAI'} ` +
+        `or STAGEHAND_LLM_MODEL in .env. Run 'node dist/cli/index.js config' to reconfigure.`,
         this.id
       );
     }

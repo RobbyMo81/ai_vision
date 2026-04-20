@@ -32,6 +32,8 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 _session = None          # BrowserSession instance
 _session_lock = asyncio.Lock()  # FIX-08: prevent concurrent initialisation race
+_llm_cache = None        # cached LLM client — recreated only when config changes
+_llm_cache_key = None    # cache key: <provider>:<model>
 
 SESSION_DIR = Path(os.getenv("SESSION_DIR", "./sessions"))
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,47 +87,300 @@ class ScreenshotRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _llm():
-    """Return a browser-use native LLM client based on env config."""
-    provider = os.getenv("STAGEHAND_LLM_PROVIDER", "anthropic")
+def _normalize_provider(provider: str | None) -> str:
+    if not provider:
+        return "anthropic"
+    lowered = provider.strip().lower()
+    return lowered if lowered in ("anthropic", "openai") else "anthropic"
+
+
+def _provider_has_credentials(provider: str) -> bool:
+    if provider == "anthropic":
+        return bool(os.getenv("ANTHROPIC_API_KEY"))
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def _resolve_model(provider: str) -> str:
+    generic = os.getenv("STAGEHAND_LLM_MODEL", "").strip()
+    if provider == "anthropic":
+        return (
+            os.getenv("STAGEHAND_LLM_MODEL_ANTHROPIC")
+            or (generic if generic and not generic.startswith("gpt") and generic != "o3" else "claude-sonnet-4-6")
+        )
+    return (
+        os.getenv("STAGEHAND_LLM_MODEL_OPENAI")
+        or (generic if generic and (generic.startswith("gpt") or generic == "o3") else "gpt-4o")
+    )
+
+
+def _provider_candidates(primary_override: str | None = None) -> list[str]:
+    primary = _normalize_provider(primary_override or os.getenv("STAGEHAND_LLM_PROVIDER", "anthropic"))
+    configured_fallback = _normalize_provider(os.getenv("STAGEHAND_LLM_FALLBACK_PROVIDER", ""))
+    default_fallback = "openai" if primary == "anthropic" else "anthropic"
+
+    candidates: list[str] = [primary]
+    for candidate in (configured_fallback, default_fallback):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    return [provider for provider in candidates if _provider_has_credentials(provider)]
+
+
+def _looks_like_provider_failure(message: str | None) -> bool:
+    if not message:
+        return False
+    lowered = message.lower()
+    signals = (
+        "credit balance is too low",
+        "insufficient_quota",
+        "quota",
+        "invalid api key",
+        "authentication_error",
+        "api key",
+        "rate limit",
+        "rate_limit",
+    )
+    return any(signal in lowered for signal in signals)
+
+
+def _llm(provider_override: str | None = None):
+    """Return (llm, provider, model), using cache per provider/model pair."""
+    global _llm_cache, _llm_cache_key
+
+    candidates = _provider_candidates(provider_override)
+    if not candidates:
+        raise RuntimeError(
+            "No LLM credentials found. Set ANTHROPIC_API_KEY and/or OPENAI_API_KEY in .env or environment.",
+        )
+
+    provider = candidates[0]
+    model = _resolve_model(provider)
+    cache_key = f"{provider}:{model}"
+
+    if _llm_cache is not None and _llm_cache_key == cache_key:
+        return _llm_cache, provider, model
+
     if provider == "anthropic":
         from browser_use.llm.anthropic.chat import ChatAnthropic
-        return ChatAnthropic(
-            model=os.getenv("STAGEHAND_LLM_MODEL", "claude-sonnet-4-6"),
+
+        _llm_cache = ChatAnthropic(
+            model=model,
             api_key=os.getenv("ANTHROPIC_API_KEY"),
         )
     else:
         from browser_use.llm.openai.chat import ChatOpenAI
-        return ChatOpenAI(
-            model=os.getenv("STAGEHAND_LLM_MODEL", "gpt-4o"),
+
+        _llm_cache = ChatOpenAI(
+            model=model,
             api_key=os.getenv("OPENAI_API_KEY"),
         )
 
+    _llm_cache_key = cache_key
+    return _llm_cache, provider, model
+
 
 async def _get_session():
-    """Return (or lazily create) the global BrowserSession.
+    """Return a healthy BrowserSession, reconnecting when the shared CDP link goes stale.
+
     FIX-08: Protected by asyncio.Lock to prevent concurrent init race.
 
     If BROWSER_CDP_URL is set (by SessionManager when running under ai-vision serve),
     attach to the existing shared Chrome instance so auth cookies are preserved
-    across HITL handoffs.  Otherwise launch a standalone headless browser."""
+    across HITL handoffs. Otherwise launch a standalone headless browser.
+
+    Sequential browser-use tasks can leave the BrowserSession object alive while its
+    underlying CDP websocket has gone stale. Reconnect or recreate the session here
+    so the next task does not fail on its first action."""
     global _session
     async with _session_lock:
         if _session is None:
-            from browser_use.browser.session import BrowserSession
-            cdp_url = os.getenv("BROWSER_CDP_URL", "")
-            if cdp_url:
-                # Connect to the shared Chrome session managed by SessionManager
-                _session = BrowserSession(cdp_url=cdp_url)
-            else:
-                _session = BrowserSession(headless=True)
-            await _session.start()
+            _session = await _create_session()
+        else:
+            _session = await _recover_session(_session)
+
+        await _ensure_page_focus(_session)
     return _session
 
 
 async def _get_page():
     session = await _get_session()
-    return await session.get_current_page()
+    page = await session.get_current_page()
+    if page is None:
+        raise RuntimeError("No current browser page is available after session recovery")
+    return page
+
+
+_STARTUP_CHROME_ARGS = [
+    "--disable-session-crashed-bubble",   # suppress "Restore pages?" dialog
+    "--hide-crash-restore-bubble",        # Chromium 110+ alias for above
+    "--no-first-run",                     # skip first-run UI
+    "--no-default-browser-check",         # skip default browser check
+    "--disable-infobars",                 # suppress "unsupported flag" info bar
+    "--suppress-message-center-popups",   # suppress notification center popups
+]
+
+
+async def _create_session():
+    from browser_use.browser.session import BrowserSession
+
+    cdp_url = os.getenv("BROWSER_CDP_URL", "")
+    if cdp_url:
+        # keep_alive=True prevents browser-use from firing BrowserStopEvent/reset()
+        # at the end of each agent run, eliminating inter-task session teardown latency.
+        session = BrowserSession(cdp_url=cdp_url, keep_alive=True)
+    else:
+        headless = os.getenv("BROWSER_HEADLESS", "true").lower() not in ("0", "false", "no")
+        session = BrowserSession(headless=headless, args=_STARTUP_CHROME_ARGS, keep_alive=True)
+    await session.start()
+    return session
+
+
+async def _recover_session(session):
+    using_shared_cdp = bool(os.getenv("BROWSER_CDP_URL", ""))
+
+    if _needs_fresh_session(session):
+        # When Chrome is managed externally (shared CDP), skip stop() — it would
+        # tear down a browser we don't own.  Just attach a fresh BrowserSession.
+        if not using_shared_cdp:
+            try:
+                await session.stop()
+            except Exception:
+                pass
+        return await _create_session()
+
+    try:
+        if session.is_cdp_connected:
+            return session
+
+        if session.cdp_url:
+            await session.reconnect()
+            return session
+    except Exception:
+        pass
+
+    if not using_shared_cdp:
+        try:
+            await session.stop()
+        except Exception:
+            pass
+
+    return await _create_session()
+
+
+def _needs_fresh_session(session) -> bool:
+    if getattr(session, "session_manager", None) is None:
+        return True
+
+    handlers = getattr(getattr(session, "event_bus", None), "handlers", {}) or {}
+    required_events = (
+        "BrowserStartEvent",
+        "BrowserStopEvent",
+        "NavigateToUrlEvent",
+        "SwitchTabEvent",
+    )
+    return any(not handlers.get(event_name) for event_name in required_events)
+
+
+async def _ensure_page_focus(session):
+    try:
+        if await session.get_current_page() is not None:
+            return
+    except Exception:
+        pass
+
+    page_targets = (
+        session.session_manager.get_all_page_targets()
+        if getattr(session, "session_manager", None) is not None
+        else []
+    )
+    if page_targets:
+        from browser_use.browser.events import SwitchTabEvent
+
+        target_id = page_targets[-1].target_id
+        event = session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
+        await event
+        await event.event_result(raise_if_any=True, raise_if_none=False)
+        return
+
+    await session.new_page()
+
+
+def _looks_like_cdp_session_failure(message: str | None) -> bool:
+    if not message:
+        return False
+    lowered = message.lower()
+    signals = (
+        "cdp client not initialized",
+        "browser may not be connected yet",
+        "browserstaterequestevent",
+        "no current browser page",
+        "no current target found",
+        "websocket",
+    )
+    return any(signal in lowered for signal in signals)
+
+
+async def _run_agent_once(req: TaskRequest, provider_override: str | None = None):
+    from browser_use.agent.service import Agent
+
+    session = await _get_session()
+    llm, provider, model = _llm(provider_override)
+
+    # FIX-13: save_conversation_path causes the agent to write step
+    # screenshots to disk; we collect them after the run.
+    conversation_path = SESSION_DIR / f"agent_{req.session_id or _now_us()}"
+
+    agent = Agent(
+        task=req.prompt,
+        llm=llm,
+        browser_session=session,
+        save_conversation_path=str(conversation_path),
+    )
+    result = await agent.run()
+
+    screenshots: list[dict] = []
+    for img_path in sorted(_glob.glob(str(conversation_path) + "/**/*.png", recursive=True)):
+        try:
+            with open(img_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            screenshots.append({"path": img_path, "base64": b64, "taken_at": _now_us()})
+        except Exception:
+            pass
+
+    # FIX-03: agent.run() never raises — it returns AgentHistoryList whether steps
+    # succeeded or failed. Inspect the result explicitly.
+    final = result.final_result()
+    action_errors = (
+        [r.error for r in result.action_results() if r.error]
+        if callable(getattr(result, "action_results", None))
+        else []
+    )
+
+    if final is not None:
+        return {
+            "success": True,
+            "output": str(final),
+            "screenshots": screenshots,
+            "provider": provider,
+            "model": model,
+        }
+
+    if action_errors:
+        return {
+            "success": False,
+            "output": action_errors[-1],
+            "screenshots": screenshots,
+            "provider": provider,
+            "model": model,
+        }
+
+    return {
+        "success": False,
+        "output": "Agent completed without producing a result",
+        "screenshots": screenshots,
+        "provider": provider,
+        "model": model,
+    }
 
 
 def _now_us() -> str:
@@ -168,67 +423,42 @@ async def close():
 @app.post("/task")
 async def run_task(req: TaskRequest):
     start = time.time()
-    screenshots: list[dict] = []
     try:
-        from browser_use.agent.service import Agent
-        session = await _get_session()
-        llm = _llm()
+        result = await _run_agent_once(req)
 
-        # FIX-13: save_conversation_path causes the agent to write step
-        # screenshots to disk; we collect them after the run.
-        conversation_path = SESSION_DIR / f"agent_{req.session_id or _now_us()}"
+        # Provider failover: if primary provider fails due quota/auth/rate limits,
+        # retry once with the alternate configured provider.
+        if (not result["success"]) and _looks_like_provider_failure(result.get("output")):
+            for fallback_provider in _provider_candidates():
+                if fallback_provider == result.get("provider"):
+                    continue
+                retry = await _run_agent_once(req, provider_override=fallback_provider)
+                if retry["success"] or not _looks_like_provider_failure(retry.get("output")):
+                    result = retry
+                    break
 
-        agent = Agent(
-            task=req.prompt,
-            llm=llm,
-            browser_session=session,
-            save_conversation_path=str(conversation_path),
-        )
-        result = await agent.run()
-        duration_ms = int((time.time() - start) * 1000)
-
-        # FIX-03: agent.run() never raises — it returns AgentHistoryList
-        # whether steps succeeded or failed.  Inspect the result explicitly.
-        # browser-use 0.12.x: final_result() → str|None, action_results → list
-        final = result.final_result()
-        action_errors = (
-            [r.error for r in result.action_results() if r.error]
-            if callable(getattr(result, "action_results", None))
-            else []
-        )
-
-        if final is not None:
-            success = True
-            output = str(final)
-        elif action_errors:
-            success = False
-            output = action_errors[-1]  # most recent error is most informative
-        else:
-            success = False
-            output = "Agent completed without producing a result"
-
-        # Collect screenshots saved by the agent during execution
-        for img_path in sorted(_glob.glob(str(conversation_path) + "/**/*.png", recursive=True)):
-            try:
-                with open(img_path, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode()
-                screenshots.append({"path": img_path, "base64": b64, "taken_at": _now_us()})
-            except Exception:
-                pass
+        if (not result["success"]) and _looks_like_cdp_session_failure(result.get("output")):
+            global _session
+            async with _session_lock:
+                if _session is not None:
+                    _session = await _recover_session(_session)
+                    await _ensure_page_focus(_session)
+            result = await _run_agent_once(req)
 
         return {
-            "success": success,
-            "output": output,
-            "screenshots": screenshots,
-            "duration_ms": duration_ms,
+            "success": result["success"],
+            "output": result.get("output"),
+            "screenshots": result["screenshots"],
+            "provider": result.get("provider"),
+            "model": result.get("model"),
+            "duration_ms": int((time.time() - start) * 1000),
         }
     except Exception as e:
-        duration_ms = int((time.time() - start) * 1000)
         return {
             "success": False,
             "error": str(e),
-            "screenshots": screenshots,
-            "duration_ms": duration_ms,
+            "screenshots": [],
+            "duration_ms": int((time.time() - start) * 1000),
         }
 
 

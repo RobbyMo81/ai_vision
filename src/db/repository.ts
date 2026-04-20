@@ -26,7 +26,6 @@ export interface WorkflowRunRecord {
   stateJson?: string;
   shortTermJson?: string;
   scratchPadMarkdown?: string;
-  sicTriggerJson?: string;
 }
 
 export class SessionRepository {
@@ -114,7 +113,7 @@ export class SessionRepository {
       INSERT INTO workflow_runs (
         session_id, workflow_id, workflow_name, success, result_json,
         state_json, short_term_json, scratch_pad_markdown, sic_trigger_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(session_id) DO UPDATE SET
         workflow_id = excluded.workflow_id,
         workflow_name = excluded.workflow_name,
@@ -123,7 +122,7 @@ export class SessionRepository {
         state_json = excluded.state_json,
         short_term_json = excluded.short_term_json,
         scratch_pad_markdown = excluded.scratch_pad_markdown,
-        sic_trigger_json = excluded.sic_trigger_json
+        sic_trigger_json = NULL
     `).run(
       record.sessionId,
       record.workflowId,
@@ -133,7 +132,6 @@ export class SessionRepository {
       record.stateJson ?? null,
       record.shortTermJson ?? null,
       record.scratchPadMarkdown ?? null,
-      record.sicTriggerJson ?? null,
     );
   }
 

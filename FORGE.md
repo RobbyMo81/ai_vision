@@ -66,6 +66,25 @@ The DB is initialized and health-checked by `forge.sh` at startup. If the DB is 
 
 DB tables: `forge_sessions`, `agent_iterations`, `agent_messages`, `context_store`, `discoveries`, `story_state`, `audit_log`
 
+## FORGE Governance Law (MANDATORY)
+
+FORGE is the governing system for all engineering changes in this repository.
+
+This includes:
+- Refactors (`RF-*`)
+- Enhancements (`EN-*`)
+- SIC candidates and promotions (`SIC-*`)
+- Dependency or application version upgrades
+
+For every change in the categories above, contributors MUST:
+1. Link the change to a tracker row in `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`.
+2. Record implementation evidence (tests/typecheck/run artifacts).
+3. Write FORGE memory context/messages/discoveries for handoff continuity.
+4. Update `progress.txt` and `AGENTS.md` when behavior changes.
+5. Save all agent-generated explainers/reports under `docs/artifacts/` using date-prefixed filenames.
+
+Changes that bypass these obligations are out of policy.
+
 Query the DB directly for debugging:
 ```bash
 sqlite3 forge-memory.db "SELECT * FROM agent_messages WHERE read_at IS NULL;"

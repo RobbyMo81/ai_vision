@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import type { SocialPublishOutcome } from '../session/types';
 
 // ---------------------------------------------------------------------------
 // Step schemas
@@ -44,6 +45,15 @@ export const FieldValueSourceSchema = z.enum([
   'hitl',
   'derived',
 ]);
+
+export const AuthVerificationSchema = z.object({
+  /** Match when the current URL contains any of these fragments. */
+  urlIncludes: z.array(z.string()).optional(),
+  /** Match when any of these selectors is visibly present. */
+  visibleSelectors: z.array(z.string()).optional(),
+  /** Match when page text contains any of these snippets. */
+  textIncludes: z.array(z.string()).optional(),
+});
 
 export const FieldIntentSchema = z.object({
   /** Stable identifier used for correlation/indexing. */
@@ -124,6 +134,13 @@ export const AgentTaskStepSchema = z.object({
    * parsing the prompt text.
    */
   targets: z.array(FieldIntentSchema).optional(),
+  /**
+   * If the agent output contains any of these strings, the step is treated
+   * as failed regardless of whether the agent reported success.
+   * Used for preflight checks (e.g. DUPLICATE_RISK:) that the agent encodes
+   * in its final result text.
+   */
+  outputFailsOn: z.array(z.string()).optional(),
 });
 
 export const HumanTakeoverStepSchema = z.object({
@@ -132,11 +149,31 @@ export const HumanTakeoverStepSchema = z.object({
   reason: z.string(),
   instructions: z.string().optional(),
   mode: z.enum(['takeover', 'confirm_completion']).optional(),
-  skipIfAuthenticated: z.object({
-    urlIncludes: z.array(z.string()).optional(),
-    visibleSelectors: z.array(z.string()).optional(),
-    textIncludes: z.array(z.string()).optional(),
-  }).optional(),
+  /**
+   * Optional authenticated-session verification contract for recurring
+   * workflows. When present, the engine first checks these signals to decide
+   * whether the portal is already authenticated before asking HITL to verify
+   * or complete login.
+   */
+  authVerification: AuthVerificationSchema.optional(),
+});
+
+export const GenerateContentStepSchema = z.object({
+  type: z.literal('generate_content'),
+  id: z.string(),
+  description: z.string().optional(),
+  /** Natural language topic passed to Gemini */
+  topic: z.string(),
+  /** Optional background details to include in the prompt */
+  context: z.string().optional(),
+  /** Target platform — shapes style, length, and format rules */
+  platform: z.enum(['x', 'reddit', 'linkedin']),
+  /** Writing tone */
+  tone: z.enum(['factual', 'conversational', 'professional', 'direct']).optional(),
+  /** Output key for the generated body text */
+  outputKey: z.string(),
+  /** Output key for the generated title (Reddit only) */
+  outputTitleKey: z.string().optional(),
 });
 
 export const WorkflowStepSchema = z.discriminatedUnion('type', [
@@ -147,6 +184,7 @@ export const WorkflowStepSchema = z.discriminatedUnion('type', [
   ExtractStepSchema,
   AgentTaskStepSchema,
   HumanTakeoverStepSchema,
+  GenerateContentStepSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -184,6 +222,7 @@ export type ScreenshotStep = z.infer<typeof ScreenshotStepSchema>;
 export type ExtractStep = z.infer<typeof ExtractStepSchema>;
 export type AgentTaskStep = z.infer<typeof AgentTaskStepSchema>;
 export type HumanTakeoverStep = z.infer<typeof HumanTakeoverStepSchema>;
+export type GenerateContentStep = z.infer<typeof GenerateContentStepSchema>;
 
 export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
 export type ParamDefinition = z.infer<typeof ParamDefinitionSchema>;
@@ -213,6 +252,8 @@ export interface WorkflowResult {
   screenshots: Array<{ path: string; base64: string; stepId: string }>;
   durationMs: number;
   error?: string;
+  /** Structured outcome for social-publishing workflows (e.g. post_to_x). */
+  socialPublishOutcome?: SocialPublishOutcome;
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +549,7 @@ STOP on the Review/Summary page. DO NOT click Submit. The human operator will re
         type: 'string',
         description: 'Instructions shown while authenticating to X',
         required: false,
-        default: 'Log in to X/Twitter and wait until the compose screen or home timeline is available, then click Return Control.',
+        default: 'Verify whether X/Twitter is already signed in. If the compose screen or home timeline is already available, continue without logging in again. Otherwise, log in and then continue.',
       },
     },
     steps: [
@@ -522,8 +563,41 @@ STOP on the Review/Summary page. DO NOT click Submit. The human operator will re
       {
         type: 'human_takeover',
         id: 'x_login',
-        reason: 'Authenticate to X/Twitter',
+        reason: 'Verify authenticated access to X/Twitter',
         instructions: '{{login_instructions}}',
+        authVerification: {
+          visibleSelectors: [
+            '[data-testid="tweetTextarea_0"]',
+            '[data-testid="SideNav_NewTweet_Button"]',
+          ],
+          textIncludes: [
+            'Everyone can reply',
+            'Your Home Timeline',
+          ],
+        },
+      },
+      {
+        type: 'agent_task',
+        id: 'check_duplicate_post',
+        description: 'Check account timeline for duplicate content before drafting',
+        engine: 'browser-use',
+        memorySection: 'x-preflight',
+        outputFailsOn: ['DUPLICATE_RISK:'],
+        prompt: `You are on X/Twitter. Before drafting anything, check the account's recent timeline for duplicate content.
+
+The post text to check is:
+{{post_text}}
+
+STEPS:
+1. Navigate to the account home timeline (x.com/home) or profile page.
+2. Scan the most recent 30 posts for any text that is identical or substantially similar (>70% overlap) to the post text above.
+3. After checking, navigate back to x.com/compose/post to restore the compose view.
+
+RESPOND with exactly one of these two formats:
+- If a duplicate or near-duplicate is found:
+  DUPLICATE_RISK: [brief excerpt or URL of the matching post]
+- If no duplicate is found:
+  NO_DUPLICATE_FOUND`,
       },
       {
         type: 'agent_task',
@@ -539,10 +613,11 @@ Your only goal is to prepare a post draft with the exact text below and stop bef
 
 Rules:
 1. If a compose dialog or post editor is not open, open it.
-2. Put the exact post text into the main composer textbox.
-3. Verify the visible draft matches exactly.
-4. DO NOT click the Post/Tweet button.
-5. STOP with the draft visible and ready for the final publish step.`,
+2. Click the composer textbox to focus it, then select all existing text (Ctrl+A) and delete it so the field is empty before typing.
+3. Type the exact post text into the now-empty composer textbox.
+4. Verify the visible draft matches exactly — if there is a leading duplicate character or any extra text, clear and retype.
+5. DO NOT click the Post/Tweet button.
+6. STOP with the draft visible and ready for the final publish step.`,
       },
       {
         type: 'agent_task',
@@ -582,6 +657,411 @@ Return a concise description of what visible evidence confirms the post was publ
         id: 'x_post_screenshot',
         description: 'Capture the published post or confirmation state',
         outputKey: 'x_post_screenshot',
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // Reddit Post
+  // ---------------------------------------------------------------------------
+  {
+    id: 'post_to_reddit',
+    name: 'Post To Reddit',
+    description: 'Open Reddit, verify authentication, draft a text post in the target subreddit, publish it autonomously, then require HITL to confirm the published state.',
+    params: {
+      post_title: { type: 'string', description: 'Title of the Reddit post' },
+      post_text: {
+        type: 'string',
+        description: 'Body text of the post (for text posts)',
+        required: false,
+        default: '',
+      },
+      subreddit: {
+        type: 'string',
+        description: 'Subreddit to post in, without the r/ prefix (e.g. "test" or "AskReddit")',
+        required: false,
+        default: 'test',
+      },
+      login_instructions: {
+        type: 'string',
+        description: 'Instructions shown while verifying Reddit authentication',
+        required: false,
+        default: 'Verify whether Reddit is already signed in. If your username is visible in the header, continue without logging in again. Otherwise, log in and then continue.',
+      },
+    },
+    steps: [
+      // ---- Navigate to subreddit submit page --------------------------------
+      {
+        type: 'navigate',
+        id: 'open_reddit',
+        description: 'Navigate to the subreddit submit page',
+        url: 'https://www.reddit.com/r/{{subreddit}}/submit',
+        waitUntil: 'domcontentloaded',
+      },
+
+      // ---- Verify / complete Reddit authentication --------------------------
+      {
+        type: 'human_takeover',
+        id: 'reddit_login',
+        reason: 'Verify authenticated access to Reddit',
+        instructions: '{{login_instructions}}',
+        authVerification: {
+          urlIncludes: ['reddit.com'],
+          visibleSelectors: [
+            '[data-testid="user-account-info"]',
+            'button[aria-label="Create post"]',
+            '#USER_DROPDOWN_ID',
+            '[data-click-id="userProfileLink"]',
+          ],
+          textIncludes: [
+            'Create Post',
+            'My Profile',
+            'Log Out',
+          ],
+        },
+      },
+
+      // ---- Duplicate-post preflight check -----------------------------------
+      {
+        type: 'agent_task',
+        id: 'check_duplicate_reddit_post',
+        description: 'Check recent subreddit and user history for a duplicate title before composing',
+        engine: 'browser-use',
+        memorySection: 'reddit-preflight',
+        outputFailsOn: ['DUPLICATE_RISK:'],
+        prompt: `You are on Reddit. Before composing the post, check for duplicate or near-identical titles.
+
+The post title to check is:
+{{post_title}}
+
+The target subreddit is: r/{{subreddit}}
+
+STEPS:
+1. Navigate to reddit.com/r/{{subreddit}}/new to see the most recent posts in the subreddit.
+2. Scan the visible post titles for any that are identical or substantially similar (>70% text overlap) to the title above.
+3. If no match found there, also check the user profile's recent posts (click on the user avatar → Posts).
+4. After checking, navigate back to reddit.com/r/{{subreddit}}/submit.
+
+RESPOND with exactly one of:
+- DUPLICATE_RISK: [excerpt or link of the matching post] — if a near-duplicate is found
+- NO_DUPLICATE_FOUND — if no match is found`,
+      },
+
+      // ---- Draft the post (title + body, do not submit) ---------------------
+      {
+        type: 'agent_task',
+        id: 'draft_reddit_post',
+        description: 'Fill in the post title and body text in markdown mode, do not submit yet',
+        engine: 'browser-use',
+        memorySection: 'reddit-draft',
+        prompt: `You are on the Reddit post composer for r/{{subreddit}}.
+
+Your only goal is to fill in the title and body text below in MARKDOWN mode, then STOP — do NOT click Post or Submit.
+
+POST TITLE (paste exactly):
+{{post_title}}
+
+POST BODY (paste exactly, may be empty):
+{{post_text}}
+
+Rules:
+1. Make sure the "Text" post type tab is selected (not Link or Media).
+2. SWITCH TO MARKDOWN MODE: Look for a "Switch to Markdown" link or button near the bottom-right corner of the body text editor. Click it. This prevents unwanted paragraph spacing from double newlines. If you are already in markdown mode, skip this step.
+3. Click the title field and paste the exact title text.
+4. If a body/text area is present and post_body is non-empty, click it and paste the body text.
+5. Verify the visible title and body match exactly.
+6. DO NOT click the Post button.
+7. STOP with the draft visible and ready.`,
+      },
+
+      // ---- HITL reviews draft before submission ----------------------------
+      {
+        type: 'human_takeover',
+        id: 'review_reddit_draft',
+        reason: 'Review the Reddit draft before submission',
+        instructions: 'Check the post title and body in the browser. If the content looks correct, click "Return Control to Claude" to allow the agent to submit. If you need changes, edit the draft directly in the browser first, then return control.',
+      },
+
+      // ---- Agent submits the post ------------------------------------------
+      {
+        type: 'agent_task',
+        id: 'submit_reddit_post',
+        description: 'Click the Post button and wait for visible confirmation that the post was published',
+        engine: 'browser-use',
+        memorySection: 'reddit-submit',
+        prompt: `You are on the Reddit post composer with the draft already reviewed and approved for r/{{subreddit}}.
+
+Your goal is to submit the post yourself and leave clear visible evidence of the published state.
+
+Rules:
+1. Before clicking Post: if "Add flair and tags" is marked required (asterisk *), click it and select the first available flair option.
+2. Click the Post button exactly once.
+3. Wait for the page to transition to the published post page (URL changes to reddit.com/r/.../comments/...) or for a success indicator.
+4. Leave the published post page visible on screen.
+5. If the submit fails (e.g. subreddit rules violation, karma requirement, rate limit, flair required), report the exact error message.
+6. Do not navigate away from the published post page.
+
+Return a concise description of what visible evidence confirms the post was published, including the post URL if visible.`,
+      },
+
+      // ---- HITL confirms the published post is visible ----------------------
+      {
+        type: 'human_takeover',
+        id: 'confirm_reddit_post_visible',
+        mode: 'confirm_completion',
+        reason: 'Confirm that the Reddit post is visibly published',
+        instructions: 'Review the visible Reddit page. Confirm only if the post URL has changed to a /comments/ page and the submitted title and content are clearly visible.',
+      },
+
+      // ---- Capture results --------------------------------------------------
+      {
+        type: 'extract',
+        id: 'capture_reddit_post_result',
+        description: 'Capture the published post URL and any visible confirmation',
+        instruction: 'Extract the full Reddit post URL (reddit.com/r/.../comments/...), post title, subreddit, and any visible upvote count or timestamp',
+        outputKey: 'reddit_post_result',
+      },
+      {
+        type: 'screenshot',
+        id: 'reddit_post_screenshot',
+        description: 'Capture the published Reddit post',
+        outputKey: 'reddit_post_screenshot',
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // Write + Post to X  (Gemini drafts, Claude browser-use publishes)
+  // ---------------------------------------------------------------------------
+  {
+    id: 'write_and_post_to_x',
+    name: 'Write and Post To X',
+    description: 'Use Gemini to draft a platform-appropriate X/Twitter post, then publish it autonomously with HITL confirmation.',
+    params: {
+      topic: { type: 'string', description: 'What the post should be about' },
+      context: { type: 'string', description: 'Background facts or details for the writer', required: false, default: '' },
+      tone: { type: 'string', description: 'Writing tone: factual | conversational | professional | direct', required: false, default: 'conversational' },
+      x_url: { type: 'string', description: 'Starting URL', required: false, default: 'https://x.com/compose/post' },
+    },
+    steps: [
+      {
+        type: 'generate_content',
+        id: 'write_x_post',
+        description: 'Gemini drafts the X post text',
+        platform: 'x',
+        topic: '{{topic}}',
+        context: '{{context}}',
+        tone: 'conversational',
+        outputKey: 'x_post_text',
+      },
+      {
+        type: 'navigate',
+        id: 'open_x',
+        url: '{{x_url}}',
+        waitUntil: 'domcontentloaded',
+      },
+      {
+        type: 'human_takeover',
+        id: 'x_login',
+        reason: 'Verify authenticated access to X/Twitter',
+        instructions: 'Verify whether X/Twitter is already signed in. If the compose screen or home timeline is already available, continue without logging in again. Otherwise, log in and then continue.',
+        authVerification: {
+          visibleSelectors: ['[data-testid="tweetTextarea_0"]', '[data-testid="SideNav_NewTweet_Button"]'],
+          textIncludes: ['Everyone can reply', 'Your Home Timeline'],
+        },
+      },
+      {
+        type: 'agent_task',
+        id: 'check_duplicate_post',
+        engine: 'browser-use',
+        memorySection: 'x-preflight',
+        outputFailsOn: ['DUPLICATE_RISK:'],
+        prompt: `You are on X/Twitter. Check the account timeline for duplicate content before drafting.
+
+The post text to check is:
+{{x_post_text}}
+
+STEPS:
+1. Navigate to x.com/home or the profile page.
+2. Scan the most recent 30 posts for identical or substantially similar (>70% overlap) text.
+3. Navigate back to x.com/compose/post.
+
+Respond with exactly:
+- DUPLICATE_RISK: [excerpt] — if a near-duplicate is found
+- NO_DUPLICATE_FOUND — otherwise`,
+      },
+      {
+        type: 'agent_task',
+        id: 'draft_post',
+        engine: 'browser-use',
+        memorySection: 'x-draft',
+        prompt: `You are on X/Twitter. Draft the following post exactly:
+
+{{x_post_text}}
+
+Rules:
+1. If the composer is not open, open it.
+2. Click the composer textbox, select all (Ctrl+A), delete any existing text.
+3. Type the exact post text.
+4. Verify the draft matches exactly. If there is a leading duplicate character, clear and retype.
+5. DO NOT click Post.
+6. STOP with the draft ready.`,
+      },
+      {
+        type: 'agent_task',
+        id: 'publish_post',
+        engine: 'browser-use',
+        memorySection: 'x-publish',
+        prompt: `You are on X/Twitter with the draft visible. Publish it and confirm visible success.
+
+Rules:
+1. Click the Post/Tweet button exactly once.
+2. Wait for the compose box to clear and a success toast or published post to appear.
+3. Leave the evidence visible on screen.
+4. If the post does not publish, report the exact error.`,
+      },
+      {
+        type: 'human_takeover',
+        id: 'confirm_post_visible',
+        mode: 'confirm_completion',
+        reason: 'Confirm the X post is visibly published',
+        instructions: 'Review the visible X page. Confirm only if the post is clearly published.',
+      },
+      {
+        type: 'extract',
+        id: 'capture_post_result',
+        instruction: 'Extract the posted tweet URL, any confirmation text, timestamp, and account handle',
+        outputKey: 'x_post_result',
+      },
+      {
+        type: 'screenshot',
+        id: 'x_post_screenshot',
+        outputKey: 'x_post_screenshot',
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------
+  // Write + Post to Reddit  (Gemini drafts, Claude browser-use publishes)
+  // ---------------------------------------------------------------------------
+  {
+    id: 'write_and_post_to_reddit',
+    name: 'Write and Post To Reddit',
+    description: 'Use Gemini to draft a Reddit post title and body, then publish it with HITL draft review and confirmation.',
+    params: {
+      topic: { type: 'string', description: 'What the post should be about' },
+      context: { type: 'string', description: 'Background facts or details for the writer', required: false, default: '' },
+      tone: { type: 'string', description: 'Writing tone: factual | conversational | professional | direct', required: false, default: 'conversational' },
+      subreddit: { type: 'string', description: 'Target subreddit without r/ prefix', required: false, default: 'test' },
+    },
+    steps: [
+      {
+        type: 'generate_content',
+        id: 'write_reddit_post',
+        description: 'Gemini drafts the Reddit title and body',
+        platform: 'reddit',
+        topic: '{{topic}}',
+        context: '{{context}}',
+        tone: 'conversational',
+        outputKey: 'reddit_post_text',
+        outputTitleKey: 'reddit_post_title',
+      },
+      {
+        type: 'navigate',
+        id: 'open_reddit',
+        url: 'https://www.reddit.com/r/{{subreddit}}/submit',
+        waitUntil: 'domcontentloaded',
+      },
+      {
+        type: 'human_takeover',
+        id: 'reddit_login',
+        reason: 'Verify authenticated access to Reddit',
+        instructions: 'Verify whether Reddit is already signed in. If your username is visible in the header, continue. Otherwise, log in and then continue.',
+        authVerification: {
+          urlIncludes: ['reddit.com'],
+          visibleSelectors: ['[data-testid="user-account-info"]', '#USER_DROPDOWN_ID', '[data-click-id="userProfileLink"]'],
+          textIncludes: ['Create Post', 'My Profile', 'Log Out'],
+        },
+      },
+      {
+        type: 'agent_task',
+        id: 'check_duplicate_reddit_post',
+        engine: 'browser-use',
+        memorySection: 'reddit-preflight',
+        outputFailsOn: ['DUPLICATE_RISK:'],
+        prompt: `You are on Reddit. Check for duplicate titles before composing.
+
+Post title to check: {{reddit_post_title}}
+Target subreddit: r/{{subreddit}}
+
+STEPS:
+1. Navigate to reddit.com/r/{{subreddit}}/new and scan visible titles for >70% overlap.
+2. Check user profile recent posts if no match found there.
+3. Navigate back to reddit.com/r/{{subreddit}}/submit.
+
+Respond with:
+- DUPLICATE_RISK: [excerpt] — if near-duplicate found
+- NO_DUPLICATE_FOUND — otherwise`,
+      },
+      {
+        type: 'agent_task',
+        id: 'draft_reddit_post',
+        engine: 'browser-use',
+        memorySection: 'reddit-draft',
+        prompt: `You are on the Reddit post composer for r/{{subreddit}}.
+
+Fill in the title and body below, then STOP — do NOT submit.
+
+POST TITLE: {{reddit_post_title}}
+POST BODY: {{reddit_post_text}}
+
+Rules:
+1. Select the "Text" post type tab.
+2. Switch to Markdown mode (click "Switch to Markdown" near the editor bottom-right).
+3. Click the title field and paste the exact title.
+4. Click the body/text area and paste the exact body.
+5. Verify title and body match exactly.
+6. DO NOT click Post.`,
+      },
+      {
+        type: 'human_takeover',
+        id: 'review_reddit_draft',
+        reason: 'Review the Reddit draft before submission',
+        instructions: 'Check the post title and body in the browser. Edit directly if needed, then click Return Control to allow submission.',
+      },
+      {
+        type: 'agent_task',
+        id: 'submit_reddit_post',
+        engine: 'browser-use',
+        memorySection: 'reddit-submit',
+        prompt: `You are on the Reddit composer for r/{{subreddit}} with an approved draft.
+
+Submit the post and leave visible confirmation.
+
+Rules:
+1. If "Add flair and tags" is required (asterisk *), select the first available flair.
+2. Click the Post button exactly once.
+3. Wait for the URL to change to reddit.com/r/.../comments/... or a success indicator.
+4. Leave the published post page visible.
+5. Report any error (rules violation, karma requirement, rate limit) exactly.`,
+      },
+      {
+        type: 'human_takeover',
+        id: 'confirm_reddit_post_visible',
+        mode: 'confirm_completion',
+        reason: 'Confirm that the Reddit post is visibly published',
+        instructions: 'Confirm only if the URL is a /comments/ page and the submitted title and content are clearly visible.',
+      },
+      {
+        type: 'extract',
+        id: 'capture_reddit_post_result',
+        instruction: 'Extract the full Reddit post URL, post title, subreddit, and any visible upvote count or timestamp',
+        outputKey: 'reddit_post_result',
+      },
+      {
+        type: 'screenshot',
+        id: 'reddit_post_screenshot',
+        outputKey: 'reddit_post_screenshot',
       },
     ],
   },

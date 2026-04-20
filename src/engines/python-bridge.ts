@@ -5,6 +5,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as path from 'path';
@@ -54,6 +55,33 @@ interface BridgeConfig {
   port: number;
   serverScript: string;
   startupTimeoutMs?: number;
+}
+
+export interface BridgeExitEvent {
+  engineId: EngineId;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  unexpected: boolean;
+}
+
+/**
+ * Process-level lifecycle events for Python bridges.
+ * Consumers (UI/MCP) can subscribe to propagate bridge failures immediately.
+ */
+export const bridgeLifecycleEvents = new EventEmitter();
+let latestBridgeExitEvent: BridgeExitEvent | null = null;
+
+export function getLatestBridgeExitEvent(): BridgeExitEvent | null {
+  return latestBridgeExitEvent;
+}
+
+export function recordBridgeExitEvent(event: BridgeExitEvent): void {
+  latestBridgeExitEvent = event;
+  bridgeLifecycleEvents.emit('bridge_exit', event);
+}
+
+export function resetLatestBridgeExitEventForTest(): void {
+  latestBridgeExitEvent = null;
 }
 
 export abstract class PythonBridgeEngine implements AutomationEngine {
@@ -193,10 +221,48 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     });
   }
 
+  /**
+   * Recover from an orphaned bridge that still owns the configured port.
+   * If the process responds to our health endpoint, ask it to shut down
+   * cleanly before spawning a replacement.
+   */
+  private async _recoverOccupiedPort(): Promise<boolean> {
+    const probe = axios.create({
+      baseURL: `http://127.0.0.1:${this.config.port}`,
+      timeout: 1_000,
+      validateStatus: () => true,
+    });
+
+    try {
+      const health = await probe.get('/health');
+      if (health.status !== 200) return false;
+    } catch {
+      return false;
+    }
+
+    try {
+      await probe.post('/close');
+    } catch {
+      return false;
+    }
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (await this._checkPortFree()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return false;
+  }
+
   private async _startSubprocess(): Promise<void> {
     // FIX-12: Fail fast with a clear message instead of silently timing out
     const portFree = await this._checkPortFree();
     if (!portFree) {
+      const recovered = await this._recoverOccupiedPort();
+      if (recovered) {
+        return this._startSubprocess();
+      }
       throw new AutomationError(
         `Port ${this.config.port} is already in use. ` +
         `A previous '${this.id}' bridge may still be running, or another process holds this port.`,
@@ -229,8 +295,16 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     proc.on('error', (e) => {
       throw new AutomationError(`Failed to start bridge: ${e.message}`, this.id, e);
     });
-    proc.on('exit', (code) => {
-      if (this._ready) {
+    proc.on('exit', (code, signal) => {
+      const unexpected = this._ready;
+      const event: BridgeExitEvent = {
+        engineId: this.id,
+        code: code ?? null,
+        signal: signal ?? null,
+        unexpected,
+      };
+      recordBridgeExitEvent(event);
+      if (unexpected) {
         // Unexpected exit after initialization
         console.error(`[${this.id}] bridge exited with code ${code}`);
         this._ready = false;

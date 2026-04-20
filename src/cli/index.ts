@@ -28,6 +28,51 @@ const WORKFLOW_UI_SHUTDOWN_GRACE_MS = parseInt(
   process.env.AI_VISION_UI_SHUTDOWN_GRACE_MS ?? '1500',
   10,
 );
+const WORKFLOW_LOCK_FILE = path.join(PROJECT_ROOT, '.workflow-run.lock');
+
+function acquireWorkflowLock(): (() => void) {
+  const pid = process.pid;
+
+  if (fs.existsSync(WORKFLOW_LOCK_FILE)) {
+    const raw = fs.readFileSync(WORKFLOW_LOCK_FILE, 'utf8').trim();
+    const existingPid = parseInt(raw, 10);
+    if (!Number.isNaN(existingPid) && existingPid > 0) {
+      let processAlive = false;
+      try {
+        process.kill(existingPid, 0);
+        processAlive = true;
+      } catch {
+        processAlive = false;
+      }
+      if (processAlive) {
+        throw new Error(
+          `Another workflow run is already active (pid ${existingPid}). ` +
+          `Wait for it to finish or stop it before starting a new run.`,
+        );
+      }
+    }
+  }
+
+  fs.writeFileSync(WORKFLOW_LOCK_FILE, `${pid}\n`, 'utf8');
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    try {
+      if (fs.existsSync(WORKFLOW_LOCK_FILE)) {
+        const raw = fs.readFileSync(WORKFLOW_LOCK_FILE, 'utf8').trim();
+        if (parseInt(raw, 10) === pid) fs.unlinkSync(WORKFLOW_LOCK_FILE);
+      }
+    } catch {
+      // best effort lock cleanup
+    }
+  };
+
+  process.on('exit', release);
+
+  return release;
+}
 // Lazy — only open the DB for commands that actually need it (run, history).
 // We also use a dynamic import so the node:sqlite module — and its
 // ExperimentalWarning — is never loaded for commands that don't touch the DB.
@@ -175,6 +220,34 @@ program
   .option('--ui-port <port>', 'Port for the HITL web UI', '3000')
   .option('--list', 'List available workflows and exit')
   .action(async (workflowId: string | undefined, opts: { param: string[]; headed: boolean; uiPort: string; list: boolean }) => {
+    let releaseWorkflowLock: (() => void) | null = null;
+    let cleanedUp = false;
+    const cleanup = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      try {
+        await registry.closeAll();
+      } catch {
+        // best-effort engine cleanup
+      }
+      try {
+        const { sessionManager } = await import('../session/manager');
+        await sessionManager.close();
+      } catch {
+        // best-effort browser cleanup
+      }
+    };
+
+    const onSigInt = () => {
+      void cleanup().finally(() => process.exit(130));
+    };
+    const onSigTerm = () => {
+      void cleanup().finally(() => process.exit(143));
+    };
+
+    process.once('SIGINT', onSigInt);
+    process.once('SIGTERM', onSigTerm);
+
     const { BUILTIN_WORKFLOWS } = await import('../workflow/types');
 
     if (opts.list || !workflowId) {
@@ -192,6 +265,13 @@ program
       process.exit(1);
     }
 
+    try {
+      releaseWorkflowLock = acquireWorkflowLock();
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+
     // Parse key=value params
     const params: Record<string, string> = {};
     for (const p of opts.param) {
@@ -205,47 +285,53 @@ program
     process.env.AI_VISION_UI_PORT = String(uiPort);
     if (opts.headed) process.env.AI_VISION_HEADED = 'true';
 
-    const { startUiServer } = await import('../ui/server');
-    await startUiServer(uiPort);
+    try {
+      const { startUiServer } = await import('../ui/server');
+      await startUiServer(uiPort);
 
-    const { workflowEngine } = await import('../workflow/engine');
-    const sessionId = crypto.randomUUID();
-    console.log(`\nWorkflow : ${definition.name}`);
-    console.log(`Session  : ${sessionId}`);
-    if (opts.headed) {
-      console.log(`Browser  : headed (browser window will open)`);
-    }
-    console.log(`UI       : http://localhost:${uiPort}`);
-    console.log('');
-
-    const result = await workflowEngine.run(definition, params, sessionId);
-    (await getRepo()).save(sessionId, 'stagehand' /* closest engine-id proxy */, JSON.stringify({ workflowId, params }), {
-      success: result.success,
-      output: JSON.stringify(result.outputs),
-      screenshots: result.screenshots.map((s) => ({ path: s.path, takenAt: new Date() })),
-      error: result.error,
-      durationMs: result.durationMs,
-    });
-
-    if (result.success) {
-      console.log('Status   : complete');
-      if (Object.keys(result.outputs).length > 0) {
-        console.log('Outputs  :');
-        for (const [k, v] of Object.entries(result.outputs)) {
-          console.log(`  ${k}: ${v}`);
-        }
+      const { workflowEngine } = await import('../workflow/engine');
+      const sessionId = crypto.randomUUID();
+      console.log(`\nWorkflow : ${definition.name}`);
+      console.log(`Session  : ${sessionId}`);
+      if (opts.headed) {
+        console.log(`Browser  : headed (browser window will open)`);
       }
-    } else {
-      console.error('Status   : failed');
-      console.error(`Error    : ${result.error}`);
-    }
+      console.log(`UI       : http://localhost:${uiPort}`);
+      console.log('');
 
-    console.log(`Duration : ${result.durationMs}ms`);
-    if (WORKFLOW_UI_SHUTDOWN_GRACE_MS > 0) {
-      await new Promise((resolve) => setTimeout(resolve, WORKFLOW_UI_SHUTDOWN_GRACE_MS));
+      const result = await workflowEngine.run(definition, params, sessionId);
+      (await getRepo()).save(sessionId, 'stagehand' /* closest engine-id proxy */, JSON.stringify({ workflowId, params }), {
+        success: result.success,
+        output: JSON.stringify(result.outputs),
+        screenshots: result.screenshots.map((s) => ({ path: s.path, takenAt: new Date() })),
+        error: result.error,
+        durationMs: result.durationMs,
+      });
+
+      if (result.success) {
+        console.log('Status   : complete');
+        if (Object.keys(result.outputs).length > 0) {
+          console.log('Outputs  :');
+          for (const [k, v] of Object.entries(result.outputs)) {
+            console.log(`  ${k}: ${v}`);
+          }
+        }
+      } else {
+        console.error('Status   : failed');
+        console.error(`Error    : ${result.error}`);
+      }
+
+      console.log(`Duration : ${result.durationMs}ms`);
+      if (WORKFLOW_UI_SHUTDOWN_GRACE_MS > 0) {
+        await new Promise((resolve) => setTimeout(resolve, WORKFLOW_UI_SHUTDOWN_GRACE_MS));
+      }
+      process.exit(result.success ? 0 : 1);
+    } finally {
+      process.removeListener('SIGINT', onSigInt);
+      process.removeListener('SIGTERM', onSigTerm);
+      await cleanup();
+      releaseWorkflowLock?.();
     }
-    await registry.closeAll();
-    process.exit(result.success ? 0 : 1);
   });
 
 program.parseAsync(process.argv).catch((e) => {

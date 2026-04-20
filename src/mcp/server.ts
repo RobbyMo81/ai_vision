@@ -35,6 +35,37 @@ import { hitlCoordinator } from '../session/hitl';
 import { workflowEngine } from '../workflow/engine';
 import { BUILTIN_WORKFLOWS, WorkflowDefinitionSchema } from '../workflow/types';
 import { registry } from '../engines/registry';
+import { BridgeExitEvent, getLatestBridgeExitEvent } from '../engines/python-bridge';
+
+interface SessionStatusContext {
+  phase: string;
+  currentUrl: string;
+  browserStarted: boolean;
+  uiPort: string;
+  currentStep?: string;
+  stepIndex?: number;
+  totalSteps?: number;
+  hitlReason?: string;
+  latestBridgeExit?: BridgeExitEvent | null;
+}
+
+export function buildSessionStatusLines(ctx: SessionStatusContext): string[] {
+  const lines = [
+    `Phase: ${ctx.phase}`,
+    `URL: ${ctx.currentUrl}`,
+    `Browser: ${ctx.browserStarted ? 'running' : 'not started'}`,
+    `HITL UI: http://localhost:${ctx.uiPort}`,
+  ];
+  if (ctx.latestBridgeExit?.unexpected) {
+    lines.push(
+      `Bridge alert: ${ctx.latestBridgeExit.engineId} disconnected unexpectedly ` +
+      `(code=${ctx.latestBridgeExit.code ?? 'null'}, signal=${ctx.latestBridgeExit.signal ?? 'null'})`
+    );
+  }
+  if (ctx.currentStep) lines.push(`Step: ${ctx.currentStep} (${ctx.stepIndex ?? '?'}/${ctx.totalSteps ?? '?'})`);
+  if (ctx.hitlReason) lines.push(`Awaiting human: ${ctx.hitlReason}`);
+  return lines;
+}
 
 export async function createMcpServer(): Promise<void> {
   const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
@@ -270,14 +301,18 @@ export async function createMcpServer(): Promise<void> {
     async () => {
       const state = workflowEngine.currentState;
       const currentUrl = await sessionManager.currentUrl().catch(() => 'not started');
-      const lines = [
-        `Phase: ${state?.phase ?? 'idle'}`,
-        `URL: ${currentUrl}`,
-        `Browser: ${sessionManager.isStarted ? 'running' : 'not started'}`,
-        `HITL UI: http://localhost:${process.env.AI_VISION_UI_PORT ?? '3000'}`,
-      ];
-      if (state?.currentStep) lines.push(`Step: ${state.currentStep} (${state.stepIndex ?? '?'}/${state.totalSteps ?? '?'})`);
-      if (state?.hitlReason) lines.push(`Awaiting human: ${state.hitlReason}`);
+      const latestBridgeExit = getLatestBridgeExitEvent();
+      const lines = buildSessionStatusLines({
+        phase: state?.phase ?? 'idle',
+        currentUrl,
+        browserStarted: sessionManager.isStarted,
+        uiPort: process.env.AI_VISION_UI_PORT ?? '3000',
+        currentStep: state?.currentStep,
+        stepIndex: state?.stepIndex,
+        totalSteps: state?.totalSteps,
+        hitlReason: state?.hitlReason,
+        latestBridgeExit,
+      });
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );

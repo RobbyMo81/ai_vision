@@ -53,9 +53,9 @@ Each engine shares a common interface — swap between them with `--engine` with
 ```bash
 git clone <repo>
 cd ai-vision
-npm install
-npm run build
-npm run config:build
+pnpm install
+pnpm run build
+pnpm run config:build
 ```
 
 ### 3. Set up Python environment
@@ -175,6 +175,14 @@ STAGEHAND_LLM_PROVIDER=anthropic
 # Model (must match provider)
 STAGEHAND_LLM_MODEL=claude-sonnet-4-6
 
+# Optional provider-specific model overrides (recommended with fallback)
+# STAGEHAND_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+# STAGEHAND_LLM_MODEL_OPENAI=gpt-4o
+
+# Optional fallback provider for browser-use agent tasks
+# If primary provider fails (quota/auth/rate limit), bridge retries once on fallback
+# STAGEHAND_LLM_FALLBACK_PROVIDER=openai
+
 # API Keys (only the active provider's key is required)
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
@@ -186,6 +194,10 @@ SKYVERN_PORT=8002
 # Storage
 SESSION_DIR=./sessions
 DB_PATH=./ai-vision.db
+
+# SIC policy (FORGE-only by default)
+AI_VISION_SIC_FORGE_STRICT=true
+# FORGE_MEMORY_DB_PATH=./forge-memory.db
 ```
 
 ---
@@ -194,20 +206,85 @@ DB_PATH=./ai-vision.db
 
 ```bash
 # Type-check without building
-npm run typecheck
+pnpm run typecheck
 
 # Run tests
-npm test
+pnpm test
 
 # Build TypeScript + copy Python bridge files
-npm run build
+pnpm run build
 
 # Rebuild the Rust config GUI
-npm run config:build
+pnpm run config:build
+
+# One-time SIC migration into FORGE memory
+pnpm run sic:migrate:forge
 
 # Run CLI from source (no build step)
-npm run cli -- run "your prompt here"
+pnpm run cli -- run "your prompt here"
 ```
+
+---
+
+## Secrets Vault Container (Local)
+
+Use a local HashiCorp Vault container so runtime secrets are not stored in `.env`.
+
+### 1. Start Vault
+
+```bash
+pnpm run vault:up
+```
+
+Defaults:
+- `VAULT_ADDR=http://127.0.0.1:8200`
+- `VAULT_TOKEN=root`
+- KV path: `secret/data/ai-vision`
+
+### 2. Seed secrets from your shell environment
+
+```bash
+export ANTHROPIC_API_KEY=...
+export OPENAI_API_KEY=...
+export GEMINI_API_KEY=...
+export STAGEHAND_LLM_PROVIDER=openai
+export STAGEHAND_LLM_MODEL=gpt-4o
+export STAGEHAND_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+export STAGEHAND_LLM_MODEL_OPENAI=gpt-4o
+export STAGEHAND_LLM_FALLBACK_PROVIDER=anthropic
+pnpm run vault:init
+```
+
+### 3. Load secrets into the current shell before running ai-vision
+
+```bash
+eval "$(pnpm run -s vault:export)"
+```
+
+Then run commands normally (for example `pnpm run serve` or `pnpm run cli -- run "..."`).
+
+### 4. Stop Vault
+
+```bash
+pnpm run vault:down
+```
+
+Notes:
+- `vault-init` and `vault-export` require `curl` and `jq`.
+- Keep `.env` for non-secret defaults only; prefer Vault for API keys.
+
+---
+
+## Engineering Trackers
+
+- SIC / Refactor / Enhancement tracker: [docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md](docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md)
+- FORGE governance baseline: [FORGE.md](FORGE.md)
+
+## Artifact Convention
+
+- Save all agent-generated explainers/reports in `docs/artifacts/`.
+- Use date-prefixed filenames: `YYYY-MM-DD-topic.md`.
+- Do not add new explainer/report artifacts to repo root.
 
 ---
 

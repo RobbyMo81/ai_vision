@@ -46,13 +46,27 @@ function redactDetails(details: Record<string, unknown>): Record<string, unknown
 export class TelemetryManager {
   private repo: SessionRepository | null = null;
 
+  private isExpectedWorkflowOutcome(event: TelemetryEvent): boolean {
+    if (event.name === 'workflow.hitl_confirmation.rejected') return true;
+
+    if (event.name !== 'workflow.run.failed') return false;
+
+    const errorText = String(event.details.error ?? '').toLowerCase();
+    if (errorText.includes('preflight check failed')) return true;
+    if (errorText.includes("step 'confirm_")) return true;
+    if (errorText.includes("step 'review_")) return true;
+    if (errorText.includes("step 'final_review'")) return true;
+
+    return false;
+  }
+
   private getRepo(): SessionRepository {
     this.repo ??= new SessionRepository();
     return this.repo;
   }
 
   private detectIssue(event: TelemetryEvent): TelemetryIssue | undefined {
-    if (event.level === 'error') {
+    if (event.level === 'error' && !this.isExpectedWorkflowOutcome(event)) {
       return {
         code: 'error-event',
         severity: 'error',

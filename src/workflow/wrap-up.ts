@@ -3,6 +3,7 @@ import * as path from 'path';
 import { SessionRepository } from '../db/repository';
 import { taskMetadata, TaskMetadataRecord } from '../memory/metadata';
 import {
+  forgeSicStore,
   longTermMemory,
   shortTermMemory,
   SicTrigger,
@@ -29,7 +30,6 @@ interface WrapUpArtifact {
   shortTerm: ShortTermSession | null;
   finalState: SessionState | null;
   tokenizerLedgerPath?: string;
-  sicTrigger?: SicTrigger;
   storyId: string;
   wrappedAt: string;
 }
@@ -45,13 +45,8 @@ function wrapUpsDir(): string {
   return path.join(memoryDir(), 'wrap-ups');
 }
 
-function sicTriggersDir(): string {
-  return path.join(memoryDir(), 'sic-triggers');
-}
-
 function ensureDirs(): void {
   fs.mkdirSync(wrapUpsDir(), { recursive: true });
-  fs.mkdirSync(sicTriggersDir(), { recursive: true });
 }
 
 function safeDomain(urlText: string): string {
@@ -289,7 +284,6 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
     shortTerm: session,
     finalState: input.finalState,
     tokenizerLedgerPath,
-    sicTrigger,
     storyId: story.id,
     wrappedAt: new Date().toISOString(),
   };
@@ -304,7 +298,6 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
     stateJson: input.finalState ? JSON.stringify(input.finalState) : undefined,
     shortTermJson: session ? JSON.stringify(session) : undefined,
     scratchPadMarkdown,
-    sicTriggerJson: sicTrigger ? JSON.stringify(sicTrigger) : undefined,
   });
 
   const metadataRecords = deriveMetadataRecords(input.definition, session, input.result);
@@ -320,11 +313,19 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
   );
 
   if (sicTrigger) {
-    fs.writeFileSync(
-      path.join(sicTriggersDir(), `${input.sessionId}.json`),
-      JSON.stringify(sicTrigger, null, 2),
-      'utf8',
-    );
+    const storedInForge = forgeSicStore.saveSicTrigger(sicTrigger);
+    if (!storedInForge) {
+      telemetry.emit({
+        source: 'wrapup',
+        name: 'wrapup.sic_trigger.forge_unavailable',
+        level: 'warn',
+        sessionId: input.sessionId,
+        workflowId: input.definition.id,
+        details: {
+          message: 'FORGE memory DB unavailable; SIC trigger persistence failed under FORGE-only policy.',
+        },
+      });
+    }
   }
 
   shortTermMemory.clearSensitiveData();

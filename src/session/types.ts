@@ -4,6 +4,15 @@
  * workflow engine, MCP server, and UI server.
  */
 
+/** Structured outcome classification for social-publishing workflows. */
+export type SocialPublishOutcome =
+  | 'published'
+  | 'duplicate_rejected'
+  | 'rate_limited'
+  | 'auth_lost'
+  | 'composer_lost_draft'
+  | 'unknown_publish_failure';
+
 /** The phase a workflow session is currently in. */
 export type TaskPhase =
   | 'idle'           // No task running
@@ -20,7 +29,12 @@ export type TaskPhase =
 export interface SessionState {
   id: string;
   phase: TaskPhase;
-  hitlAction?: 'return_control' | 'confirm_completion' | 'capture_notes' | 'secure_input';
+  hitlAction?:
+    | 'return_control'
+    | 'confirm_completion'
+    | 'capture_notes'
+    | 'secure_input'
+    | 'verify_authentication';
   /** Name of the current workflow step being executed */
   currentStep?: string;
   stepIndex?: number;
@@ -47,6 +61,7 @@ export interface SessionState {
   hitlFieldSensitivity?: string;
   correlationSummary?: string;
   isBespoke?: boolean;
+  socialPublishOutcome?: SocialPublishOutcome;
 }
 
 /** Payload broadcast over WebSocket to the HITL UI. */
@@ -55,6 +70,7 @@ export interface HitlEventPayload {
     | 'takeover_requested'
     | 'control_returned'
     | 'phase_changed'
+    | 'bridge_disconnected'
     | 'screenshot'
     | 'step_complete';
   state: SessionState;

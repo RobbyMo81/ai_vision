@@ -1,10 +1,10 @@
 /**
  * Long-term memory manager.
  *
- * Persists two types of data to ~/.ai-vision/memory/:
+ * Persists two types of data:
  *
  *   stories/     — One JSON + Markdown narrative per workflow run
- *   improvements.json — Running improvement registry with occurrence counts
+ *   FORGE context_store (`sic.improvements.store`) — SIC improvement registry
  *
  * IMPROVEMENTS track specific patterns observed across runs (e.g.
  * "Salesforce dropdowns require a click-wait-select sequence").  Each
@@ -27,6 +27,7 @@ import {
   Story,
   StepImprovement,
 } from './types';
+import { forgeSicStore } from './forge-sic';
 
 // ---------------------------------------------------------------------------
 // Storage paths
@@ -63,6 +64,18 @@ export class LongTermMemoryManager {
   private loadStore(): ImprovementStore {
     if (this._store) return this._store;
     ensureDirs();
+
+    const forgeStore = forgeSicStore.loadImprovementStore();
+    if (forgeStore) {
+      this._store = forgeStore;
+      return this._store;
+    }
+
+    if (forgeSicStore.isStrictMode()) {
+      this._store = { improvements: [], lastUpdated: new Date().toISOString() };
+      return this._store;
+    }
+
     const file = improvementsFile();
     if (fs.existsSync(file)) {
       try {
@@ -80,7 +93,16 @@ export class LongTermMemoryManager {
     ensureDirs();
     const store = this.loadStore();
     store.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(improvementsFile(), JSON.stringify(store, null, 2), 'utf8');
+
+    const wroteForge = forgeSicStore.saveImprovementStore(store);
+    if (!wroteForge && forgeSicStore.isStrictMode()) {
+      throw new Error('FORGE SIC strict mode enabled, but failed to persist improvement store to forge-memory.db');
+    }
+
+    const mirrorLegacyFile = process.env.AI_VISION_SIC_MIRROR_FILE === 'true';
+    if (!forgeSicStore.isStrictMode() && (!wroteForge || mirrorLegacyFile)) {
+      fs.writeFileSync(improvementsFile(), JSON.stringify(store, null, 2), 'utf8');
+    }
   }
 
   /**

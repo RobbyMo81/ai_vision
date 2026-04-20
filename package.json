@@ -2,17 +2,23 @@
   "name": "ai-vision",
   "version": "0.1.0",
   "description": "AI-driven browser automation platform with multi-engine support",
+  "packageManager": "pnpm@10.32.1",
   "main": "dist/index.js",
   "bin": {
     "ai-vision": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "node --max-old-space-size=8192 node_modules/.bin/tsc && npm run copy-assets",
+    "build": "tsc && pnpm run copy-assets",
     "copy-assets": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/ && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "serve": "node dist/cli/index.js serve",
     "serve:headed": "node dist/cli/index.js serve --headed",
+    "vault:up": "docker compose -f docker-compose.vault.yml up -d",
+    "vault:down": "docker compose -f docker-compose.vault.yml down",
+    "vault:init": "./scripts/secrets/vault-init.sh",
+    "vault:export": "./scripts/secrets/vault-export-env.sh",
     "config:build": "cargo build --release --manifest-path tools/config-gui/Cargo.toml",
     "config": "ts-node src/cli/index.ts config",
+    "sic:migrate:forge": "ts-node scripts/forge/migrate-sic-to-forge.ts",
     "dev": "ts-node src/index.ts",
     "cli": "ts-node src/cli/index.ts",
     "test": "jest --passWithNoTests",
@@ -20,6 +26,7 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^1.13.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "axios": "^1.7.0",
     "commander": "^12.0.0",
