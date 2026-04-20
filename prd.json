@@ -64,6 +64,97 @@
       ],
       "technicalNotes": "Uses 'commander' and 'node:sqlite' (built-in Node 24 feature) for history tracking.",
       "safetyGates": []
+    },
+    {
+      "id": "US-005",
+      "title": "Remove Stagehand engine",
+      "passes": false,
+      "acceptance": [
+        "src/engines/stagehand/ directory deleted",
+        "StagehandEngine removed from registry and exports",
+        "No stagehand references remain in src/",
+        "npx tsc --noEmit passes",
+        "npm test passes",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "YAML workflow loader",
+      "passes": false,
+      "acceptance": [
+        "workflows/*.yaml directory exists with at least post_to_reddit.yaml",
+        "src/orchestrator/loader.ts loads and validates YAML against zod schema",
+        "CLI workflow command accepts a .yaml file path in addition to built-in names",
+        "npx tsc --noEmit passes"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Markdown instruction loader",
+      "passes": false,
+      "acceptance": [
+        "instructions/orchestrator.md exists",
+        "instructions/author.md exists",
+        "instructions/executor.md exists",
+        "src/orchestrator/loader.ts reads and returns instruction markdown",
+        "Content is injected into Claude context at session start"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "New MCP tools: write_copy, query_telemetry, read_memory, write_memory",
+      "passes": false,
+      "acceptance": [
+        "mcp/server.ts exposes write_copy tool calling GeminiWriter",
+        "mcp/server.ts exposes query_telemetry tool reading telemetry DB",
+        "mcp/server.ts exposes read_memory and write_memory tools",
+        "mcp/server.ts exposes list_workflows tool listing workflows/*.yaml",
+        "All tools have zod-validated input schemas",
+        "npx tsc --noEmit passes"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Claude orchestrator loop",
+      "passes": false,
+      "acceptance": [
+        "src/orchestrator/loop.ts implements Claude tool-calling agent loop",
+        "Loop reads YAML workflow + md instructions before first tool call",
+        "Loop reads memory bank context before first tool call",
+        "Loop enforces permissions.require_human_approval_before from YAML",
+        "workflowEngine.run() delegates to orchestrator loop when YAML source",
+        "End-to-end: workflow write_and_post_to_reddit completes via Claude loop",
+        "npx tsc --noEmit passes",
+        "npm test passes"
+      ]
+    },
+    {
+      "id": "US-010",
+      "title": "Memory bank seeding",
+      "passes": false,
+      "acceptance": [
+        "memory/bank/ directory created",
+        "memory/bank/world.md seeded with known platform quirks from session history",
+        "memory/bank/platform/reddit.md seeded with r/test and r/artificial observations",
+        "memory/bank/user_preferences.md created with defaults",
+        "bank-reader.ts reads and formats bank files for Claude context injection"
+      ]
+    },
+    {
+      "id": "US-011",
+      "title": "Webhooks — inbound triggers and outbound notifications",
+      "passes": false,
+      "acceptance": [
+        "src/webhooks/server.ts exposes POST /webhooks/trigger accepting {workflow_id, params}",
+        "Inbound request validates signature (WEBHOOK_SECRET) before executing workflow",
+        "Workflow result POSTed to configured callback_url if provided in trigger payload",
+        "Outbound POST includes {workflow_id, success, outputs, durationMs, timestamp}",
+        "webhook_secret stored via vault:export, never in plaintext env",
+        "src/webhooks/server.ts registers with Express/Fastify app on AI_VISION_WEBHOOK_PORT",
+        "npx tsc --noEmit passes",
+        "npm test passes"
+      ]
     }
   ]
 }
