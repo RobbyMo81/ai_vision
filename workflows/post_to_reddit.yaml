@@ -1,0 +1,133 @@
+id: post_to_reddit
+name: Post To Reddit
+description: >
+  Open Reddit, verify authentication, draft a text post in the target subreddit,
+  publish it autonomously, then require HITL to confirm the published state.
+source: yaml
+mode: direct
+
+permissions:
+  require_human_approval_before:
+    - reddit_login
+    - review_reddit_draft
+
+params:
+  post_title:
+    type: string
+    description: Title of the Reddit post
+  post_text:
+    type: string
+    description: Body text of the post (for text posts)
+    required: false
+    default: ""
+  subreddit:
+    type: string
+    description: Subreddit to post in, without the r/ prefix (e.g. "test" or "AskReddit")
+    required: false
+    default: test
+  login_instructions:
+    type: string
+    description: Instructions shown while verifying Reddit authentication
+    required: false
+    default: >
+      Verify whether Reddit is already signed in. If your username is visible
+      in the header, continue without logging in again. Otherwise, log in and
+      then continue.
+
+steps:
+  - type: navigate
+    id: open_reddit
+    description: Navigate to the subreddit submit page
+    url: "https://www.reddit.com/r/{{subreddit}}/submit"
+    waitUntil: domcontentloaded
+
+  - type: human_takeover
+    id: reddit_login
+    reason: Verify authenticated access to Reddit
+    instructions: "{{login_instructions}}"
+
+  - type: agent_task
+    id: check_duplicate_reddit_post
+    description: Check recent subreddit posts for duplicate title
+    engine: browser-use
+    rawPrompt: true
+    maxSteps: 5
+    outputFailsOn:
+      - "DUPLICATE_RISK:"
+    prompt: >
+      Duplicate check before posting to Reddit r/{{subreddit}}.
+      Title to check: {{post_title}}.
+      1. Navigate to reddit.com/r/{{subreddit}}/new
+      2. Scan visible posts for any title with >70% overlap
+      3. Navigate back to reddit.com/r/{{subreddit}}/submit
+      Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_FOUND
+
+  - type: agent_task
+    id: prepare_and_focus_body
+    description: Setup composer, type title, focus body field — Playwright fills body
+    engine: browser-use
+    rawPrompt: true
+    maxSteps: 6
+    prompt: >
+      You are on reddit.com/r/{{subreddit}}/submit.
+      1. Click the Text tab if it is not already selected (not Link or Image)
+      2. If a Markdown toggle is visible, click it to enable Markdown mode
+      3. Click the Title field and type exactly: {{post_title}}
+      4. Click the Body text area to move keyboard focus into it
+      5. STOP — do not type anything into the body field
+
+  - type: fill
+    id: fill_body
+    description: Inject full post body into focused body field via Playwright
+    focused: true
+    text: "{{post_text}}"
+
+  - type: human_takeover
+    id: review_reddit_draft
+    reason: Review the Reddit draft before submission
+    instructions: >
+      Check the post title and body in the browser. If the content looks correct,
+      click "Return Control to Claude" to allow the agent to submit. If you need
+      changes, edit the draft directly in the browser first, then return control.
+
+  - type: agent_task
+    id: submit_reddit_post
+    description: Click Post button and confirm publish
+    engine: browser-use
+    maxSteps: 8
+    prompt: >
+      STEP 1 — Check the current URL right now.
+      If the URL already contains "/comments/", the post was already submitted.
+      Report the URL and STOP immediately — do NOT navigate anywhere.
+
+      STEP 2 — Only if on reddit.com/r/{{subreddit}}/submit:
+      If the Title or Body fields are empty, fill them:
+        Title: {{post_title}}
+        Body: {{post_text}}
+
+      STEP 3 — Submit:
+      - If flair is required, select any available flair
+      - Click the Post button exactly once
+      - Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
+      - Report the final URL and STOP — do NOT navigate back to /submit
+
+  - type: human_takeover
+    id: confirm_reddit_post_visible
+    mode: confirm_completion
+    reason: Confirm that the Reddit post is visibly published
+    instructions: >
+      Review the visible Reddit page. Confirm only if the post URL has changed
+      to a /comments/ page and the submitted title and content are clearly visible.
+
+  - type: extract
+    id: capture_reddit_post_result
+    description: Capture the published post URL and any visible confirmation
+    instruction: >
+      Extract the full Reddit post URL (reddit.com/r/.../comments/...), post title,
+      subreddit, and any visible upvote count or timestamp
+    outputKey: reddit_post_result
+
+  - type: screenshot
+    id: reddit_post_screenshot
+    description: Capture the published Reddit post
+    outputKey: reddit_post_screenshot

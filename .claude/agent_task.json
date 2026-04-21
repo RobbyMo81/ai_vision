@@ -1,0 +1,11 @@
+{
+  "flight_id": "bf0ac5a5-5d3c-4b14-8a53-7b5ee778f27c",
+  "github_issue": 2,
+  "mission": "[US-005] Remove Stagehand engine",
+  "started_at": "2026-04-20T23:18:35.005872+00:00",
+  "labels": [
+    "enhancement"
+  ],
+  "assignee": null,
+  "linked_to": {}
+}

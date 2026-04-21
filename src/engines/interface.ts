@@ -1,4 +1,4 @@
-export type EngineId = 'browser-use' | 'stagehand' | 'skyvern';
+export type EngineId = 'browser-use' | 'skyvern';
 
 export interface NavigateOptions {
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
@@ -34,6 +34,9 @@ export interface TaskContext {
   /** Cookies extracted from the shared SessionManager browser — injected into
    *  agent engines that spawn their own browser so auth state is preserved. */
   cookies?: Array<{ name: string; value: string; domain: string; path: string }>;
+  /** Override the engine's default max_steps for this specific task.
+   *  Use low values (3–6) for focused single-action steps to cut planning overhead. */
+  maxSteps?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -10,3 +10,5 @@ export { longTermMemory, LongTermMemoryManager } from './long-term';
 export { forgeSicStore, ForgeSicMemoryStore } from './forge-sic';
 export { memoryIndexer, MemoryIndexer } from './indexer';
 export { taskMetadata, TaskMetadataManager } from './metadata';
+export { readBankFiles, readBankFile, formatBankContext } from './bank-reader';
+export type { BankFile } from './bank-reader';

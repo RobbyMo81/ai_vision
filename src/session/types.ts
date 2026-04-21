@@ -33,6 +33,7 @@ export interface SessionState {
     | 'return_control'
     | 'confirm_completion'
     | 'capture_notes'
+    | 'approve_draft'
     | 'secure_input'
     | 'verify_authentication';
   /** Name of the current workflow step being executed */

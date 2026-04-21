@@ -29,6 +29,8 @@
  *   session_status            — Get the current session state
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { z } from 'zod';
 import { sessionManager } from '../session/manager';
 import { hitlCoordinator } from '../session/hitl';
@@ -36,6 +38,10 @@ import { workflowEngine } from '../workflow/engine';
 import { BUILTIN_WORKFLOWS, WorkflowDefinitionSchema } from '../workflow/types';
 import { registry } from '../engines/registry';
 import { BridgeExitEvent, getLatestBridgeExitEvent } from '../engines/python-bridge';
+import { getGeminiWriter, Platform, Tone } from '../content/gemini-writer';
+import { telemetry } from '../telemetry/manager';
+import { longTermMemory } from '../memory/long-term';
+import { ImprovementCategory } from '../memory/types';
 
 interface SessionStatusContext {
   phase: string;
@@ -170,7 +176,7 @@ export async function createMcpServer(): Promise<void> {
     'Run a natural-language browser automation task using the best available AI engine.',
     {
       prompt: z.string().describe('Natural language description of what to do'),
-      engine: z.string().describe('Engine override: auto | browser-use | stagehand | skyvern (default: auto)'),
+      engine: z.string().describe('Engine override: auto | browser-use | skyvern (default: auto)'),
     },
     async ({ prompt, engine }) => {
       const { routeAgentTask } = await import('../workflow/engine');
@@ -313,6 +319,148 @@ export async function createMcpServer(): Promise<void> {
         hitlReason: state?.hitlReason,
         latestBridgeExit,
       });
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // write_copy
+  // -------------------------------------------------------------------------
+  server.tool(
+    'write_copy',
+    'Generate platform-appropriate social media copy using GeminiWriter. Keeps Claude tokens free for automation work.',
+    {
+      platform: z.enum(['x', 'reddit', 'linkedin']).describe('Target platform'),
+      topic: z.string().describe('What the post is about'),
+      context: z.string().optional().describe('Background facts or details for the writer'),
+      tone: z.enum(['factual', 'conversational', 'professional', 'direct']).optional()
+        .describe('Writing tone (default: conversational)'),
+      include_title: z.boolean().optional().describe('For Reddit only: also generate a post title'),
+    },
+    async ({ platform, topic, context, tone, include_title }) => {
+      const writer = getGeminiWriter();
+      const post = await writer.writePost({
+        platform: platform as Platform,
+        topic,
+        context,
+        tone: tone as Tone | undefined,
+        includeTitle: include_title ?? false,
+      });
+      const lines: string[] = [`Model: ${post.model}`, `Platform: ${post.platform}`];
+      if (post.title) lines.push(`Title: ${post.title}`);
+      lines.push('', post.text);
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // query_telemetry
+  // -------------------------------------------------------------------------
+  server.tool(
+    'query_telemetry',
+    'Query recent telemetry events from the telemetry database. Use type="alerts" to see only error/warn events with detected issues.',
+    {
+      type: z.enum(['recent', 'alerts']).optional()
+        .describe('Which events to return: recent (default) or alerts (issues only)'),
+      limit: z.number().int().min(1).max(200).optional()
+        .describe('Maximum number of events to return (default: 20)'),
+      level: z.enum(['debug', 'info', 'warn', 'error']).optional()
+        .describe('Filter by severity level'),
+    },
+    async ({ type = 'recent', limit = 20, level }) => {
+      const events = type === 'alerts'
+        ? telemetry.recentAlerts(limit)
+        : telemetry.recent(limit);
+      const filtered = level ? events.filter(e => e.level === level) : events;
+      return { content: [{ type: 'text' as const, text: JSON.stringify(filtered, null, 2) }] };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // read_memory
+  // -------------------------------------------------------------------------
+  server.tool(
+    'read_memory',
+    'Read from long-term memory. Retrieve improvements, SIC enhancements, or workflow stories.',
+    {
+      type: z.enum(['improvements', 'sic', 'stories', 'story']).describe(
+        'improvements: all improvement records; sic: only SIC-promoted ones; stories: list all stories; story: fetch one story by id'
+      ),
+      id: z.string().optional().describe('Story ID (required when type=story)'),
+    },
+    async ({ type, id }) => {
+      let data: unknown;
+      if (type === 'improvements') {
+        data = longTermMemory.getAllImprovements();
+      } else if (type === 'sic') {
+        data = longTermMemory.getSicEnhancements();
+      } else if (type === 'stories') {
+        data = longTermMemory.listStories();
+      } else {
+        if (!id) return { content: [{ type: 'text' as const, text: 'id is required when type=story' }] };
+        data = longTermMemory.getStory(id);
+        if (!data) return { content: [{ type: 'text' as const, text: `Story not found: ${id}` }] };
+      }
+      return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // write_memory
+  // -------------------------------------------------------------------------
+  server.tool(
+    'write_memory',
+    'Record a new improvement observation to long-term memory. Increments the occurrence counter if the id already exists; auto-promotes to SIC at 3 occurrences.',
+    {
+      id: z.string().describe('Stable identifier for this improvement pattern (e.g. "salesforce-dropdown-click-wait")'),
+      category: z.enum(['dropdown', 'autocomplete', 'file-upload', 'navigation', 'form-validation', 'timing', 'general'])
+        .describe('Improvement category'),
+      title: z.string().describe('Short human-readable title'),
+      description: z.string().describe('What was observed and why it matters'),
+      agent_instruction: z.string().describe('Instruction prepended to future agent prompts when this is SIC-promoted'),
+      workflow_id: z.string().describe('Workflow ID where this was observed'),
+    },
+    async ({ id, category, title, description, agent_instruction, workflow_id }) => {
+      const imp = longTermMemory.recordImprovement({
+        id,
+        category: category as ImprovementCategory,
+        title,
+        description,
+        agentInstruction: agent_instruction,
+        workflowId: workflow_id,
+      });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(imp, null, 2) }] };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // list_workflows
+  // -------------------------------------------------------------------------
+  server.tool(
+    'list_workflows',
+    'List workflow YAML files available in the workflows/ directory.',
+    {},
+    async () => {
+      const workflowsDir = path.join(process.cwd(), 'workflows');
+      let files: string[] = [];
+      try {
+        files = fs.readdirSync(workflowsDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+      } catch {
+        return { content: [{ type: 'text' as const, text: 'No workflows directory found.' }] };
+      }
+      const lines = [`Workflows in ${workflowsDir}:\n`];
+      for (const file of files) {
+        const filePath = path.join(workflowsDir, file);
+        let preview = '';
+        try {
+          const content = fs.readFileSync(filePath, 'utf8');
+          const nameMatch = content.match(/^name:\s*(.+)/m);
+          const descMatch = content.match(/^description:\s*[>|]?\s*\n?\s*(.+)/m);
+          if (nameMatch) preview += `  name: ${nameMatch[1].trim()}`;
+          if (descMatch) preview += `\n  description: ${descMatch[1].trim()}`;
+        } catch { /* skip */ }
+        lines.push(`- ${file}${preview ? '\n' + preview : ''}`);
+      }
       return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );

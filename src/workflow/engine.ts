@@ -46,6 +46,7 @@ import {
   parseMemoryUpdate,
   buildFallbackMemory,
   ShortTermMemoryManager,
+  formatBankContext,
   Story,
 } from '../memory';
 import { wrapUpWorkflowRun } from './wrap-up';
@@ -60,8 +61,7 @@ import { telemetry } from '../telemetry';
  *
  *   Exploratory multi-page tasks          → browser-use  (agent loop)
  *   Structured SOPs / form workflows      → skyvern      (workflow engine)
- *   Precision single-page UI actions      → stagehand    (page.act)
- *   Default                               → stagehand
+ *   Default                               → browser-use
  */
 export async function routeAgentTask(
   prompt: string,
@@ -82,7 +82,7 @@ export async function routeAgentTask(
     return 'browser-use';
   }
 
-  return 'stagehand';
+  return 'browser-use';
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +135,9 @@ function buildRuntimeParams(
  *   [Original prompt]
  *   [Output format]    — request for structured MEMORY_UPDATE at end of response
  */
+// Loaded once per process — bank files don't change mid-run.
+const _bankContext: string = formatBankContext();
+
 function buildEnhancedPrompt(
   rawPrompt: string,
   memorySection: string,
@@ -152,7 +155,9 @@ function buildEnhancedPrompt(
       ].join('\n')
     : '';
 
-  return [sicBlock, sessionCtx, guardedBlock, rawPrompt, outputFmt]
+  // Bank context gives the agent foreknowledge of platform quirks, submission
+  // flows, and user preferences accumulated across all previous runs.
+  return [_bankContext, sicBlock, sessionCtx, guardedBlock, rawPrompt, outputFmt]
     .filter(Boolean)
     .join('\n');
 }
@@ -420,7 +425,7 @@ async function bootstrapEditorialDraft(
 
   onStateUpdate({
     phase: 'hitl_qa',
-    hitlAction: 'capture_notes',
+    hitlAction: 'approve_draft',
     hitlReason: reviewReason,
     hitlInstructions: reviewInstructions,
   });
@@ -666,20 +671,30 @@ async function executeStep(
 ): Promise<StepResult> {
   const start = Date.now();
   const sub = substituteStep(step, params);
+  const urlBefore = await sessionManager.currentUrl().catch(() => 'unknown');
   telemetry.emit({
     source: 'workflow',
     name: 'workflow.step.started',
     sessionId: telemetryContext.sessionId,
     workflowId: telemetryContext.workflowId,
     stepId: sub.id,
-    details: { type: sub.type },
+    details: { type: sub.type, urlBefore },
   });
 
   try {
     switch (sub.type) {
       // ----- navigate -------------------------------------------------------
       case 'navigate': {
-        await sessionManager.navigate(sub.url, sub.waitUntil ?? 'load');
+        const targetUrl = sub.url;
+        await sessionManager.navigate(targetUrl, sub.waitUntil ?? 'load');
+        // Verify the browser actually landed — a dead/crashed browser silently resolves
+        // goto() without navigating, leaving the page on chrome://new-tab-page/.
+        const landedUrl = await sessionManager.currentUrl().catch(() => '');
+        if (!landedUrl || landedUrl.startsWith('chrome://') || landedUrl === 'about:blank') {
+          throw new Error(
+            `Navigation to "${targetUrl}" failed: browser is on "${landedUrl}" — session may have crashed.`,
+          );
+        }
         return { stepId: sub.id, success: true, durationMs: Date.now() - start };
       }
 
@@ -793,6 +808,38 @@ async function executeStep(
         };
       }
 
+      // ----- fill -----------------------------------------------------------
+      // Deterministic Playwright fill — bypasses browser-use for text entry.
+      // Two modes:
+      //   focused:true  — type into the currently focused element (no selector
+      //                   lookup). Use after an agent_task that clicked the field.
+      //   selector      — locate element then fill. Falls back to keyboard type.
+      case 'fill': {
+        const page = await sessionManager.getPage();
+        const useFocused = (sub as { focused?: boolean }).focused === true;
+        const text = sub.text;
+        const selector = (sub as { selector?: string }).selector;
+
+        if (useFocused) {
+          // Select all existing content and replace with full text at once.
+          await page.keyboard.press('Control+a');
+          await page.keyboard.press('Delete');
+          await page.keyboard.type(text, { delay: 0 });
+        } else if (selector) {
+          try {
+            await page.fill(selector, text, { timeout: 8000 });
+          } catch {
+            await page.click(selector, { timeout: 5000 });
+            await page.keyboard.press('Control+a');
+            await page.keyboard.press('Delete');
+            await page.keyboard.type(text, { delay: 0 });
+          }
+        } else {
+          throw new Error('fill step requires either focused:true or a selector');
+        }
+        return { stepId: sub.id, success: true, durationMs: Date.now() - start };
+      }
+
       // ----- extract --------------------------------------------------------
       case 'extract': {
         const page = await sessionManager.getPage();
@@ -861,18 +908,24 @@ async function executeStep(
           (sub as { memorySection?: string }).memorySection ??
           sub.id.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
-        // Wrap prompt with SIC best-practices + session memory context
-        const enhancedPrompt = buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
+        // Wrap prompt with SIC best-practices + session memory context.
+        // rawPrompt=true bypasses all injection (used for single-line lookup steps
+        // like duplicate checks where extra context disrupts the required output format).
+        const useRawPrompt = (sub as { rawPrompt?: boolean }).rawPrompt === true;
+        const enhancedPrompt = useRawPrompt
+          ? sub.prompt
+          : buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
 
-        let taskResult;
-        if (engineId === 'stagehand') {
-          const engine = await registry.getReady('stagehand');
-          taskResult = await engine.runTask(enhancedPrompt);
-        } else {
-          const cookies = await sessionManager.extractCookies();
-          const engine = await registry.getReady(engineId);
-          taskResult = await engine.runTask(enhancedPrompt, { cookies });
-        }
+        const cookies = await sessionManager.extractCookies();
+        const engine = await registry.getReady(engineId);
+        const stepMaxSteps = (sub as { maxSteps?: number }).maxSteps;
+        const taskResult = await engine.runTask(enhancedPrompt, {
+          cookies,
+          ...(stepMaxSteps != null ? { maxSteps: stepMaxSteps } : {}),
+        });
+        // Re-sync the SessionManager's active page after browser-use may have
+        // opened new tabs or navigated. Keeps HITL screenshots current.
+        await sessionManager.syncActivePage().catch(() => {});
 
         // Record step in short-term memory for the next step's context
         const stepScreenshots = taskResult.screenshots?.map(s => s.path) ?? [];
@@ -887,7 +940,10 @@ async function executeStep(
         const outputFailsOn = (sub as { outputFailsOn?: string[] }).outputFailsOn ?? [];
         if (taskResult.success && outputFailsOn.length > 0) {
           const output = taskResult.output ?? '';
-          const matchedPattern = outputFailsOn.find(pattern => output.includes(pattern));
+          // Only scan the last non-empty line — agents sometimes echo the enhanced prompt
+          // (SIC block + format instructions) in their output; the actual decision is always last.
+          const lastLine = output.split('\n').map(l => l.trim()).filter(Boolean).pop() ?? output;
+          const matchedPattern = outputFailsOn.find(pattern => lastLine.includes(pattern));
           if (matchedPattern) {
             const failReason = `Preflight check failed: agent output matched "${matchedPattern}". Output: ${output.slice(0, 300)}`;
             telemetry.emit({
@@ -1115,6 +1171,7 @@ async function executeStep(
       durationMs: Date.now() - start,
     };
   } finally {
+    const urlAfter = await sessionManager.currentUrl().catch(() => 'unknown');
     telemetry.emit({
       source: 'workflow',
       name: 'workflow.step.finished',
@@ -1122,7 +1179,7 @@ async function executeStep(
       workflowId: telemetryContext.workflowId,
       stepId: sub.id,
       durationMs: Date.now() - start,
-      details: { type: sub.type },
+      details: { type: sub.type, urlBefore, urlAfter, pageChanged: urlBefore !== urlAfter },
     });
   }
 }
@@ -1174,25 +1231,10 @@ export class WorkflowEngine {
       steps: definition.steps.map(step => substituteStep(step, resolvedParams)),
     };
 
-    // ---- Begin short-term memory for this run ----
-    shortTermMemory.begin(id, definition.id);
-    telemetry.emit({
-      source: 'workflow',
-      name: 'workflow.run.started',
-      sessionId: id,
-      workflowId: definition.id,
-      details: {
-        workflowName: definition.name,
-        stepCount: definition.steps.length,
-      },
-    });
-
-    // ---- Seed known improvements into long-term memory ----
-    seedKnownImprovements(definition.id);
-
-    // Ensure browser session is running
+    // Ensure browser session is running before any work (including YAML loop)
     await sessionManager.start();
     hitlCoordinator.setPhase('running');
+    sessionManager.startScreenshotTimer(5000);
 
     const onStateUpdate = (partial: Partial<SessionState>): void => {
       const previousPhase = this._currentState?.phase;
@@ -1218,6 +1260,30 @@ export class WorkflowEngine {
         });
       }
     };
+
+    // ---- Route agentic YAML workflows to the Claude orchestrator loop ----
+    // mode: direct (default) → step-by-step engine (fast, deterministic)
+    // mode: agentic           → Claude orchestrator loop (open-ended reasoning)
+    if (resolvedDefinition.source === 'yaml' && resolvedDefinition.mode === 'agentic') {
+      const { runOrchestratorLoop } = await import('../orchestrator/loop');
+      return runOrchestratorLoop(resolvedDefinition, resolvedParams, id, onStateUpdate);
+    }
+
+    // ---- Begin short-term memory for this run ----
+    shortTermMemory.begin(id, definition.id);
+    telemetry.emit({
+      source: 'workflow',
+      name: 'workflow.run.started',
+      sessionId: id,
+      workflowId: definition.id,
+      details: {
+        workflowName: definition.name,
+        stepCount: definition.steps.length,
+      },
+    });
+
+    // ---- Seed known improvements into long-term memory ----
+    seedKnownImprovements(definition.id);
 
     onStateUpdate({
       id,
@@ -1360,26 +1426,30 @@ export class WorkflowEngine {
         durationMs: Date.now() - workflowStart,
         error: e instanceof Error ? e.message : String(e),
       };
+    } finally {
+      sessionManager.stopScreenshotTimer();
     }
 
-    if (process.env.AI_VISION_UI_PORT) {
-      const terminalPhase = finalResult.success ? 'complete' : 'error';
-      const qaReason = 'Optional HITL QA pause before wrap-up';
+    if (process.env.AI_VISION_UI_PORT && !finalResult.success) {
+      // Only pause on failure so the human can review the error before the run closes.
+      // On success the workflow completes immediately — no ambiguous "wrap-up" gate.
+      const errorDetail = finalResult.error ?? 'Workflow did not complete successfully.';
       onStateUpdate({
         phase: 'hitl_qa',
         hitlAction: 'capture_notes',
-        hitlReason: qaReason,
+        hitlReason: 'Workflow ended with an error — review before closing',
         hitlInstructions:
-          'Use the HITL QA section to record notes, lessons learned, or recurring-portal context. ' +
-          'When finished, click "Continue Wrap-up".',
+          `ERROR: ${errorDetail}\n\n` +
+          'Check the browser and telemetry for what went wrong. ' +
+          'Record any notes, then click "Dismiss & Close" to end the session.',
         error: finalResult.error,
       });
       await hitlCoordinator.requestQaPause(
-        qaReason,
-        'Capture any final notes in the HITL QA section before the workflow wraps up.',
+        'Workflow error review',
+        'Human review required before closing a failed workflow run.',
       );
       onStateUpdate({
-        phase: terminalPhase,
+        phase: 'error',
         hitlAction: undefined,
         hitlReason: undefined,
         hitlInstructions: undefined,
@@ -1449,6 +1519,10 @@ export class WorkflowEngine {
         ...(socialOutcome ? { socialPublishOutcome: socialOutcome } : {}),
       },
     });
+
+    // Release the CDP port so the next workflow run can start a fresh browser
+    // without hitting a port-already-in-use error on its first spawn attempt.
+    await sessionManager.close().catch(() => {});
 
     return finalResult;
   }

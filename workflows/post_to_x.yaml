@@ -1,0 +1,58 @@
+id: post_to_x
+name: Post To X (Twitter)
+description: >
+  Open X, verify authentication, compose a tweet or thread, publish it
+  with HITL confirmation before submission.
+source: yaml
+mode: direct
+
+permissions:
+  require_human_approval_before:
+    - x_login
+    - submit_x_post
+
+params:
+  post_text:
+    type: string
+    description: Text content of the X post (max 280 chars for a single tweet)
+  login_instructions:
+    type: string
+    description: Instructions shown during authentication verification
+    required: false
+    default: >
+      Verify whether X (Twitter) is already signed in. If your username or
+      avatar is visible in the left nav, continue without logging in again.
+      Otherwise, log in and then continue.
+
+steps:
+  - type: navigate
+    id: open_x
+    description: Navigate to X compose page
+    url: "https://x.com/compose/post"
+    waitUntil: domcontentloaded
+
+  - type: human_takeover
+    id: x_login
+    reason: Verify authenticated access to X
+    instructions: "{{login_instructions}}"
+
+  - type: agent_task
+    id: fill_x_post
+    description: Fill in the post text field on X
+    engine: browser-use
+    prompt: >
+      On X (Twitter), locate the main compose text area and type the following
+      post text exactly:
+      ---
+      {{post_text}}
+      ---
+      Do NOT submit or click the Post button yet. Just type the content and stop.
+      Confirm with: DRAFT_READY
+
+  - type: human_takeover
+    id: submit_x_post
+    mode: confirm_completion
+    reason: Human approval required before posting to X
+    instructions: >
+      Review the drafted X post above. Click Post to publish if the content
+      looks correct, or reject to abort.

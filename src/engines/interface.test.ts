@@ -16,10 +16,10 @@ describe('AutomationError', () => {
 
 describe('EngineNotReadyError', () => {
   it('is an AutomationError with correct message', () => {
-    const err = new EngineNotReadyError('stagehand');
+    const err = new EngineNotReadyError('browser-use');
     expect(err.name).toBe('EngineNotReadyError');
-    expect(err.engine).toBe('stagehand');
-    expect(err.message).toContain('stagehand');
+    expect(err.engine).toBe('browser-use');
+    expect(err.message).toContain('browser-use');
     expect(err).toBeInstanceOf(AutomationError);
   });
 });
