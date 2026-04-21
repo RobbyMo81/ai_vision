@@ -808,6 +808,25 @@ async function executeStep(
         };
       }
 
+      // ----- fill -----------------------------------------------------------
+      // Deterministic Playwright fill — bypasses browser-use for text entry.
+      // page.fill() sets the full value atomically on input, textarea, and
+      // contenteditable elements. Use this for any long or exact text content.
+      case 'fill': {
+        const page = await sessionManager.getPage();
+        try {
+          await page.fill(sub.selector, sub.text, { timeout: 8000 });
+        } catch {
+          // Fallback for editors that reject fill() (e.g. Slate/Lexical without textarea mode):
+          // focus, select-all, delete, then type at full speed.
+          await page.click(sub.selector, { timeout: 5000 });
+          await page.keyboard.press('Control+a');
+          await page.keyboard.press('Delete');
+          await page.keyboard.type(sub.text, { delay: 0 });
+        }
+        return { stepId: sub.id, success: true, durationMs: Date.now() - start };
+      }
+
       // ----- extract --------------------------------------------------------
       case 'extract': {
         const page = await sessionManager.getPage();

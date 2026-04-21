@@ -102,6 +102,22 @@ export const ScreenshotStepSchema = z.object({
   outputKey: z.string().optional(),
 });
 
+/**
+ * Direct field fill — uses page.fill() (Playwright) to set an element's value
+ * atomically. Works on <input>, <textarea>, and contenteditable elements.
+ * Use this instead of agent_task for any text entry that may be long or
+ * where exact content must be preserved without LLM truncation.
+ */
+export const FillStepSchema = z.object({
+  type: z.literal('fill'),
+  id: z.string(),
+  description: z.string().optional(),
+  /** CSS selector for the target field */
+  selector: z.string(),
+  /** Text to fill — supports {{param}} substitution */
+  text: z.string(),
+});
+
 export const ExtractStepSchema = z.object({
   type: z.literal('extract'),
   id: z.string(),
@@ -186,6 +202,7 @@ export const WorkflowStepSchema = z.discriminatedUnion('type', [
   NavigateStepSchema,
   ClickStepSchema,
   TypeStepSchema,
+  FillStepSchema,
   ScreenshotStepSchema,
   ExtractStepSchema,
   AgentTaskStepSchema,
@@ -239,6 +256,7 @@ export type ClickStep = z.infer<typeof ClickStepSchema>;
 export type TypeStep = z.infer<typeof TypeStepSchema>;
 export type ScreenshotStep = z.infer<typeof ScreenshotStepSchema>;
 export type ExtractStep = z.infer<typeof ExtractStepSchema>;
+export type FillStep = z.infer<typeof FillStepSchema>;
 export type AgentTaskStep = z.infer<typeof AgentTaskStepSchema>;
 export type HumanTakeoverStep = z.infer<typeof HumanTakeoverStepSchema>;
 export type GenerateContentStep = z.infer<typeof GenerateContentStepSchema>;
@@ -770,17 +788,27 @@ Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_
         description: 'Fill in post title and body in markdown mode, do not submit',
         engine: 'browser-use',
         memorySection: 'reddit-draft',
-        prompt: `Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit:
+        prompt: `You are on reddit.com/r/{{subreddit}}/submit.
+1. Click the Text tab if it is not already selected (not Link or Image)
+2. If a Markdown toggle is visible, click it to enable Markdown mode
+3. STOP — do not type anything into any field`,
+        rawPrompt: true,
+      },
 
-Title: {{post_title}}
-Body: {{post_text}}
-
-1. Ensure Text tab is active (not Link/Image)
-2. Enable Markdown mode if the toggle is available
-3. Click the Title field and type the exact title
-4. Click the Body field and type the exact body text
-5. Verify both fields match exactly
-6. STOP — do NOT click Submit`,
+      // Fill title and body using deterministic Playwright fill — no LLM text entry
+      {
+        type: 'fill',
+        id: 'fill_title',
+        description: 'Fill post title directly via Playwright page.fill()',
+        selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type",
+        text: '{{post_title}}',
+      },
+      {
+        type: 'fill',
+        id: 'fill_body',
+        description: 'Fill post body directly via Playwright page.fill()',
+        selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']",
+        text: '{{post_text}}',
       },
 
       // ---- HITL reviews draft before submission ----------------------------
@@ -798,23 +826,20 @@ Body: {{post_text}}
         description: 'Click Post button and confirm publish',
         engine: 'browser-use',
         memorySection: 'reddit-submit',
-        prompt: `You are on the Reddit r/{{subreddit}} post composer page.
+        prompt: `STEP 1 — Check the current URL right now.
+If the URL already contains "/comments/", the post was already submitted.
+Report the URL and STOP immediately — do NOT navigate anywhere.
 
-The post should already be filled in. Check the current state:
-- Title field should contain: {{reddit_post_title}}
-- Body field should contain: {{reddit_post_text}}
+STEP 2 — Only if on reddit.com/r/{{subreddit}}/submit:
+If the Title or Body fields are empty, fill them:
+  Title: {{post_title}}
+  Body: {{post_text}}
 
-SELF-HEAL if fields are empty or wrong:
-1. If not on reddit.com/r/{{subreddit}}/submit, navigate there now
-2. Click the Text tab if not already selected
-3. Click the Title field — clear it and type exactly: {{reddit_post_title}}
-4. Click the Body field — clear it and type exactly: {{reddit_post_text}}
-
-THEN SUBMIT:
-5. If flair is required (asterisk *), select any available flair
-6. Click the Post button once
-7. Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
-8. Stop and report the final URL`,
+STEP 3 — Submit:
+- If flair is required, select any available flair
+- Click the Post button exactly once
+- Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
+- Report the final URL and STOP — do NOT navigate back to /submit`,
       },
 
       // ---- HITL confirms the published post is visible ----------------------
@@ -1020,17 +1045,25 @@ Respond with exactly one line: DUPLICATE_RISK: <title> or NO_DUPLICATE_FOUND`,
         id: 'draft_reddit_post',
         engine: 'browser-use',
         memorySection: 'reddit-draft',
-        prompt: `Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit:
-
-Title: {{reddit_post_title}}
-Body: {{reddit_post_text}}
-
-1. Ensure you are on the Text tab (not Link/Image)
-2. Enable Markdown mode if the toggle is available
-3. Click the Title field and type the exact title
-4. Click the Body field and type the exact body text
-5. Verify both fields match exactly
-6. STOP — do NOT click Submit`,
+        prompt: `You are on reddit.com/r/{{subreddit}}/submit.
+1. Click the Text tab if it is not already selected (not Link or Image)
+2. If a Markdown toggle is visible, click it to enable Markdown mode
+3. STOP — do not type anything into any field`,
+        rawPrompt: true,
+      },
+      {
+        type: 'fill',
+        id: 'fill_title',
+        description: 'Fill post title directly via Playwright page.fill()',
+        selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type",
+        text: '{{reddit_post_title}}',
+      },
+      {
+        type: 'fill',
+        id: 'fill_body',
+        description: 'Fill post body directly via Playwright page.fill()',
+        selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']",
+        text: '{{reddit_post_text}}',
       },
       {
         type: 'human_takeover',
@@ -1043,23 +1076,20 @@ Body: {{reddit_post_text}}
         id: 'submit_reddit_post',
         engine: 'browser-use',
         memorySection: 'reddit-submit',
-        prompt: `You are on the Reddit r/{{subreddit}} post composer page.
+        prompt: `STEP 1 — Check the current URL right now.
+If the URL already contains "/comments/", the post was already submitted.
+Report the URL and STOP immediately — do NOT navigate anywhere.
 
-The post should already be filled in. Check the current state:
-- Title field should contain: {{reddit_post_title}}
-- Body field should contain: {{reddit_post_text}}
+STEP 2 — Only if on reddit.com/r/{{subreddit}}/submit:
+If the Title or Body fields are empty, fill them:
+  Title: {{reddit_post_title}}
+  Body: {{reddit_post_text}}
 
-SELF-HEAL if fields are empty or wrong:
-1. If not on reddit.com/r/{{subreddit}}/submit, navigate there now
-2. Click the Text tab if not already selected
-3. Click the Title field — clear it and type exactly: {{reddit_post_title}}
-4. Click the Body field — clear it and type exactly: {{reddit_post_text}}
-
-THEN SUBMIT:
-5. If flair is required (asterisk *), select any available flair
-6. Click the Post button once
-7. Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
-8. Stop and report the final URL`,
+STEP 3 — Submit:
+- If flair is required, select any available flair
+- Click the Post button exactly once
+- Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
+- Report the final URL and STOP — do NOT navigate back to /submit`,
       },
       {
         type: 'human_takeover',

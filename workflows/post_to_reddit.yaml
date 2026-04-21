@@ -62,19 +62,27 @@ steps:
       Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_FOUND
 
   - type: agent_task
-    id: draft_reddit_post
-    description: Fill in post title and body in markdown mode, do not submit
+    id: prepare_composer
+    description: Switch to Text tab and enable Markdown mode — no text entry
     engine: browser-use
+    rawPrompt: true
     prompt: >
-      Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit.
-      Title: {{post_title}}
-      Body: {{post_text}}
-      1. Ensure Text tab is active (not Link/Image)
-      2. Enable Markdown mode if the toggle is available
-      3. Click the Title field and type the exact title
-      4. Click the Body field and type the exact body text
-      5. Verify both fields match exactly
-      6. STOP — do NOT click Submit
+      You are on reddit.com/r/{{subreddit}}/submit.
+      1. Click the Text tab if it is not already selected (not Link or Image)
+      2. If a Markdown toggle is visible, click it to enable Markdown mode
+      3. STOP — do not type anything into any field
+
+  - type: fill
+    id: fill_title
+    description: Fill post title directly via Playwright page.fill()
+    selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type"
+    text: "{{post_title}}"
+
+  - type: fill
+    id: fill_body
+    description: Fill post body directly via Playwright page.fill()
+    selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']"
+    text: "{{post_text}}"
 
   - type: human_takeover
     id: review_reddit_draft
@@ -89,15 +97,20 @@ steps:
     description: Click Post button and confirm publish
     engine: browser-use
     prompt: >
-      You are on the Reddit r/{{subreddit}} post composer page.
-      The post should already be filled in with title: {{post_title}}.
-      SELF-HEAL if fields are empty: navigate to reddit.com/r/{{subreddit}}/submit,
-      select Text tab, fill Title and Body fields with the exact values above.
-      THEN SUBMIT:
+      STEP 1 — Check the current URL right now.
+      If the URL already contains "/comments/", the post was already submitted.
+      Report the URL and STOP immediately — do NOT navigate anywhere.
+
+      STEP 2 — Only if on reddit.com/r/{{subreddit}}/submit:
+      If the Title or Body fields are empty, fill them:
+        Title: {{post_title}}
+        Body: {{post_text}}
+
+      STEP 3 — Submit:
       - If flair is required, select any available flair
-      - Click the Post button once
+      - Click the Post button exactly once
       - Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
-      - Stop and report the final URL
+      - Report the final URL and STOP — do NOT navigate back to /submit
 
   - type: human_takeover
     id: confirm_reddit_post_visible
