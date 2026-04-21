@@ -46,6 +46,7 @@ import {
   parseMemoryUpdate,
   buildFallbackMemory,
   ShortTermMemoryManager,
+  formatBankContext,
   Story,
 } from '../memory';
 import { wrapUpWorkflowRun } from './wrap-up';
@@ -134,6 +135,9 @@ function buildRuntimeParams(
  *   [Original prompt]
  *   [Output format]    — request for structured MEMORY_UPDATE at end of response
  */
+// Loaded once per process — bank files don't change mid-run.
+const _bankContext: string = formatBankContext();
+
 function buildEnhancedPrompt(
   rawPrompt: string,
   memorySection: string,
@@ -151,7 +155,9 @@ function buildEnhancedPrompt(
       ].join('\n')
     : '';
 
-  return [sicBlock, sessionCtx, guardedBlock, rawPrompt, outputFmt]
+  // Bank context gives the agent foreknowledge of platform quirks, submission
+  // flows, and user preferences accumulated across all previous runs.
+  return [_bankContext, sicBlock, sessionCtx, guardedBlock, rawPrompt, outputFmt]
     .filter(Boolean)
     .join('\n');
 }

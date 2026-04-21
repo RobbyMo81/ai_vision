@@ -195,7 +195,9 @@ async function executeTool(
       }
 
       case 'agent_task': {
-        const prompt = input['prompt'] as string;
+        const rawPrompt = input['prompt'] as string;
+        const bankCtx = formatBankContext();
+        const prompt = bankCtx ? `${bankCtx}\n\n---\n\n${rawPrompt}` : rawPrompt;
         const engineId = (input['engine'] as string) ?? 'browser-use';
         const eng = await registry.getReady(engineId);
         const taskResult = await eng.runTask(prompt);
