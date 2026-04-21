@@ -62,26 +62,22 @@ steps:
       Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_FOUND
 
   - type: agent_task
-    id: prepare_composer
-    description: Switch to Text tab and enable Markdown mode — no text entry
+    id: prepare_and_focus_body
+    description: Setup composer, type title, focus body field — Playwright fills body
     engine: browser-use
     rawPrompt: true
     prompt: >
       You are on reddit.com/r/{{subreddit}}/submit.
       1. Click the Text tab if it is not already selected (not Link or Image)
       2. If a Markdown toggle is visible, click it to enable Markdown mode
-      3. STOP — do not type anything into any field
-
-  - type: fill
-    id: fill_title
-    description: Fill post title directly via Playwright page.fill()
-    selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type"
-    text: "{{post_title}}"
+      3. Click the Title field and type exactly: {{post_title}}
+      4. Click the Body text area to move keyboard focus into it
+      5. STOP — do not type anything into the body field
 
   - type: fill
     id: fill_body
-    description: Fill post body directly via Playwright page.fill()
-    selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']"
+    description: Inject full post body into focused body field via Playwright
+    focused: true
     text: "{{post_text}}"
 
   - type: human_takeover

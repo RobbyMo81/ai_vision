@@ -112,10 +112,20 @@ export const FillStepSchema = z.object({
   type: z.literal('fill'),
   id: z.string(),
   description: z.string().optional(),
-  /** CSS selector for the target field */
-  selector: z.string(),
+  /**
+   * CSS selector for the target field. Omit when focused:true — the step
+   * will type into whichever element already has keyboard focus.
+   */
+  selector: z.string().optional(),
   /** Text to fill — supports {{param}} substitution */
   text: z.string(),
+  /**
+   * When true, skip element lookup and type directly into the currently
+   * focused element via page.keyboard.type(). Use this after an agent_task
+   * has clicked and focused the field — avoids selector brittleness on
+   * third-party sites with dynamic component-based UIs.
+   */
+  focused: z.boolean().optional(),
 });
 
 export const ExtractStepSchema = z.object({
@@ -791,23 +801,17 @@ Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_
         prompt: `You are on reddit.com/r/{{subreddit}}/submit.
 1. Click the Text tab if it is not already selected (not Link or Image)
 2. If a Markdown toggle is visible, click it to enable Markdown mode
-3. STOP — do not type anything into any field`,
+3. Click the Title field and type exactly: {{post_title}}
+4. Click the Body text area to move keyboard focus into it
+5. STOP — do not type anything into the body field`,
         rawPrompt: true,
       },
-
-      // Fill title and body using deterministic Playwright fill — no LLM text entry
-      {
-        type: 'fill',
-        id: 'fill_title',
-        description: 'Fill post title directly via Playwright page.fill()',
-        selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type",
-        text: '{{post_title}}',
-      },
+      // Inject full body into the already-focused body field — no selector needed
       {
         type: 'fill',
         id: 'fill_body',
-        description: 'Fill post body directly via Playwright page.fill()',
-        selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']",
+        description: 'Inject post body into focused body field via Playwright',
+        focused: true,
         text: '{{post_text}}',
       },
 
@@ -1048,21 +1052,16 @@ Respond with exactly one line: DUPLICATE_RISK: <title> or NO_DUPLICATE_FOUND`,
         prompt: `You are on reddit.com/r/{{subreddit}}/submit.
 1. Click the Text tab if it is not already selected (not Link or Image)
 2. If a Markdown toggle is visible, click it to enable Markdown mode
-3. STOP — do not type anything into any field`,
+3. Click the Title field and type exactly: {{reddit_post_title}}
+4. Click the Body text area to move keyboard focus into it
+5. STOP — do not type anything into the body field`,
         rawPrompt: true,
       },
       {
         type: 'fill',
-        id: 'fill_title',
-        description: 'Fill post title directly via Playwright page.fill()',
-        selector: "textarea[placeholder='Title'], [placeholder='Title'], [data-testid='post-create-form'] textarea:first-of-type",
-        text: '{{reddit_post_title}}',
-      },
-      {
-        type: 'fill',
         id: 'fill_body',
-        description: 'Fill post body directly via Playwright page.fill()',
-        selector: "div[data-lexical-editor='true'], div[contenteditable='true']:not([aria-label='Title']):not([aria-labelledby*='title']), textarea[name='text'], .notranslate[contenteditable='true']",
+        description: 'Inject post body into focused body field via Playwright',
+        focused: true,
         text: '{{reddit_post_text}}',
       },
       {
