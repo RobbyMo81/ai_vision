@@ -876,8 +876,13 @@ async function executeStep(
           (sub as { memorySection?: string }).memorySection ??
           sub.id.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
-        // Wrap prompt with SIC best-practices + session memory context
-        const enhancedPrompt = buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
+        // Wrap prompt with SIC best-practices + session memory context.
+        // rawPrompt=true bypasses all injection (used for single-line lookup steps
+        // like duplicate checks where extra context disrupts the required output format).
+        const useRawPrompt = (sub as { rawPrompt?: boolean }).rawPrompt === true;
+        const enhancedPrompt = useRawPrompt
+          ? sub.prompt
+          : buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
 
         const cookies = await sessionManager.extractCookies();
         const engine = await registry.getReady(engineId);

@@ -141,6 +141,12 @@ export const AgentTaskStepSchema = z.object({
    * in its final result text.
    */
   outputFailsOn: z.array(z.string()).optional(),
+  /**
+   * Skip all memory/bank context injection and send only the raw prompt to the
+   * engine. Use for simple lookup/check tasks where the extra context disrupts
+   * a required single-line output format (e.g. duplicate detection checks).
+   */
+  rawPrompt: z.boolean().optional(),
 });
 
 export const HumanTakeoverStepSchema = z.object({
@@ -596,6 +602,7 @@ STOP on the Review/Summary page. DO NOT click Submit. The human operator will re
         description: 'Check account timeline for duplicate content before drafting',
         engine: 'browser-use',
         memorySection: 'x-preflight',
+        rawPrompt: true,
         outputFailsOn: ['DUPLICATE_RISK:'],
         prompt: `You are on X/Twitter. Before drafting anything, check the account's recent timeline for duplicate content.
 
@@ -742,6 +749,7 @@ Return a concise description of what visible evidence confirms the post was publ
         description: 'Check recent subreddit posts for duplicate title (skip for test subreddit)',
         engine: 'browser-use',
         memorySection: 'reddit-preflight',
+        rawPrompt: true,
         outputFailsOn: ['DUPLICATE_RISK:'],
         prompt: `Duplicate check before posting to Reddit r/{{subreddit}}:
 
@@ -880,6 +888,7 @@ THEN SUBMIT:
         id: 'check_duplicate_post',
         engine: 'browser-use',
         memorySection: 'x-preflight',
+        rawPrompt: true,
         outputFailsOn: ['DUPLICATE_RISK:'],
         prompt: `You are on X/Twitter. Check the account timeline for duplicate content before drafting.
 
@@ -993,6 +1002,7 @@ Rules:
         id: 'check_duplicate_reddit_post',
         engine: 'browser-use',
         memorySection: 'reddit-preflight',
+        rawPrompt: true,
         outputFailsOn: ['DUPLICATE_RISK:'],
         prompt: `Duplicate check before posting to Reddit r/{{subreddit}}:
 

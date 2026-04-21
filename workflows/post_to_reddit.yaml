@@ -50,6 +50,7 @@ steps:
     id: check_duplicate_reddit_post
     description: Check recent subreddit posts for duplicate title
     engine: browser-use
+    rawPrompt: true
     outputFailsOn:
       - "DUPLICATE_RISK:"
     prompt: >

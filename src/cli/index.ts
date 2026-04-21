@@ -89,7 +89,7 @@ program
 program
   .command('run <prompt>')
   .description('Run a natural language browser automation task')
-  .option('-e, --engine <engine>', 'Engine to use: browser-use | stagehand | skyvern', 'browser-use')
+  .option('-e, --engine <engine>', 'Engine to use: browser-use | skyvern', 'browser-use')
   .option('-s, --screenshot', 'Take a screenshot after the task completes')
   .action(async (prompt: string, opts: { engine: string; screenshot: boolean }) => {
     const engineId = opts.engine as EngineId;
@@ -204,6 +204,10 @@ program
     const { startUiServer } = await import('../ui/server');
     await startUiServer(uiPort);
 
+    const webhookPort = parseInt(process.env.AI_VISION_WEBHOOK_PORT ?? '3001', 10);
+    const { startWebhookServer } = await import('../webhooks/server');
+    await startWebhookServer(webhookPort);
+
     const { createMcpServer } = await import('../mcp/server');
     await createMcpServer();
   });
@@ -249,6 +253,7 @@ program
     process.once('SIGTERM', onSigTerm);
 
     const { BUILTIN_WORKFLOWS } = await import('../workflow/types');
+    const { loadYamlWorkflow, listYamlWorkflows } = await import('../orchestrator/loader');
 
     if (opts.list || !workflowId) {
       console.log('Available workflows:');
@@ -256,13 +261,34 @@ program
         console.log(`  ${wf.id.padEnd(24)} ${wf.name}`);
         if (wf.description) console.log(`  ${''.padEnd(24)} ${wf.description}`);
       }
+      const yamlNames = listYamlWorkflows();
+      if (yamlNames.length > 0) {
+        console.log('\nYAML workflows (workflows/*.yaml):');
+        for (const name of yamlNames) {
+          console.log(`  ${name}`);
+        }
+      }
       return;
     }
 
-    const definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflowId!);
-    if (!definition) {
-      console.error(`Unknown workflow: '${workflowId}'. Run 'ai-vision workflow --list' to see available workflows.`);
-      process.exit(1);
+    // Accept a .yaml/.yml file path or a plain workflow ID
+    let definition;
+    if (workflowId.endsWith('.yaml') || workflowId.endsWith('.yml')) {
+      const yamlPath = path.isAbsolute(workflowId)
+        ? workflowId
+        : path.resolve(process.cwd(), workflowId);
+      try {
+        definition = loadYamlWorkflow(yamlPath);
+      } catch (e) {
+        console.error(`Failed to load YAML workflow '${workflowId}': ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+    } else {
+      definition = BUILTIN_WORKFLOWS.find((w) => w.id === workflowId!);
+      if (!definition) {
+        console.error(`Unknown workflow: '${workflowId}'. Run 'ai-vision workflow --list' to see available workflows.`);
+        process.exit(1);
+      }
     }
 
     try {
@@ -272,12 +298,12 @@ program
       process.exit(1);
     }
 
-    // Parse key=value params
+    // Parse key=value params. Unescape \n so multiline bodies survive shell quoting.
     const params: Record<string, string> = {};
     for (const p of opts.param) {
       const idx = p.indexOf('=');
       if (idx < 0) { console.error(`Invalid param format: '${p}' (expected key=value)`); process.exit(1); }
-      params[p.slice(0, idx)] = p.slice(idx + 1);
+      params[p.slice(0, idx)] = p.slice(idx + 1).replace(/\\n/g, '\n');
     }
 
     const uiPort = parseInt(opts.uiPort, 10);
@@ -300,7 +326,7 @@ program
       console.log('');
 
       const result = await workflowEngine.run(definition, params, sessionId);
-      (await getRepo()).save(sessionId, 'stagehand' /* closest engine-id proxy */, JSON.stringify({ workflowId, params }), {
+      (await getRepo()).save(sessionId, 'browser-use' /* engine-id proxy */, JSON.stringify({ workflowId, params }), {
         success: result.success,
         output: JSON.stringify(result.outputs),
         screenshots: result.screenshots.map((s) => ({ path: s.path, takenAt: new Date() })),
