@@ -918,7 +918,11 @@ async function executeStep(
 
         const cookies = await sessionManager.extractCookies();
         const engine = await registry.getReady(engineId);
-        const taskResult = await engine.runTask(enhancedPrompt, { cookies });
+        const stepMaxSteps = (sub as { maxSteps?: number }).maxSteps;
+        const taskResult = await engine.runTask(enhancedPrompt, {
+          cookies,
+          ...(stepMaxSteps != null ? { maxSteps: stepMaxSteps } : {}),
+        });
         // Re-sync the SessionManager's active page after browser-use may have
         // opened new tabs or navigated. Keeps HITL screenshots current.
         await sessionManager.syncActivePage().catch(() => {});

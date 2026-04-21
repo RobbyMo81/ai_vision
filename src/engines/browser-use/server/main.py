@@ -60,6 +60,7 @@ app = FastAPI(title="browser-use bridge", lifespan=lifespan)
 class TaskRequest(BaseModel):
     prompt: str
     session_id: Optional[str] = None
+    max_steps: Optional[int] = None
 
 
 class NavigateRequest(BaseModel):
@@ -101,21 +102,21 @@ def _provider_has_credentials(provider: str) -> bool:
 
 
 def _resolve_model(provider: str) -> str:
-    generic = os.getenv("STAGEHAND_LLM_MODEL", "").strip()
+    generic = os.getenv("BROWSER_USE_LLM_MODEL", "").strip()
     if provider == "anthropic":
         return (
-            os.getenv("STAGEHAND_LLM_MODEL_ANTHROPIC")
+            os.getenv("BROWSER_USE_LLM_MODEL_ANTHROPIC")
             or (generic if generic and not generic.startswith("gpt") and generic != "o3" else "claude-sonnet-4-6")
         )
     return (
-        os.getenv("STAGEHAND_LLM_MODEL_OPENAI")
+        os.getenv("BROWSER_USE_LLM_MODEL_OPENAI")
         or (generic if generic and (generic.startswith("gpt") or generic == "o3") else "gpt-4o")
     )
 
 
 def _provider_candidates(primary_override: str | None = None) -> list[str]:
-    primary = _normalize_provider(primary_override or os.getenv("STAGEHAND_LLM_PROVIDER", "anthropic"))
-    configured_fallback = _normalize_provider(os.getenv("STAGEHAND_LLM_FALLBACK_PROVIDER", ""))
+    primary = _normalize_provider(primary_override or os.getenv("BROWSER_USE_LLM_PROVIDER", "anthropic"))
+    configured_fallback = _normalize_provider(os.getenv("BROWSER_USE_LLM_FALLBACK_PROVIDER", ""))
     default_fallback = "openai" if primary == "anthropic" else "anthropic"
 
     candidates: list[str] = [primary]
@@ -222,9 +223,27 @@ _STARTUP_CHROME_ARGS = [
 
 async def _create_session():
     from browser_use.browser.session import BrowserSession
+    import aiohttp
 
     cdp_url = os.getenv("BROWSER_CDP_URL", "")
     if cdp_url:
+        # Wait until the shared Chrome is accepting CDP connections before attaching.
+        # Chrome may have just restarted (e.g. after a port eviction) and needs a
+        # moment to bind its debugger endpoint — without this, BrowserSession.start()
+        # races Chrome startup and falls back to launching a second browser window.
+        deadline = asyncio.get_event_loop().time() + 10.0
+        while True:
+            try:
+                async with aiohttp.ClientSession() as http:
+                    async with http.get(f"{cdp_url}/json/version", timeout=aiohttp.ClientTimeout(total=1)) as resp:
+                        if resp.status == 200:
+                            break
+            except Exception:
+                pass
+            if asyncio.get_event_loop().time() >= deadline:
+                break
+            await asyncio.sleep(0.25)
+
         # keep_alive=True prevents browser-use from firing BrowserStopEvent/reset()
         # at the end of each agent run, eliminating inter-task session teardown latency.
         session = BrowserSession(cdp_url=cdp_url, keep_alive=True)
@@ -335,6 +354,7 @@ async def _run_agent_once(req: TaskRequest, provider_override: str | None = None
         llm=llm,
         browser_session=session,
         save_conversation_path=str(conversation_path),
+        max_steps=req.max_steps if req.max_steps is not None else int(os.getenv("BROWSER_USE_MAX_STEPS", "20")),
     )
     result = await agent.run()
 

@@ -1,0 +1,474 @@
+[
+  {
+    "id": "58a492af",
+    "timestamp": "2026-04-20T16:33:58.096715+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "a617952a",
+    "timestamp": "2026-04-20T16:38:36.303854+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "d969b0ed",
+    "timestamp": "2026-04-20T16:43:36.284574+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "ad5fe5fd",
+    "timestamp": "2026-04-20T16:48:36.178635+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "a93501be",
+    "timestamp": "2026-04-20T16:53:36.573648+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "88ee740d",
+    "timestamp": "2026-04-20T16:58:36.567688+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "2b01f305",
+    "timestamp": "2026-04-20T17:03:36.218576+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "0921071d",
+    "timestamp": "2026-04-20T17:08:36.293686+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "0aac08b0",
+    "timestamp": "2026-04-20T17:13:36.425726+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "3d7f1d20",
+    "timestamp": "2026-04-20T17:18:36.149469+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "40c433b4",
+    "timestamp": "2026-04-20T17:23:36.300076+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "3fa60522",
+    "timestamp": "2026-04-20T17:28:36.131631+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "fc0830ca",
+    "timestamp": "2026-04-20T17:33:36.689993+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "d02e4ea2",
+    "timestamp": "2026-04-20T17:38:36.468694+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "8ad156b7",
+    "timestamp": "2026-04-20T17:43:36.273777+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "c6f945f9",
+    "timestamp": "2026-04-20T17:48:36.409270+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "25336e05",
+    "timestamp": "2026-04-20T17:53:36.651802+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "0b008bab",
+    "timestamp": "2026-04-20T17:58:36.152676+00:00",
+    "kind": "error_unknown",
+    "issue_number": 8,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "4e44bee5",
+    "timestamp": "2026-04-20T18:23:35.114079+00:00",
+    "kind": "error_fatal",
+    "issue_number": 6,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #6 in RobbyMo81/ai_vision.\\n\\nTitle: [US-009] Claude orchestrator loop\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "7a7552f2",
+    "timestamp": "2026-04-20T19:08:35.122753+00:00",
+    "kind": "error_fatal",
+    "issue_number": 3,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "4a440def",
+    "timestamp": "2026-04-20T19:23:35.121110+00:00",
+    "kind": "error_fatal",
+    "issue_number": 3,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "e1fe0a26",
+    "timestamp": "2026-04-20T19:38:35.121264+00:00",
+    "kind": "error_fatal",
+    "issue_number": 3,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "c466590f",
+    "timestamp": "2026-04-20T19:53:35.119975+00:00",
+    "kind": "error_fatal",
+    "issue_number": 3,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "31652935",
+    "timestamp": "2026-04-20T20:09:08.798777+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "6bb187ce",
+    "timestamp": "2026-04-20T20:13:36.088734+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "512eac0b",
+    "timestamp": "2026-04-20T20:18:36.547795+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "aff7d128",
+    "timestamp": "2026-04-20T20:23:36.024120+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "92a1c7dd",
+    "timestamp": "2026-04-20T20:28:36.338506+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "f8aa42a1",
+    "timestamp": "2026-04-20T20:33:36.204720+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "2590c422",
+    "timestamp": "2026-04-20T20:38:36.479745+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "f53949d0",
+    "timestamp": "2026-04-20T20:43:36.157613+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "bd530f78",
+    "timestamp": "2026-04-20T20:48:36.296590+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "56807968",
+    "timestamp": "2026-04-20T20:53:36.166021+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "f20da8ca",
+    "timestamp": "2026-04-20T20:58:36.731554+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "14806670",
+    "timestamp": "2026-04-20T21:03:36.276702+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "ba88f227",
+    "timestamp": "2026-04-20T21:08:36.484005+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "8cc88a96",
+    "timestamp": "2026-04-20T21:13:36.150710+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "8cebce95",
+    "timestamp": "2026-04-20T21:18:36.634699+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "3ca0f01d",
+    "timestamp": "2026-04-20T21:23:36.164451+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "508220d9",
+    "timestamp": "2026-04-20T21:28:36.538763+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "7235f006",
+    "timestamp": "2026-04-20T21:33:36.318411+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "bbdf1726",
+    "timestamp": "2026-04-20T21:38:36.699566+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "83743594",
+    "timestamp": "2026-04-20T21:43:36.315686+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "25b01337",
+    "timestamp": "2026-04-20T21:48:36.320710+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "46357a0b",
+    "timestamp": "2026-04-20T21:53:36.139782+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "c3933718",
+    "timestamp": "2026-04-20T21:58:36.508398+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "c468c326",
+    "timestamp": "2026-04-20T22:03:36.100774+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "c1c23038",
+    "timestamp": "2026-04-20T22:08:36.223357+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "7fd2f72f",
+    "timestamp": "2026-04-20T22:13:36.423097+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "fe42ab93",
+    "timestamp": "2026-04-20T22:18:36.375747+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "e98b2dfe",
+    "timestamp": "2026-04-20T22:23:36.492727+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "61bd1969",
+    "timestamp": "2026-04-20T22:28:36.056051+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "8727c965",
+    "timestamp": "2026-04-20T22:33:36.664929+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "373a3c5c",
+    "timestamp": "2026-04-20T22:38:36.333770+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "725ca75e",
+    "timestamp": "2026-04-20T22:43:36.383752+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "718293f3",
+    "timestamp": "2026-04-20T22:48:36.099390+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "40729178",
+    "timestamp": "2026-04-20T22:53:36.154346+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "57b32836",
+    "timestamp": "2026-04-20T22:58:37.014589+00:00",
+    "kind": "error_unknown",
+    "issue_number": 2,
+    "details": "RuntimeError: claude exited 1: ",
+    "resolution_status": "unresolved"
+  },
+  {
+    "id": "68ffe028",
+    "timestamp": "2026-04-20T23:13:35.124098+00:00",
+    "kind": "error_fatal",
+    "issue_number": 2,
+    "details": "TimeoutExpired: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #2 in RobbyMo81/ai_vision.\\n\\nTitle: [US-005] Remove Stagehand engine\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+    "resolution_status": "unresolved"
+  }
+]

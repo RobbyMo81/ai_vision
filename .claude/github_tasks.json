@@ -1,0 +1,90 @@
+{
+  "last_synced": "2026-04-21T16:28:35.428547+00:00",
+  "tasks": [
+    {
+      "issue_number": 8,
+      "title": "[US-011] Webhooks \u2014 inbound triggers and outbound notifications",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "Error: claude exited 1: ",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 7,
+      "title": "[US-010] Memory bank seeding",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 6,
+      "title": "[US-009] Claude orchestrator loop",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "Error: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #6 in RobbyMo81/ai_vision.\\n\\nTitle: [US-009] Claude orchestrator loop\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 5,
+      "title": "[US-008] New MCP tools: write_copy, query_telemetry, read_memory, write_memory",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 4,
+      "title": "[US-007] Markdown instruction loader",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 3,
+      "title": "[US-006] YAML workflow loader",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "Error: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+      "linked_to": {}
+    },
+    {
+      "issue_number": 2,
+      "title": "[US-005] Remove Stagehand engine",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "assignee": null,
+      "agent_status": "completed",
+      "agent_notes": "Error: Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #2 in RobbyMo81/ai_vision.\\n\\nTitle: [US-005] Remove Stagehand engine\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds",
+      "linked_to": {}
+    }
+  ],
+  "queue": []
+}

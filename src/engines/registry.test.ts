@@ -7,21 +7,21 @@ describe('EngineRegistry', () => {
     reg = new EngineRegistry();
   });
 
-  it('lists all three engines', () => {
+  it('lists all two engines', () => {
     expect(reg.availableEngines()).toEqual(
-      expect.arrayContaining(['browser-use', 'stagehand', 'skyvern'])
+      expect.arrayContaining(['browser-use', 'skyvern'])
     );
   });
 
   it('returns the same instance on repeated get()', () => {
-    const a = reg.get('stagehand');
-    const b = reg.get('stagehand');
+    const a = reg.get('browser-use');
+    const b = reg.get('browser-use');
     expect(a).toBe(b);
   });
 
   it('returns different instances for different engine ids', () => {
     const a = reg.get('browser-use');
-    const b = reg.get('stagehand');
+    const b = reg.get('skyvern');
     expect(a).not.toBe(b);
   });
 

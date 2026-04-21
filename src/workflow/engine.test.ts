@@ -12,6 +12,7 @@ const mockSessionManager = {
   start: jest.fn(),
   currentUrl: jest.fn(),
   getPage: jest.fn(),
+  close: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockHitlCoordinator = {
@@ -87,6 +88,11 @@ jest.mock('../memory', () => ({
   ShortTermMemoryManager: {
     getOutputFormatInstruction: jest.fn(() => ''),
   },
+}));
+
+const mockRunOrchestratorLoop = jest.fn();
+jest.mock('../orchestrator/loop', () => ({
+  runOrchestratorLoop: (...args: unknown[]) => mockRunOrchestratorLoop(...args),
 }));
 
 describe('workflowEngine RF-001 runtime output substitution', () => {
@@ -180,5 +186,62 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     expect(result.success).toBe(true);
     expect(mockWriter.writePost).not.toHaveBeenCalled();
     expect(mockHitlCoordinator.requestQaPause).not.toHaveBeenCalled();
+  });
+});
+
+describe('workflowEngine US-009 orchestrator loop delegation', () => {
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRunOrchestratorLoop.mockResolvedValue({
+      workflowId: 'yaml-test',
+      success: true,
+      stepResults: [],
+      outputs: { result: 'done' },
+      screenshots: [],
+      durationMs: 42,
+    });
+  });
+
+  it('delegates to runOrchestratorLoop when definition.source is yaml', async () => {
+    const definition = {
+      id: 'yaml-test',
+      name: 'YAML Test Workflow',
+      source: 'yaml' as const,
+      params: {},
+      steps: [],
+    };
+
+    const result = await workflowEngine.run(definition, { topic: 'test' }, 'sess-001');
+
+    expect(mockRunOrchestratorLoop).toHaveBeenCalledTimes(1);
+    expect(mockRunOrchestratorLoop).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'yaml-test', source: 'yaml' }),
+      expect.objectContaining({ topic: 'test' }),
+      'sess-001',
+    );
+    expect(result.success).toBe(true);
+    expect(result.outputs.result).toBe('done');
+  });
+
+  it('does not delegate to orchestrator loop for builtin workflows', async () => {
+    const definition = {
+      id: 'builtin-test',
+      name: 'Builtin Test',
+      source: 'builtin' as const,
+      params: {},
+      steps: [],
+    };
+
+    mockSessionManager.start.mockResolvedValue(undefined);
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/');
+
+    const result = await workflowEngine.run(definition);
+
+    expect(mockRunOrchestratorLoop).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
   });
 });

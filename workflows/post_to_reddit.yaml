@@ -51,6 +51,7 @@ steps:
     description: Check recent subreddit posts for duplicate title
     engine: browser-use
     rawPrompt: true
+    maxSteps: 5
     outputFailsOn:
       - "DUPLICATE_RISK:"
     prompt: >
@@ -66,6 +67,7 @@ steps:
     description: Setup composer, type title, focus body field — Playwright fills body
     engine: browser-use
     rawPrompt: true
+    maxSteps: 6
     prompt: >
       You are on reddit.com/r/{{subreddit}}/submit.
       1. Click the Text tab if it is not already selected (not Link or Image)
@@ -92,6 +94,7 @@ steps:
     id: submit_reddit_post
     description: Click Post button and confirm publish
     engine: browser-use
+    maxSteps: 8
     prompt: >
       STEP 1 — Check the current URL right now.
       If the URL already contains "/comments/", the post was already submitted.

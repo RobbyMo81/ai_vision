@@ -111,7 +111,30 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
 
   async initialize(): Promise<void> {
     if (this._ready) return;
-    await this._startSubprocess();
+    const portFree = await this._checkPortFree();
+    if (!portFree) {
+      // Port occupied — try to reclaim it via graceful shutdown first.
+      // If the orphaned server won't close, check if it's still healthy enough to reuse.
+      const recovered = await this._recoverOccupiedPort();
+      if (!recovered) {
+        // Can't free the port; check if the existing server is healthy and reuse it.
+        try {
+          await this.http.get('/health');
+          // Server is alive — adopt it without spawning a new process.
+          await this._post('/initialize');
+          this._ready = true;
+          return;
+        } catch {
+          throw new AutomationError(
+            `Port ${this.config.port} is already in use and the existing server is unhealthy. ` +
+            `Kill the old '${this.id}' bridge process manually and retry.`,
+            this.id
+          );
+        }
+      }
+    } else {
+      await this._startSubprocess();
+    }
     await this._waitForHealth();
     await this._post('/initialize');
     this._ready = true;
@@ -169,7 +192,7 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     };
   }
 
-  async runTask(prompt: string): Promise<TaskResult> {
+  async runTask(prompt: string, context?: import('./interface').TaskContext): Promise<TaskResult> {
     this._assertReady();
     const res = await this._post<{
       success: boolean;
@@ -177,7 +200,7 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
       error?: string;
       screenshots: Array<{ path: string; base64: string; taken_at: string }>;
       duration_ms: number;
-    }>('/task', { prompt });
+    }>('/task', { prompt, ...(context?.maxSteps != null ? { max_steps: context.maxSteps } : {}) });
     return {
       success: res.success,
       output: res.output,
@@ -256,20 +279,6 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
   }
 
   private async _startSubprocess(): Promise<void> {
-    // FIX-12: Fail fast with a clear message instead of silently timing out
-    const portFree = await this._checkPortFree();
-    if (!portFree) {
-      const recovered = await this._recoverOccupiedPort();
-      if (recovered) {
-        return this._startSubprocess();
-      }
-      throw new AutomationError(
-        `Port ${this.config.port} is already in use. ` +
-        `A previous '${this.id}' bridge may still be running, or another process holds this port.`,
-        this.id
-      );
-    }
-
     if (!fs.existsSync(this.config.serverScript)) {
       throw new AutomationError(
         `Bridge server script not found: ${this.config.serverScript}`,

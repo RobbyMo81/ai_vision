@@ -173,6 +173,10 @@ export const AgentTaskStepSchema = z.object({
    * a required single-line output format (e.g. duplicate detection checks).
    */
   rawPrompt: z.boolean().optional(),
+  /** Cap the browser-use agent loop at this many steps for this task.
+   *  Overrides the BROWSER_USE_MAX_STEPS env default. Set low (3–6) for
+   *  focused single-action steps to avoid wasteful planning loops. */
+  maxSteps: z.number().int().positive().optional(),
 });
 
 export const HumanTakeoverStepSchema = z.object({

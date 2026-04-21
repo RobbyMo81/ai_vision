@@ -335,8 +335,12 @@ function updateState(state) {
       returnBtn.textContent = 'Verified / Continue';
       returnBtn.onclick = () => returnControl();
       rejectBtn.style.display = 'none';
+    } else if (hitlAction === 'approve_draft') {
+      returnBtn.textContent = 'Approve Draft & Begin Posting';
+      returnBtn.onclick = () => returnControl();
+      rejectBtn.style.display = 'none';
     } else if (hitlAction === 'capture_notes') {
-      returnBtn.textContent = 'Continue Wrap-up';
+      returnBtn.textContent = 'Dismiss & Close';
       returnBtn.onclick = () => returnControl();
       rejectBtn.style.display = 'none';
     } else {

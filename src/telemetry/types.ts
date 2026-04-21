@@ -6,7 +6,9 @@ export type TelemetrySource =
   | 'ui'
   | 'wrapup'
   | 'db'
-  | 'engine';
+  | 'engine'
+  | 'webhook'
+  | 'orchestrator';
 
 export interface TelemetryIssue {
   code: string;

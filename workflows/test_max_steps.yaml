@@ -1,0 +1,34 @@
+id: test_max_steps
+name: Test maxSteps Cap
+description: >
+  Smoke test for per-step maxSteps. Runs two identical extract tasks against
+  example.com — one capped at 2 steps, one uncapped — and compares durations.
+  No auth required. Run headless.
+source: yaml
+mode: direct
+
+steps:
+  - type: navigate
+    id: open_page
+    description: Open a stable public page that needs no auth
+    url: "https://example.com"
+    waitUntil: domcontentloaded
+
+  - type: agent_task
+    id: capped_task
+    description: Extract h1 text, capped at 2 browser-use steps
+    engine: browser-use
+    rawPrompt: true
+    maxSteps: 2
+    prompt: >
+      Report the text of the <h1> element on the current page.
+      Respond with exactly one line: TITLE: <text>
+
+  - type: agent_task
+    id: uncapped_task
+    description: Same extract without a step cap (uses env default)
+    engine: browser-use
+    rawPrompt: true
+    prompt: >
+      Report the text of the <h1> element on the current page.
+      Respond with exactly one line: TITLE: <text>

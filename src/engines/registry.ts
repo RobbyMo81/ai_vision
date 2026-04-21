@@ -1,14 +1,12 @@
 import { AutomationEngine, EngineId } from './interface';
 import { BrowserUseEngine } from './browser-use/engine';
 import { SkyvernEngine } from './skyvern/engine';
-import { StagehandEngine } from './stagehand/engine';
 
 type EngineFactory = () => AutomationEngine;
 
 const FACTORIES: Record<EngineId, EngineFactory> = {
   'browser-use': () => new BrowserUseEngine(),
   'skyvern': () => new SkyvernEngine(),
-  'stagehand': () => new StagehandEngine(),
 };
 
 export class EngineRegistry {

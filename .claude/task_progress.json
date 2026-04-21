@@ -1,0 +1,853 @@
+[
+  {
+    "timestamp": "2026-04-20T16:33:34.997296+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:33:58.096971+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T16:38:34.997474+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:38:36.304112+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T16:43:34.997167+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:43:36.284812+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T16:48:34.997619+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:48:36.178865+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T16:53:34.997350+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:53:36.573900+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T16:58:34.998185+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T16:58:36.567944+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:03:34.997690+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:03:36.218819+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:08:34.997470+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:08:36.293970+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:13:34.997451+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:13:36.425977+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:18:34.997655+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:18:36.149709+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:23:34.997352+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:23:36.300337+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:28:34.999252+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:28:36.131925+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:33:34.997512+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:33:36.690291+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:38:34.997858+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:38:36.469005+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:43:34.997535+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:43:36.274087+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:48:34.997605+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:48:36.409604+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:53:34.997688+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:53:36.652152+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T17:58:34.998321+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T17:58:36.152946+00:00",
+    "issue_number": 8,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T18:03:34.997365+00:00",
+    "issue_number": 8,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:07:58.951321+00:00",
+    "issue_number": 8,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T18:08:34.997697+00:00",
+    "issue_number": 7,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:10:40.600095+00:00",
+    "issue_number": 7,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T18:13:34.997766+00:00",
+    "issue_number": 6,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:23:35.114450+00:00",
+    "issue_number": 6,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #6 in RobbyMo81/ai_vision.\\n\\nTitle: [US-009] Claude orchestrator loop\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T18:28:34.998169+00:00",
+    "issue_number": 6,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:35:00.252040+00:00",
+    "issue_number": 6,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T18:38:34.997660+00:00",
+    "issue_number": 5,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:44:55.601696+00:00",
+    "issue_number": 5,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T18:48:35.015961+00:00",
+    "issue_number": 4,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T18:55:33.501383+00:00",
+    "issue_number": 4,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T18:58:35.026036+00:00",
+    "issue_number": 3,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T19:08:35.127393+00:00",
+    "issue_number": 3,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T19:13:35.012376+00:00",
+    "issue_number": 3,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T19:23:35.121787+00:00",
+    "issue_number": 3,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T19:28:35.009040+00:00",
+    "issue_number": 3,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T19:38:35.121648+00:00",
+    "issue_number": 3,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T19:43:34.997456+00:00",
+    "issue_number": 3,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T19:53:35.120389+00:00",
+    "issue_number": 3,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #3 in RobbyMo81/ai_vision.\\n\\nTitle: [US-006] YAML workflow loader\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T19:58:34.998389+00:00",
+    "issue_number": 3,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:04:34.212386+00:00",
+    "issue_number": 3,
+    "event_type": "task_completed",
+    "status": "completed"
+  },
+  {
+    "timestamp": "2026-04-20T20:08:34.997643+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:09:08.799103+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:13:34.997749+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:13:36.089143+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:18:34.997471+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:18:36.548135+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:23:34.997592+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:23:36.024443+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:28:34.998903+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:28:36.348020+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:33:34.997682+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:33:36.205043+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:38:34.997903+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:38:36.480085+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:43:34.997386+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:43:36.158114+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:48:34.998070+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:48:36.307298+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:53:34.997385+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:53:36.166382+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T20:58:34.997875+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T20:58:36.731898+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:03:34.997914+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:03:36.277081+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:08:34.997605+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:08:36.484396+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:13:34.998175+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:13:36.151048+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:18:34.997656+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:18:36.635057+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:23:34.997478+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:23:36.164816+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:28:34.998120+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:28:36.539122+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:33:34.997582+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:33:36.318751+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:38:34.997454+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:38:36.710001+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:43:34.997387+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:43:36.316061+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:48:34.997420+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:48:36.330529+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:53:34.997480+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:53:36.140311+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T21:58:34.998311+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T21:58:36.508815+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:03:34.997719+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:03:36.101169+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:08:34.997427+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:08:36.223727+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:13:34.997459+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:13:36.423528+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:18:34.997722+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:18:36.376152+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:23:34.997512+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:23:36.493134+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:28:34.998072+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:28:36.067461+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:33:34.997990+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:33:36.665334+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:38:34.997511+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:38:36.343367+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:43:34.997482+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:43:36.384142+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:48:34.997582+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:48:36.099879+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:53:34.997535+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:53:36.154865+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T22:58:35.006973+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T22:58:37.014985+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "claude exited 1: "
+  },
+  {
+    "timestamp": "2026-04-20T23:03:34.997709+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T23:13:35.124582+00:00",
+    "issue_number": 2,
+    "event_type": "task_failed",
+    "status": "failed",
+    "error": "Command '['claude', '--print', '--dangerously-skip-permissions', 'You are working on GitHub issue #2 in RobbyMo81/ai_vision.\\n\\nTitle: [US-005] Remove Stagehand engine\\n\\nDescription:\\n\\n\\nProject directory: /home/spoq/ai-vision\\n\\nImplement the changes required to resolve this issue. Work inside the project directory. When done, summarize what you did.']' timed out after 600 seconds"
+  },
+  {
+    "timestamp": "2026-04-20T23:18:35.006122+00:00",
+    "issue_number": 2,
+    "event_type": "task_started",
+    "status": "in_progress"
+  },
+  {
+    "timestamp": "2026-04-20T23:21:18.531065+00:00",
+    "issue_number": 2,
+    "event_type": "task_completed",
+    "status": "completed"
+  }
+]
