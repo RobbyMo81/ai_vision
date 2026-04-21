@@ -1,0 +1,80 @@
+id: write_and_post_to_reddit
+name: Write and Post To Reddit
+description: >
+  Use Gemini to draft a Reddit post title and body, then publish it via the
+  Claude orchestrator loop with HITL draft review and confirmation.
+source: yaml
+mode: agentic
+
+permissions:
+  require_human_approval_before:
+    - reddit_login
+    - submit_reddit_post
+
+params:
+  topic:
+    type: string
+    description: What the post should be about
+  context:
+    type: string
+    description: Background facts or details for the writer
+    required: false
+    default: ""
+  tone:
+    type: string
+    description: "Writing tone: factual | conversational | professional | direct"
+    required: false
+    default: conversational
+  subreddit:
+    type: string
+    description: Target subreddit without r/ prefix
+    required: false
+    default: test
+
+steps:
+  - type: generate_content
+    id: write_reddit_post
+    description: Draft the Reddit title and body
+    platform: reddit
+    topic: "{{topic}}"
+    context: "{{context}}"
+    tone: "{{tone}}"
+    outputKey: reddit_post_text
+    outputTitleKey: reddit_post_title
+
+  - type: navigate
+    id: open_reddit
+    url: "https://www.reddit.com/r/{{subreddit}}/submit"
+    waitUntil: domcontentloaded
+
+  - type: human_takeover
+    id: reddit_login
+    reason: Verify authenticated access to Reddit
+    instructions: >
+      Verify whether Reddit is already signed in. If your username is visible
+      in the header, continue. Otherwise log in and then continue.
+
+  - type: agent_task
+    id: check_duplicate_reddit_post
+    engine: browser-use
+    prompt: >
+      Duplicate check before posting to Reddit r/{{subreddit}}.
+      Title to check: {{reddit_post_title}}.
+      Scan visible posts for any title with >70% overlap.
+      Respond with exactly one line: DUPLICATE_RISK: <title> or NO_DUPLICATE_FOUND.
+
+  - type: agent_task
+    id: draft_reddit_post
+    engine: browser-use
+    prompt: >
+      Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit.
+      Title: {{reddit_post_title}}
+      Body: {{reddit_post_text}}
+      Ensure Text tab is selected, type the exact title and body. STOP — do NOT click Submit.
+
+  - type: human_takeover
+    id: submit_reddit_post
+    reason: Review draft before submitting
+    instructions: >
+      Review the post title and body in the composer. If everything looks
+      correct, click Submit. Otherwise make edits and then click Submit.

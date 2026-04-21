@@ -121,7 +121,7 @@ export const AgentTaskStepSchema = z.object({
    * 'auto' (default) lets the router pick based on heuristics.
    * Override to force a specific engine.
    */
-  engine: z.enum(['auto', 'browser-use', 'stagehand', 'skyvern']).optional(),
+  engine: z.enum(['auto', 'browser-use', 'skyvern']).optional(),
   /**
    * Memory section label injected into the MEMORY_UPDATE block.
    * Used by short-term memory to group completed fields by form section.
@@ -203,10 +203,23 @@ export const ParamDefinitionSchema = z.object({
 // Workflow definition
 // ---------------------------------------------------------------------------
 
+export const WorkflowPermissionsSchema = z.object({
+  require_human_approval_before: z.array(z.string()).optional(),
+});
+
 export const WorkflowDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
+  /** 'yaml' marks workflows loaded from a YAML file. */
+  source: z.enum(['builtin', 'yaml']).optional(),
+  /**
+   * Execution mode for YAML workflows.
+   *   direct  — step-by-step engine: fast, deterministic, no LLM loop (default)
+   *   agentic — Claude orchestrator loop: for open-ended reasoning tasks
+   */
+  mode: z.enum(['direct', 'agentic']).optional().default('direct'),
+  permissions: WorkflowPermissionsSchema.optional(),
   params: z.record(ParamDefinitionSchema).optional().default({}),
   steps: z.array(WorkflowStepSchema),
 });
@@ -226,6 +239,7 @@ export type GenerateContentStep = z.infer<typeof GenerateContentStepSchema>;
 
 export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
 export type ParamDefinition = z.infer<typeof ParamDefinitionSchema>;
+export type WorkflowPermissions = z.infer<typeof WorkflowPermissionsSchema>;
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 
 // ---------------------------------------------------------------------------
@@ -725,53 +739,40 @@ Return a concise description of what visible evidence confirms the post was publ
       {
         type: 'agent_task',
         id: 'check_duplicate_reddit_post',
-        description: 'Check recent subreddit and user history for a duplicate title before composing',
+        description: 'Check recent subreddit posts for duplicate title (skip for test subreddit)',
         engine: 'browser-use',
         memorySection: 'reddit-preflight',
         outputFailsOn: ['DUPLICATE_RISK:'],
-        prompt: `You are on Reddit. Before composing the post, check for duplicate or near-identical titles.
+        prompt: `Duplicate check before posting to Reddit r/{{subreddit}}:
 
-The post title to check is:
-{{post_title}}
+Title to check: {{post_title}}
 
-The target subreddit is: r/{{subreddit}}
+1. Navigate to reddit.com/r/{{subreddit}}/new
+2. Scan visible posts for any title with >70% overlap with the title above
+3. Also check the current user's profile for recent posts on the same topic
+4. Navigate back to reddit.com/r/{{subreddit}}/submit
 
-STEPS:
-1. Navigate to reddit.com/r/{{subreddit}}/new to see the most recent posts in the subreddit.
-2. Scan the visible post titles for any that are identical or substantially similar (>70% text overlap) to the title above.
-3. If no match found there, also check the user profile's recent posts (click on the user avatar → Posts).
-4. After checking, navigate back to reddit.com/r/{{subreddit}}/submit.
-
-RESPOND with exactly one of:
-- DUPLICATE_RISK: [excerpt or link of the matching post] — if a near-duplicate is found
-- NO_DUPLICATE_FOUND — if no match is found`,
+Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_FOUND`,
       },
 
       // ---- Draft the post (title + body, do not submit) ---------------------
       {
         type: 'agent_task',
         id: 'draft_reddit_post',
-        description: 'Fill in the post title and body text in markdown mode, do not submit yet',
+        description: 'Fill in post title and body in markdown mode, do not submit',
         engine: 'browser-use',
         memorySection: 'reddit-draft',
-        prompt: `You are on the Reddit post composer for r/{{subreddit}}.
+        prompt: `Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit:
 
-Your only goal is to fill in the title and body text below in MARKDOWN mode, then STOP — do NOT click Post or Submit.
+Title: {{post_title}}
+Body: {{post_text}}
 
-POST TITLE (paste exactly):
-{{post_title}}
-
-POST BODY (paste exactly, may be empty):
-{{post_text}}
-
-Rules:
-1. Make sure the "Text" post type tab is selected (not Link or Media).
-2. SWITCH TO MARKDOWN MODE: Look for a "Switch to Markdown" link or button near the bottom-right corner of the body text editor. Click it. This prevents unwanted paragraph spacing from double newlines. If you are already in markdown mode, skip this step.
-3. Click the title field and paste the exact title text.
-4. If a body/text area is present and post_body is non-empty, click it and paste the body text.
-5. Verify the visible title and body match exactly.
-6. DO NOT click the Post button.
-7. STOP with the draft visible and ready.`,
+1. Ensure Text tab is active (not Link/Image)
+2. Enable Markdown mode if the toggle is available
+3. Click the Title field and type the exact title
+4. Click the Body field and type the exact body text
+5. Verify both fields match exactly
+6. STOP — do NOT click Submit`,
       },
 
       // ---- HITL reviews draft before submission ----------------------------
@@ -786,22 +787,26 @@ Rules:
       {
         type: 'agent_task',
         id: 'submit_reddit_post',
-        description: 'Click the Post button and wait for visible confirmation that the post was published',
+        description: 'Click Post button and confirm publish',
         engine: 'browser-use',
         memorySection: 'reddit-submit',
-        prompt: `You are on the Reddit post composer with the draft already reviewed and approved for r/{{subreddit}}.
+        prompt: `You are on the Reddit r/{{subreddit}} post composer page.
 
-Your goal is to submit the post yourself and leave clear visible evidence of the published state.
+The post should already be filled in. Check the current state:
+- Title field should contain: {{reddit_post_title}}
+- Body field should contain: {{reddit_post_text}}
 
-Rules:
-1. Before clicking Post: if "Add flair and tags" is marked required (asterisk *), click it and select the first available flair option.
-2. Click the Post button exactly once.
-3. Wait for the page to transition to the published post page (URL changes to reddit.com/r/.../comments/...) or for a success indicator.
-4. Leave the published post page visible on screen.
-5. If the submit fails (e.g. subreddit rules violation, karma requirement, rate limit, flair required), report the exact error message.
-6. Do not navigate away from the published post page.
+SELF-HEAL if fields are empty or wrong:
+1. If not on reddit.com/r/{{subreddit}}/submit, navigate there now
+2. Click the Text tab if not already selected
+3. Click the Title field — clear it and type exactly: {{reddit_post_title}}
+4. Click the Body field — clear it and type exactly: {{reddit_post_text}}
 
-Return a concise description of what visible evidence confirms the post was published, including the post URL if visible.`,
+THEN SUBMIT:
+5. If flair is required (asterisk *), select any available flair
+6. Click the Post button once
+7. Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
+8. Stop and report the final URL`,
       },
 
       // ---- HITL confirms the published post is visible ----------------------
@@ -989,39 +994,33 @@ Rules:
         engine: 'browser-use',
         memorySection: 'reddit-preflight',
         outputFailsOn: ['DUPLICATE_RISK:'],
-        prompt: `You are on Reddit. Check for duplicate titles before composing.
+        prompt: `Duplicate check before posting to Reddit r/{{subreddit}}:
 
-Post title to check: {{reddit_post_title}}
-Target subreddit: r/{{subreddit}}
+Title to check: {{reddit_post_title}}
 
-STEPS:
-1. Navigate to reddit.com/r/{{subreddit}}/new and scan visible titles for >70% overlap.
-2. Check user profile recent posts if no match found there.
-3. Navigate back to reddit.com/r/{{subreddit}}/submit.
+1. Navigate to reddit.com/r/{{subreddit}}/new
+2. Scan visible posts for any title with >70% overlap with the title above
+3. Also check the current user's profile for recent posts on the same topic
+4. Navigate back to reddit.com/r/{{subreddit}}/submit
 
-Respond with:
-- DUPLICATE_RISK: [excerpt] — if near-duplicate found
-- NO_DUPLICATE_FOUND — otherwise`,
+Respond with exactly one line: DUPLICATE_RISK: <title> or NO_DUPLICATE_FOUND`,
       },
       {
         type: 'agent_task',
         id: 'draft_reddit_post',
         engine: 'browser-use',
         memorySection: 'reddit-draft',
-        prompt: `You are on the Reddit post composer for r/{{subreddit}}.
+        prompt: `Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit:
 
-Fill in the title and body below, then STOP — do NOT submit.
+Title: {{reddit_post_title}}
+Body: {{reddit_post_text}}
 
-POST TITLE: {{reddit_post_title}}
-POST BODY: {{reddit_post_text}}
-
-Rules:
-1. Select the "Text" post type tab.
-2. Switch to Markdown mode (click "Switch to Markdown" near the editor bottom-right).
-3. Click the title field and paste the exact title.
-4. Click the body/text area and paste the exact body.
-5. Verify title and body match exactly.
-6. DO NOT click Post.`,
+1. Ensure you are on the Text tab (not Link/Image)
+2. Enable Markdown mode if the toggle is available
+3. Click the Title field and type the exact title
+4. Click the Body field and type the exact body text
+5. Verify both fields match exactly
+6. STOP — do NOT click Submit`,
       },
       {
         type: 'human_takeover',
@@ -1034,16 +1033,23 @@ Rules:
         id: 'submit_reddit_post',
         engine: 'browser-use',
         memorySection: 'reddit-submit',
-        prompt: `You are on the Reddit composer for r/{{subreddit}} with an approved draft.
+        prompt: `You are on the Reddit r/{{subreddit}} post composer page.
 
-Submit the post and leave visible confirmation.
+The post should already be filled in. Check the current state:
+- Title field should contain: {{reddit_post_title}}
+- Body field should contain: {{reddit_post_text}}
 
-Rules:
-1. If "Add flair and tags" is required (asterisk *), select the first available flair.
-2. Click the Post button exactly once.
-3. Wait for the URL to change to reddit.com/r/.../comments/... or a success indicator.
-4. Leave the published post page visible.
-5. Report any error (rules violation, karma requirement, rate limit) exactly.`,
+SELF-HEAL if fields are empty or wrong:
+1. If not on reddit.com/r/{{subreddit}}/submit, navigate there now
+2. Click the Text tab if not already selected
+3. Click the Title field — clear it and type exactly: {{reddit_post_title}}
+4. Click the Body field — clear it and type exactly: {{reddit_post_text}}
+
+THEN SUBMIT:
+5. If flair is required (asterisk *), select any available flair
+6. Click the Post button once
+7. Wait for the URL to change to reddit.com/r/{{subreddit}}/comments/...
+8. Stop and report the final URL`,
       },
       {
         type: 'human_takeover',

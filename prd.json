@@ -68,7 +68,7 @@
     {
       "id": "US-005",
       "title": "Remove Stagehand engine",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "src/engines/stagehand/ directory deleted",
         "StagehandEngine removed from registry and exports",
@@ -81,7 +81,7 @@
     {
       "id": "US-006",
       "title": "YAML workflow loader",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "workflows/*.yaml directory exists with at least post_to_reddit.yaml",
         "src/orchestrator/loader.ts loads and validates YAML against zod schema",
@@ -92,7 +92,7 @@
     {
       "id": "US-007",
       "title": "Markdown instruction loader",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "instructions/orchestrator.md exists",
         "instructions/author.md exists",
@@ -104,7 +104,7 @@
     {
       "id": "US-008",
       "title": "New MCP tools: write_copy, query_telemetry, read_memory, write_memory",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "mcp/server.ts exposes write_copy tool calling GeminiWriter",
         "mcp/server.ts exposes query_telemetry tool reading telemetry DB",
@@ -117,7 +117,7 @@
     {
       "id": "US-009",
       "title": "Claude orchestrator loop",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "src/orchestrator/loop.ts implements Claude tool-calling agent loop",
         "Loop reads YAML workflow + md instructions before first tool call",
@@ -132,7 +132,7 @@
     {
       "id": "US-010",
       "title": "Memory bank seeding",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "memory/bank/ directory created",
         "memory/bank/world.md seeded with known platform quirks from session history",
@@ -142,9 +142,22 @@
       ]
     },
     {
+      "id": "US-012",
+      "title": "browser-use live event bridge",
+      "passes": false,
+      "acceptance": [
+        "browser-use Python server POSTs action events to BROWSER_USE_CALLBACK_URL",
+        "Node.js python-bridge receives and emits telemetry for each browser-use action",
+        "UI WebSocket forwards browser_use.action.* events to client in real-time",
+        "Orchestrator loop receives mid-task browser state without polling",
+        "npx tsc --noEmit passes",
+        "npm test passes"
+      ]
+    },
+    {
       "id": "US-011",
       "title": "Webhooks — inbound triggers and outbound notifications",
-      "passes": false,
+      "passes": true,
       "acceptance": [
         "src/webhooks/server.ts exposes POST /webhooks/trigger accepting {workflow_id, params}",
         "Inbound request validates signature (WEBHOOK_SECRET) before executing workflow",

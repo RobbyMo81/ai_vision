@@ -14,7 +14,8 @@
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChildProcess, spawn } from 'child_process';
+import * as net from 'net';
+import { ChildProcess, spawn, execSync } from 'child_process';
 import { telemetry } from '../telemetry';
 
 export interface SessionManagerOptions {
@@ -33,6 +34,8 @@ export class SessionManager extends EventEmitter {
   private readonly cdpPort: number;
   private readonly userDataDir: string;
   private _started = false;
+  private _screenshotTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly _screenshotDir: string;
 
   constructor(opts: SessionManagerOptions = {}) {
     super();
@@ -44,14 +47,45 @@ export class SessionManager extends EventEmitter {
     this.userDataDir =
       process.env.AI_VISION_PROFILE_DIR ??
       path.join(home, '.ai-vision', 'profiles', 'default');
+    this._screenshotDir = process.env.SESSION_DIR
+      ? path.join(process.env.SESSION_DIR, 'rolling')
+      : path.join(process.cwd(), 'sessions', 'rolling');
   }
 
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
+  /** Kill any process already holding the CDP port so Chrome can bind it. */
+  private _evictPortHolder(): void {
+    try {
+      // Use fuser to find and kill the PID holding the port.
+      execSync(`fuser -k ${this.cdpPort}/tcp 2>/dev/null`, { stdio: 'ignore' });
+      // Give the OS a moment to release the socket.
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const probe = (() => {
+          try {
+            const s = require('net').createConnection({ host: '127.0.0.1', port: this.cdpPort });
+            s.destroy();
+            return false; // still occupied
+          } catch {
+            return true; // free
+          }
+        })();
+        if (probe) break;
+      }
+    } catch {
+      // fuser not available or port already free — proceed anyway
+    }
+  }
+
   async start(): Promise<void> {
     if (this._started) return;
+
+    // Ensure no zombie Chrome from a previous run is squatting on the CDP port.
+    this._evictPortHolder();
+
     telemetry.emit({
       source: 'session',
       name: 'session.browser.starting',
@@ -98,6 +132,13 @@ export class SessionManager extends EventEmitter {
           this._started = false;
         }
       });
+
+      // Ensure Chrome is killed when the Node.js process exits for any reason
+      // (SIGTERM from pkill, SIGINT from Ctrl+C, or uncaught exception).
+      const killChrome = () => { try { this.chromeProcess?.kill('SIGTERM'); } catch { /* ignore */ } };
+      process.once('exit', killChrome);
+      process.once('SIGTERM', () => { killChrome(); process.exit(0); });
+      process.once('SIGINT', () => { killChrome(); process.exit(0); });
 
       await this._waitForCdp();
       this._browser = await chromium.connectOverCDP(`http://127.0.0.1:${this.cdpPort}`);
@@ -222,6 +263,70 @@ export class SessionManager extends EventEmitter {
   async currentUrl(): Promise<string> {
     const page = await this.getPage();
     return page.url();
+  }
+
+  /**
+   * After a browser-use agent task, the active tab may differ from the page
+   * the SessionManager originally opened. This re-syncs _page to the most
+   * recently active page in the shared context so the HITL panel screenshot
+   * and currentUrl() reflect what the agent actually did.
+   */
+  async syncActivePage(): Promise<void> {
+    if (!this._context || !this._started) return;
+    try {
+      const pages = this._context.pages();
+      if (pages.length === 0) return;
+      // The last page in the list is the most recently opened/focused one.
+      const candidate = pages[pages.length - 1];
+      // Ignore blank/internal pages — only switch if there's real content.
+      const url = candidate.url();
+      if (url && !url.startsWith('about:') && !url.startsWith('chrome://')) {
+        this._page = candidate;
+      } else if (pages.length > 1) {
+        // Try to find any page with real content.
+        const withContent = [...pages].reverse().find(
+          p => !p.url().startsWith('about:') && !p.url().startsWith('chrome://')
+        );
+        if (withContent) this._page = withContent;
+      }
+    } catch {
+      // Non-fatal — worst case the HITL panel shows a stale screenshot
+    }
+  }
+
+  /**
+   * Start a rolling screenshot every `intervalMs` ms (default 5000).
+   * Frames are written to sessions/rolling/ and a telemetry event is emitted
+   * for each frame so the HITL UI and external observers can track page state.
+   * Safe to call multiple times — a running timer is stopped first.
+   */
+  startScreenshotTimer(intervalMs = 5000): void {
+    this.stopScreenshotTimer();
+    fs.mkdirSync(this._screenshotDir, { recursive: true });
+    this._screenshotTimer = setInterval(async () => {
+      if (!this._page || !this._started) return;
+      try {
+        const timestamp = Date.now();
+        const url = this._page.url();
+        const buf = await this._page.screenshot({ type: 'jpeg', quality: 70 });
+        const filename = `frame-${timestamp}.jpg`;
+        const filepath = path.join(this._screenshotDir, filename);
+        fs.writeFileSync(filepath, buf);
+        telemetry.emit({
+          source: 'session',
+          name: 'session.screenshot.rolling',
+          details: { url, file: filepath, timestamp },
+        });
+      } catch { /* page may be navigating — skip frame */ }
+    }, intervalMs);
+  }
+
+  /** Stop the rolling screenshot timer. */
+  stopScreenshotTimer(): void {
+    if (this._screenshotTimer) {
+      clearInterval(this._screenshotTimer);
+      this._screenshotTimer = null;
+    }
   }
 
   /**

@@ -1,0 +1,50 @@
+id: authenticated_task
+name: Authenticated Browser Task
+description: >
+  Generic authenticated browser task. Verifies login state on the target
+  portal, then hands off an agent task prompt for autonomous execution,
+  with an optional HITL final confirmation gate.
+source: yaml
+mode: agentic
+
+permissions:
+  require_human_approval_before:
+    - portal_login
+
+params:
+  portal_url:
+    type: string
+    description: Starting URL for the authenticated portal
+  task_prompt:
+    type: string
+    description: Natural language description of what the agent should accomplish
+  require_final_confirmation:
+    type: string
+    description: "Set to 'true' to require HITL confirmation before the final action"
+    required: false
+    default: "false"
+  login_instructions:
+    type: string
+    description: Instructions shown during authentication verification
+    required: false
+    default: >
+      Verify that the portal is signed in. If already authenticated, continue.
+      Otherwise, log in and then click Continue.
+
+steps:
+  - type: navigate
+    id: open_portal
+    description: Navigate to the authenticated portal
+    url: "{{portal_url}}"
+    waitUntil: domcontentloaded
+
+  - type: human_takeover
+    id: portal_login
+    reason: Verify authenticated access to portal
+    instructions: "{{login_instructions}}"
+
+  - type: agent_task
+    id: execute_task
+    description: Execute the requested task on the authenticated portal
+    engine: browser-use
+    prompt: "{{task_prompt}}"

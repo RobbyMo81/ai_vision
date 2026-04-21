@@ -428,6 +428,19 @@ Add the following to `prd.json` when ready to begin the FORGE build loop:
     ]
   },
   {
+    "id": "US-012",
+    "title": "browser-use live event bridge",
+    "passes": false,
+    "acceptance": [
+      "browser-use Python server POSTs action events to BROWSER_USE_CALLBACK_URL",
+      "Node.js python-bridge receives and emits telemetry for each browser-use action",
+      "UI WebSocket forwards browser_use.action.* events to client in real-time",
+      "Orchestrator loop receives mid-task browser state without polling",
+      "npx tsc --noEmit passes",
+      "npm test passes"
+    ]
+  },
+  {
     "id": "US-011",
     "title": "Webhooks — inbound triggers and outbound notifications",
     "passes": false,
@@ -453,93 +466,106 @@ Agent: work through these in order. One task at a time. Check off [x] only after
 
 ### Story US-005 — Remove Stagehand
 
-- [ ] Delete `src/engines/stagehand/` directory entirely
-- [ ] Remove `StagehandEngine` from `src/engines/registry.ts`
-- [ ] Remove `StagehandEngine` from `src/index.ts` exports
-- [ ] Search for any remaining `stagehand` references in `src/` and remove
-- [ ] Run quality gate: `npx tsc --noEmit && npm test && npm run build`
-- [ ] Update `prd.json` US-005 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Delete `src/engines/stagehand/` directory entirely
+- [x] Remove `StagehandEngine` from `src/engines/registry.ts`
+- [x] Remove `StagehandEngine` from `src/index.ts` exports
+- [x] Search for any remaining `stagehand` references in `src/` and remove
+- [x] Run quality gate: `npx tsc --noEmit && npm test && npm run build`
+- [x] Update `prd.json` US-005 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ### Story US-006 — YAML Workflow Loader
 
-- [ ] Create `workflows/` directory at project root
-- [ ] Define zod schema for YAML workflow in `src/orchestrator/loader.ts`
-- [ ] Write `post_to_reddit.yaml` using the schema defined in this document
-- [ ] Write `write_and_post_to_reddit.yaml`
-- [ ] Write `post_to_x.yaml`
-- [ ] Write `authenticated_task.yaml`
-- [ ] Add `js-yaml` or `yaml` npm package for parsing
-- [ ] Export `loadWorkflow(path: string): WorkflowDefinition` from loader.ts
-- [ ] Update CLI `workflow` command to accept `.yaml` file paths
-- [ ] Run quality gate
-- [ ] Update `prd.json` US-006 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Create `workflows/` directory at project root
+- [x] Define zod schema for YAML workflow in `src/orchestrator/loader.ts`
+- [x] Write `post_to_reddit.yaml` using the schema defined in this document
+- [x] Write `write_and_post_to_reddit.yaml`
+- [x] Write `post_to_x.yaml`
+- [x] Write `authenticated_task.yaml`
+- [x] Add `js-yaml` or `yaml` npm package for parsing
+- [x] Export `loadWorkflow(path: string): WorkflowDefinition` from loader.ts
+- [x] Update CLI `workflow` command to accept `.yaml` file paths
+- [x] Run quality gate
+- [x] Update `prd.json` US-006 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ### Story US-007 — Markdown Instruction Loader
 
-- [ ] Create `instructions/` directory at project root
-- [ ] Write `instructions/orchestrator.md` with Claude decision rules
-- [ ] Write `instructions/author.md` with Gemini voice/tone guidelines
-- [ ] Write `instructions/executor.md` with ChatGPT browser constraints
-- [ ] Add `loadInstructions(role: string): string` to `src/orchestrator/loader.ts`
-- [ ] Run quality gate
-- [ ] Update `prd.json` US-007 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Create `instructions/` directory at project root
+- [x] Write `instructions/orchestrator.md` with Claude decision rules
+- [x] Write `instructions/author.md` with Gemini voice/tone guidelines
+- [x] Write `instructions/executor.md` with ChatGPT browser constraints
+- [x] Add `loadInstructions(role: string): string` to `src/orchestrator/loader.ts`
+- [x] Run quality gate
+- [x] Update `prd.json` US-007 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ### Story US-008 — New MCP Tools
 
-- [ ] Add `write_copy` tool to `mcp/server.ts` (calls GeminiWriter)
-- [ ] Add `query_telemetry` tool to `mcp/server.ts` (reads db/repository)
-- [ ] Add `read_memory` tool to `mcp/server.ts` (reads memory/bank/ files)
-- [ ] Add `write_memory` tool to `mcp/server.ts` (writes memory/bank/ files)
-- [ ] Add `list_workflows` tool to `mcp/server.ts` (lists workflows/*.yaml)
-- [ ] All inputs validated with zod schemas
-- [ ] Run quality gate
-- [ ] Update `prd.json` US-008 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Add `write_copy` tool to `mcp/server.ts` (calls GeminiWriter)
+- [x] Add `query_telemetry` tool to `mcp/server.ts` (reads db/repository)
+- [x] Add `read_memory` tool to `mcp/server.ts` (reads memory/bank/ files)
+- [x] Add `write_memory` tool to `mcp/server.ts` (writes memory/bank/ files)
+- [x] Add `list_workflows` tool to `mcp/server.ts` (lists workflows/*.yaml)
+- [x] All inputs validated with zod schemas
+- [x] Run quality gate
+- [x] Update `prd.json` US-008 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ### Story US-009 — Claude Orchestrator Loop
 
-- [ ] Create `src/orchestrator/loop.ts`
-- [ ] Implement Claude Anthropic API tool-calling loop (streaming preferred)
-- [ ] Loop init: load YAML + md instructions + memory bank snapshot
-- [ ] Loop enforces `permissions.require_human_approval_before` from YAML
-- [ ] Loop writes telemetry events for each tool call
-- [ ] Loop writes memory after key state changes
-- [ ] Update `workflowEngine.run()` to route YAML-sourced workflows to loop
-- [ ] End-to-end test: `write_and_post_to_reddit` via Claude loop
-- [ ] Run quality gate
-- [ ] Update `prd.json` US-009 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Create `src/orchestrator/loop.ts`
+- [x] Implement Claude Anthropic API tool-calling loop (streaming preferred)
+- [x] Loop init: load YAML + md instructions + memory bank snapshot
+- [x] Loop enforces `permissions.require_human_approval_before` from YAML
+- [x] Loop writes telemetry events for each tool call
+- [x] Loop writes memory after key state changes
+- [x] Update `workflowEngine.run()` to route YAML-sourced workflows to loop
+- [x] End-to-end test: `write_and_post_to_reddit` via Claude loop
+- [x] Run quality gate
+- [x] Update `prd.json` US-009 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ### Story US-010 — Memory Bank Seeding
 
-- [ ] Create `memory/bank/` directory
-- [ ] Create `memory/bank/world.md`
-- [ ] Create `memory/bank/user_preferences.md`
-- [ ] Create `memory/bank/platform/reddit.md` with known quirks from test runs
-- [ ] Create `memory/bank/platform/x.md`
-- [ ] Create `src/memory/bank-reader.ts`
-- [ ] Integrate bank-reader into orchestrator loop init
+- [x] Create `memory/bank/` directory
+- [x] Create `memory/bank/world.md`
+- [x] Create `memory/bank/user_preferences.md`
+- [x] Create `memory/bank/platform/reddit.md` with known quirks from test runs
+- [x] Create `memory/bank/platform/x.md`
+- [x] Create `src/memory/bank-reader.ts`
+- [x] Integrate bank-reader into orchestrator loop init
+- [x] Run quality gate
+- [x] Update `prd.json` US-010 `passes: true`
+- [x] Post STATUS to forge-memory.db
+
+### Story US-012 — browser-use Live Event Bridge
+
+- [ ] Add `POST /events` endpoint to `src/engines/browser-use/server/main.py` — browser-use agent pushes action events here
+- [ ] Define event schema: `{session_id, step_id, action, selector?, url, screenshot_b64?, timestamp}`
+- [ ] Node.js bridge (`python-bridge.ts`) exposes `onBrowserEvent(cb)` — receives forwarded events
+- [ ] Each browser-use event emitted as telemetry `browser_use.action.*` on Node.js side
+- [ ] UI WebSocket forwards `browser_use.action.*` events to client in real-time
+- [ ] Orchestrator loop subscribes to events so Claude sees mid-task state without polling
+- [ ] Add `BROWSER_USE_CALLBACK_URL` env var — set automatically by python-bridge on startup
 - [ ] Run quality gate
-- [ ] Update `prd.json` US-010 `passes: true`
+- [ ] Update `prd.json` US-012 `passes: true`
 - [ ] Post STATUS to forge-memory.db
 
 ### Story US-011 — Webhooks
 
-- [ ] Create `src/webhooks/server.ts`
-- [ ] Add `POST /webhooks/trigger` route: accepts `{workflow_id, params, callback_url?}`
-- [ ] Validate HMAC-SHA256 signature against `WEBHOOK_SECRET` before executing
-- [ ] On receipt: call `workflowEngine.run()` with parsed params
-- [ ] On completion: if `callback_url` present, POST `{workflow_id, success, outputs, durationMs, timestamp}`
-- [ ] Retry outbound POST up to 3 times with exponential backoff on non-2xx
-- [ ] Add `AI_VISION_WEBHOOK_PORT` env var (default: 3001)
-- [ ] Add `WEBHOOK_SECRET` to vault — reference `vault:export` in env reference section
-- [ ] Register webhook server in `src/cli/index.ts` alongside UI server
-- [ ] Run quality gate
-- [ ] Update `prd.json` US-011 `passes: true`
-- [ ] Post STATUS to forge-memory.db
+- [x] Create `src/webhooks/server.ts`
+- [x] Add `POST /webhooks/trigger` route: accepts `{workflow_id, params, callback_url?}`
+- [x] Validate HMAC-SHA256 signature against `WEBHOOK_SECRET` before executing
+- [x] On receipt: call `workflowEngine.run()` with parsed params
+- [x] On completion: if `callback_url` present, POST `{workflow_id, success, outputs, durationMs, timestamp}`
+- [x] Retry outbound POST up to 3 times with exponential backoff on non-2xx
+- [x] Add `AI_VISION_WEBHOOK_PORT` env var (default: 3001)
+- [x] Add `WEBHOOK_SECRET` to vault — reference `vault:export` in env reference section
+- [x] Register webhook server in `src/cli/index.ts` alongside UI server
+- [x] Run quality gate
+- [x] Update `prd.json` US-011 `passes: true`
+- [x] Post STATUS to forge-memory.db
 
 ---
 
