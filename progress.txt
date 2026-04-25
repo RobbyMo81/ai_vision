@@ -108,3 +108,76 @@
 - Standardized CI on the repo's declared `pnpm` toolchain (`pnpm@10.32.1`, Node.js 24) so remote validation matches local development and lockfile resolution.
 - Wired the workflow to run `pnpm run typecheck`, `pnpm test`, and `pnpm run build` after a frozen-lockfile install.
 - Updated `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with EN-004 so the CI baseline is tracked as a first-class completed enhancement.
+
+[2026-04-21] RF-002 Unified Resolved Step Source
+- Captured the workflow step array once before constructing `resolvedDefinition` so proxy-like `steps` getters cannot shift the execution loop onto a different source.
+- Routed the direct execution loop, bootstrap handoff, wrap-up handoff, and terminal step counts through the resolved workflow definition consistently.
+- Added a regression test proving the loop stays on the resolved step array even if the original definition exposes a different array on later reads.
+- Validation passed: `pnpm test -- src/workflow/engine.test.ts`. Full `pnpm run typecheck` ended in a V8 `SIGABRT` heap abort during `tsc --noEmit`, which should be treated separately from a kernel `SIGKILL` OOM path. Compare the local Node runtime against the CI-pinned Node 24 baseline before treating this as a project-level type graph failure.
+
+[2026-04-23] US-012 Browser-Use Live Event Bridge Implementation
+- Added a local Node callback receiver in `src/engines/python-bridge.ts` and passed `BROWSER_USE_CALLBACK_URL` into the browser-use bridge process automatically.
+- Wired `browser_use` native `register_new_step_callback` in `src/engines/browser-use/server/main.py` to POST structured per-step action events, including correlated session/workflow/step identifiers.
+- Validation passed: `pnpm test -- src/engines/python-bridge.test.ts src/orchestrator/loop.test.ts`.
+
+[2026-04-23] TypeScript Heap Exhaustion Contained
+- Resolved the repo-wide `tsc --noEmit` heap abort under the CI-aligned Node 24 baseline by severing compile-time expansion at two subsystem seams.
+- Replaced exported workflow `z.infer` contracts with static interfaces in `src/workflow/types.ts` so downstream modules no longer re-expand the runtime discriminated union.
+- Contained MCP SDK generic inference behind a single `registerTool` helper and DTO normalizers in `src/mcp/server.ts` so tool registration stays at a local boundary.
+- Validation passed: `/home/spoq/.nvm/versions/node/v24.14.0/bin/node ./node_modules/typescript/bin/tsc --noEmit` and `pnpm test -- src/orchestrator/loop.test.ts src/webhooks/server.test.ts src/mcp/server.test.ts`.
+- Forwarded live browser-use events through engine telemetry, the HITL UI WebSocket, and orchestrator state updates so browser progress is visible mid-task without polling.
+- Focused validation passed: `pnpm test -- src/engines/python-bridge.test.ts src/orchestrator/loop.test.ts`.
+- Full typecheck remains blocked by the existing repo-wide V8 heap abort in `tsc --noEmit` under both local Node 25 and CI-aligned Node 24; keep US-012 backlog status gated on the separate TypeScript memory stories rather than on this bridge change itself.
+
+[2026-04-23] Reddit LLM Handoff Storyline
+- Documented a Forge storyline for the Reddit publish propagation defect where Gemini-generated title/body data was lost before the submit step.
+- Added a three-layer trace requirement covering the Gemini draft layer, workflow resolution layer, and browser-use submission layer.
+- Captured the live run note proving the publish path works but the submit handoff can fall back to synthetic title text when the generated payload is lost.
+
+[2026-04-22] Forge Handoff Package Policy
+- Made the engineering build handoff contract explicit for future agents: every build handoff must include a first-class Forge storyline, a compact YAML tracing story card when tracing is involved, an AI agent prompt that instructs the Forge build loop, and an explicit definition of done.
+- Mirrored the policy in `AGENTS.md` and `FORGE.md` so it is visible at agent startup and in the governing Forge rules.
+
+[2026-04-23] TSC Crash Remediation Handoff Prompt
+- Identified the incomplete remediation storyline as `US-021` / `EN-006`, which already has the YAML story card and bug report but needed the agent implementation prompt.
+- Wrote the Forge-ready implementation handoff at `docs/artifacts/2026-04-23-tsc-crash-remediation-implementation-handoff.md` with explicit Forge build-loop instructions and a concrete definition of done.
+
+[2026-04-23] TSC Crash Remediation Code Verification
+- Verified the current code path with `pnpm exec tsc --noEmit`; the compiler exits cleanly, so the crash is no longer a live code issue.
+- Updated `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` to mark `EN-006` completed with code-level evidence, keeping the remediation handoff as a closed artifact rather than an open blocker.
+
+[2026-04-23] Startup Blind-Spot Scoped Story
+- Turned the remaining startup audit blind spots into a new scoped Forge story (`EN-008`) covering the workflow cast seam, workflow schema expansion seam, MCP boundary cast, webhook payload inference seam, and UI websocket import cast.
+- Added the Forge story card and implementation handoff at `docs/artifacts/2026-04-23-startup-blind-spot-forge-story.yaml` and `docs/artifacts/2026-04-23-startup-blind-spot-implementation-handoff.md` so future agents can pick up the cleanup from a source-backed prompt.
+
+[2026-04-22] Claude Layer/Shape/Connects Artifact
+- Created `docs/artifacts/claude-layer-shape-connects.md` from the repository grep surface for `Claude` after confirming there were no exact typo matches.
+- Recorded the Claude-related layers, hub-and-spoke shape, and file-to-file connects across the Forge loop, workflow engine, orchestrator loop, MCP server, HITL UI, memory/context layer, and planning docs.
+- Acceptance criteria: save a markdown artifact under `docs/artifacts`, capture the related layers/shape/connects, and note the exact search result outcome for the requested text.
+- Validation: `pnpm exec tsc --noEmit` exit code `0`; test suites run `0` (docs-only change, no test execution required).
+
+[2026-04-22] EN-008 — Startup Blind-Spot Seam Closure
+- Replaced `result as unknown as WorkflowStep` inline double-cast in substituteStep with a named `toWorkflowStep` conversion helper (engine.ts). Cast is still double-level by necessity but now lives at a labeled boundary.
+- Added `parseWorkflowDefinition(raw: unknown): WorkflowDefinition` export to types.ts. Updated loader.ts and mcp/server.ts to call this function instead of importing WorkflowDefinitionSchema directly, keeping schema graph expansion local to types.ts.
+- Introduced `ToolRegistrar` interface in mcp/server.ts. `registerTool` now accepts `ToolRegistrar` instead of `unknown`. Single explicit cast from McpServer to ToolRegistrar occurs once at server construction instead of being hidden inside the helper.
+- Replaced `export type TriggerPayload = z.infer<typeof TriggerPayloadSchema>` in webhooks/server.ts with an explicit `export interface TriggerPayload`. Zod schema retained for runtime validation only.
+- Replaced `(await import('ws')) as any` in ui/server.ts with `const { WebSocketServer } = await import('ws')`. Removed eslint-disable comment. ws v8 named export is fully typed; no cast required.
+- TSC exit 0. 10/10 test suites, 47/47 tests pass.
+
+[2026-04-24] Reddit Production Run Bug Trace
+- Traced the failed supervised `write_and_post_to_reddit` production run across CLI params, YAML validation, workflow mode routing, Claude orchestrator, HITL coordinator, UI state, browser-use bridge, telemetry, and Reddit UI.
+- Documented six bug shapes: templated enum validation failure, false Reddit login HITL, hidden login handoff button, missing post-draft approval handoff, generic author output instead of ai-vision app progress, and browser-use action-schema validation during manual correction.
+- Added layer counts for each failure and identified the cross-cutting split between the stronger direct workflow path and weaker agentic tool shims.
+- Artifact: `docs/artifacts/2026-04-24-reddit-production-run-bug-trace.md`.
+
+[2026-04-24] As-Built Execution Atlas
+- Created the cross-language architecture cartography artifact at `docs/architecture/as-built_execution_atlas.md` to map TypeScript, Python, YAML, HITL, browser-use, memory, tests, docs, state owners, triggers, and gate insertion points.
+- Captured the current direct-path kernel, the agentic split semantics, the TS/Python boundary, and the direct-path gate opportunities without modifying runtime code.
+- Validation: docs-only discovery; no typecheck or test suite execution was required for this artifact.
+
+[2026-04-24] EN-009 — Forge Workflow Path Normalization
+- Restored the public Forge workflow entrypoint by adding `pnpm run forge` and a compatibility `scripts/forge/forge.sh` wrapper that delegates to the live `ForgeMP/forge.sh` runner.
+- Added `scripts/forge` compatibility shims for the Forge memory client, migration helper, gate example, and the documented prompt/protocol paths so older handoffs no longer fail on missing files.
+- Corrected active Forge governance docs to name `ForgeMP/` as canonical while explicitly documenting the compatibility layer.
+- Switched the Forge memory client from undeclared `better-sqlite3` to built-in `node:sqlite` so the documented `ts-node` workflow executes on the repo's pinned Node 24 runtime.
+- Validation: `pnpm run typecheck` exit `0`; `pnpm test` 10/10 suites and 47/47 tests passed; `pnpm exec ts-node ForgeMP/forge-memory-client.ts messages` and `pnpm exec ts-node scripts/forge/forge-memory-client.ts messages` both succeeded.

@@ -14,8 +14,10 @@ Fixes applied (see Application_Fixes.md):
 import asyncio
 import base64
 import glob as _glob
+import json
 import os
 import time
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,6 +62,8 @@ app = FastAPI(title="browser-use bridge", lifespan=lifespan)
 class TaskRequest(BaseModel):
     prompt: str
     session_id: Optional[str] = None
+    workflow_id: Optional[str] = None
+    step_id: Optional[str] = None
     max_steps: Optional[int] = None
 
 
@@ -339,6 +343,80 @@ def _looks_like_cdp_session_failure(message: str | None) -> bool:
     return any(signal in lowered for signal in signals)
 
 
+async def _emit_browser_use_event(callback_url: str | None, payload: dict) -> None:
+    if not callback_url:
+        return
+
+    def _post() -> None:
+        request = urllib.request.Request(
+            callback_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=2):
+            return
+
+    try:
+        await asyncio.to_thread(_post)
+    except Exception:
+        pass
+
+
+def _serialize_actions(model_output) -> list[dict]:
+    serialized: list[dict] = []
+    for action in getattr(model_output, "action", []) or []:
+        dump = action.model_dump(mode="python") if hasattr(action, "model_dump") else dict(action)
+        if not dump:
+            continue
+        action_name, action_params = next(iter(dump.items()))
+        serialized.append({
+            "name": str(action_name),
+            "params": action_params if isinstance(action_params, dict) else {"value": action_params},
+        })
+    return serialized
+
+
+def _make_selector(actions: list[dict]) -> str | None:
+    if not actions:
+        return None
+    params = actions[0].get("params", {})
+    if not isinstance(params, dict):
+        return None
+    selector = params.get("selector")
+    if selector is not None:
+        return str(selector)
+    index = params.get("index")
+    return str(index) if index is not None else None
+
+
+async def _make_step_callback(req: TaskRequest):
+    callback_url = os.getenv("BROWSER_USE_CALLBACK_URL")
+
+    async def _callback(browser_state_summary, model_output, n_steps: int):
+        actions = _serialize_actions(model_output)
+        primary = actions[0] if actions else {"name": "step", "params": {}}
+        await _emit_browser_use_event(callback_url, {
+            "session_id": req.session_id,
+            "workflow_id": req.workflow_id,
+            "step_id": req.step_id,
+            "browser_use_step_id": f"browser-use-step-{n_steps}",
+            "browser_use_step_number": n_steps,
+            "action": primary["name"],
+            "actions": actions,
+            "selector": _make_selector(actions),
+            "url": getattr(browser_state_summary, "url", None),
+            "title": getattr(browser_state_summary, "title", None),
+            "screenshot_b64": getattr(browser_state_summary, "screenshot", None),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "evaluation_previous_goal": getattr(model_output, "evaluation_previous_goal", None),
+            "memory": getattr(model_output, "memory", None),
+            "next_goal": getattr(model_output, "next_goal", None),
+        })
+
+    return _callback
+
+
 async def _run_agent_once(req: TaskRequest, provider_override: str | None = None):
     from browser_use.agent.service import Agent
 
@@ -355,6 +433,7 @@ async def _run_agent_once(req: TaskRequest, provider_override: str | None = None
         browser_session=session,
         save_conversation_path=str(conversation_path),
         max_steps=req.max_steps if req.max_steps is not None else int(os.getenv("BROWSER_USE_MAX_STEPS", "20")),
+        register_new_step_callback=await _make_step_callback(req),
     )
     result = await agent.run()
 

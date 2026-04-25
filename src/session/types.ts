@@ -4,6 +4,8 @@
  * workflow engine, MCP server, and UI server.
  */
 
+import type { BrowserUseActionEvent } from '../engines/python-bridge';
+
 /** Structured outcome classification for social-publishing workflows. */
 export type SocialPublishOutcome =
   | 'published'
@@ -72,8 +74,10 @@ export interface HitlEventPayload {
     | 'control_returned'
     | 'phase_changed'
     | 'bridge_disconnected'
+    | 'browser_use_action'
     | 'screenshot'
     | 'step_complete';
   state: SessionState;
   screenshotBase64?: string;
+  browserUseEvent?: BrowserUseActionEvent;
 }

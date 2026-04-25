@@ -90,9 +90,12 @@ export async function routeAgentTask(
 // ---------------------------------------------------------------------------
 
 function substitute(template: string, params: Record<string, unknown>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_match, key) => {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     const val = params[key];
-    return val === undefined || val === null || val === '' ? '' : String(val);
+    // Preserve placeholder when the key is not yet in params so a later
+    // substitution pass (with runtime outputs) can still resolve it.
+    if (val === undefined || val === null) return match;
+    return val === '' ? '' : String(val);
   });
 }
 
@@ -111,7 +114,15 @@ function substituteStep(step: WorkflowStep, params: Record<string, unknown>): Wo
       result[k] = v;
     }
   }
-  return result as WorkflowStep;
+  return toWorkflowStep(result);
+}
+
+/**
+ * Explicit typed conversion for the object produced by substituteStep.
+ * Named so the substitution boundary is visible rather than hidden as an inline double-cast.
+ */
+function toWorkflowStep(obj: Record<string, unknown>): WorkflowStep {
+  return obj as unknown as WorkflowStep;
 }
 
 function buildRuntimeParams(
@@ -916,11 +927,54 @@ async function executeStep(
           ? sub.prompt
           : buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
 
+        // Fail loudly if any {{key}} placeholders survived substitution —
+        // this means a required upstream output was never produced.
+        const unresolvedVars = sub.prompt.match(/\{\{(\w+)\}\}/g);
+        if (unresolvedVars && unresolvedVars.length > 0) {
+          const missingKeys = unresolvedVars.map(v => v.replace(/\{\{|\}\}/g, ''));
+          const lossMsg = `agent_task step '${sub.id}' has unresolved template variables: ${missingKeys.join(', ')}. Payload was lost before this step.`;
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.llm_layer.payload_loss',
+            level: 'error',
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+            details: { missingKeys, prompt: sub.prompt.slice(0, 300) },
+          });
+          return { stepId: sub.id, success: false, error: lossMsg, durationMs: Date.now() - start };
+        }
+
+        // Layer 3 — LLM layer trace: step resolution → browser-use boundary
+        if (params['reddit_post_title'] || params['reddit_post_text']) {
+          telemetry.emit({
+            source: 'engine',
+            name: 'workflow.llm_layer.trace',
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+            details: {
+              layerFrom: 'step_resolution',
+              layerTo: 'browser_use_prompt',
+              title: String(params['reddit_post_title'] ?? ''),
+              bodyPreview: String(params['reddit_post_text'] ?? '').slice(0, 200),
+              titleLength: String(params['reddit_post_title'] ?? '').length,
+              bodyLength: String(params['reddit_post_text'] ?? '').length,
+              resolvedKeys: Object.keys(params).filter(k => params[k] !== undefined && params[k] !== ''),
+              urlBefore,
+              urlAfter: '',
+            },
+          });
+        }
+
         const cookies = await sessionManager.extractCookies();
         const engine = await registry.getReady(engineId);
         const stepMaxSteps = (sub as { maxSteps?: number }).maxSteps;
         const taskResult = await engine.runTask(enhancedPrompt, {
           cookies,
+          sessionId: telemetryContext.sessionId,
+          workflowId: telemetryContext.workflowId,
+          stepId: sub.id,
           ...(stepMaxSteps != null ? { maxSteps: stepMaxSteps } : {}),
         });
         // Re-sync the SessionManager's active page after browser-use may have
@@ -1119,6 +1173,31 @@ async function executeStep(
         if (sub.outputTitleKey && generated.title) {
           outputs[sub.outputTitleKey] = generated.title;
         }
+
+        // Layer 1 — LLM layer trace: Gemini draft boundary
+        {
+          const traceUrl = await sessionManager.currentUrl().catch(() => '');
+          const resolvedKeys = [sub.outputKey, ...(sub.outputTitleKey ? [sub.outputTitleKey] : [])];
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.llm_layer.trace',
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+            details: {
+              layerFrom: 'gemini_draft',
+              layerTo: 'workflow_outputs',
+              title: generated.title ?? '',
+              bodyPreview: generated.text.slice(0, 200),
+              titleLength: (generated.title ?? '').length,
+              bodyLength: generated.text.length,
+              resolvedKeys,
+              urlBefore: traceUrl,
+              urlAfter: traceUrl,
+            },
+          });
+        }
+
         telemetry.emit({
           source: 'workflow',
           name: 'workflow.generate_content.completed',
@@ -1226,10 +1305,12 @@ export class WorkflowEngine {
       }
     }
 
+    const sourceSteps = definition.steps;
     const resolvedDefinition: WorkflowDefinition = {
       ...definition,
-      steps: definition.steps.map(step => substituteStep(step, resolvedParams)),
+      steps: sourceSteps.map(step => substituteStep(step, resolvedParams)),
     };
+    const executionDefinition = resolvedDefinition;
 
     // Ensure browser session is running before any work (including YAML loop)
     await sessionManager.start();
@@ -1264,9 +1345,9 @@ export class WorkflowEngine {
     // ---- Route agentic YAML workflows to the Claude orchestrator loop ----
     // mode: direct (default) → step-by-step engine (fast, deterministic)
     // mode: agentic           → Claude orchestrator loop (open-ended reasoning)
-    if (resolvedDefinition.source === 'yaml' && resolvedDefinition.mode === 'agentic') {
+    if (executionDefinition.source === 'yaml' && executionDefinition.mode === 'agentic') {
       const { runOrchestratorLoop } = await import('../orchestrator/loop');
-      return runOrchestratorLoop(resolvedDefinition, resolvedParams, id, onStateUpdate);
+      return runOrchestratorLoop(executionDefinition, resolvedParams, id, onStateUpdate);
     }
 
     // ---- Begin short-term memory for this run ----
@@ -1278,7 +1359,7 @@ export class WorkflowEngine {
       workflowId: definition.id,
       details: {
         workflowName: definition.name,
-        stepCount: definition.steps.length,
+        stepCount: executionDefinition.steps.length,
       },
     });
 
@@ -1288,7 +1369,7 @@ export class WorkflowEngine {
     onStateUpdate({
       id,
       phase: 'pre_flight',
-      totalSteps: definition.steps.length,
+      totalSteps: executionDefinition.steps.length,
       completedSteps: 0,
       startedAt: new Date(workflowStart),
       lastUpdatedAt: new Date(),
@@ -1324,7 +1405,7 @@ export class WorkflowEngine {
 
     try {
       await bootstrapEditorialDraft(
-        resolvedDefinition,
+        executionDefinition,
         resolvedParams,
         outputs,
         onStateUpdate,
@@ -1365,12 +1446,44 @@ export class WorkflowEngine {
     let finalResult: WorkflowResult;
 
     try {
-      for (let i = 0; i < definition.steps.length; i++) {
-        const stepTemplate = definition.steps[i];
+      for (let i = 0; i < executionDefinition.steps.length; i++) {
+        const stepTemplate = executionDefinition.steps[i];
         // Re-resolve each step against live outputs so same-run placeholders
         // (for example {{x_post_text}}) are available to downstream steps.
         const runtimeParams = buildRuntimeParams(resolvedParams, outputs);
         const step = substituteStep(stepTemplate, runtimeParams);
+
+        // Layer 2 — LLM layer trace: workflow_outputs → step_resolution boundary.
+        // Fire when a resolved agent_task step carries generated Reddit content so
+        // the handoff from runtime outputs into a concrete step prompt is observable.
+        if (
+          step.type === 'agent_task' &&
+          runtimeParams['reddit_post_title'] &&
+          runtimeParams['reddit_post_text']
+        ) {
+          const traceUrl2 = await sessionManager.currentUrl().catch(() => '');
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.llm_layer.trace',
+            sessionId: id,
+            workflowId: definition.id,
+            stepId: step.id,
+            details: {
+              layerFrom: 'workflow_outputs',
+              layerTo: 'step_resolution',
+              title: String(runtimeParams['reddit_post_title'] ?? ''),
+              bodyPreview: String(runtimeParams['reddit_post_text'] ?? '').slice(0, 200),
+              titleLength: String(runtimeParams['reddit_post_title'] ?? '').length,
+              bodyLength: String(runtimeParams['reddit_post_text'] ?? '').length,
+              resolvedKeys: Object.keys(runtimeParams).filter(
+                k => runtimeParams[k] !== undefined && runtimeParams[k] !== '',
+              ),
+              urlBefore: traceUrl2,
+              urlAfter: '',
+            },
+          });
+        }
+
         onStateUpdate({
           currentStep: step.id,
           stepIndex: i + 1,
@@ -1406,7 +1519,7 @@ export class WorkflowEngine {
 
       if (!finalResult!) {
         hitlCoordinator.setPhase('complete');
-        onStateUpdate({ phase: 'complete', completedSteps: definition.steps.length });
+        onStateUpdate({ phase: 'complete', completedSteps: executionDefinition.steps.length });
         finalResult = {
           workflowId: definition.id,
           success: true,
@@ -1460,7 +1573,7 @@ export class WorkflowEngine {
     // ---- Write long-term story ----
     try {
       await wrapUpWorkflowRun({
-        definition: resolvedDefinition,
+        definition: executionDefinition,
         sessionId: id,
         startedAt: workflowStart,
         result: finalResult,

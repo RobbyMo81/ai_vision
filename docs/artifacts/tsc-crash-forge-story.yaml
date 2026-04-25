@@ -1,0 +1,146 @@
+id: US-020
+title: TSC crash diagnostic classification baseline
+storyType: forge-enhancement
+status: proposed
+sourceArtifact: docs/artifacts/tsc_crash_error_investigation.md
+objective: >
+  Classify `tsc --noEmit` crash ownership across OS/kernel, Node/V8 runtime,
+  and TypeScript checker layers, then emit a bug report with explicit
+  refactoring procedures for the ruled-in failure path.
+
+layers:
+  - id: os-kernel
+    name: OS / Kernel
+    signalShape:
+      primarySignal: SIGKILL
+      supportingEvidence:
+        - dmesg OOM-killer lines
+        - cgroup memory caps
+        - host memory pressure snapshots
+    exitDecision:
+      ruleInWhen:
+        - kernel or cgroup evidence confirms external process termination
+      ruleOutWhen:
+        - no kernel kill evidence is present and the crash is a V8 heap abort
+
+  - id: node-v8
+    name: Node.js / V8 Runtime
+    signalShape:
+      primarySignal: SIGABRT
+      supportingEvidence:
+        - V8 fatal heap output
+        - GC churn near heap limit
+        - local-versus-CI Node 24 behavior delta
+    exitDecision:
+      ruleInWhen:
+        - crash ends in V8 heap abort and Node 24 parity changes behavior
+      ruleOutWhen:
+        - Node 24 parity reproduces identically and no runtime skew exists
+
+  - id: typescript-checker
+    name: TypeScript Checker / AST
+    signalShape:
+      primarySignal: checker-density pathology
+      supportingEvidence:
+        - extreme Instantiations
+        - extreme Memory used
+        - extreme Check time
+        - normal process exit or diagnostics-rich failure path
+    exitDecision:
+      ruleInWhen:
+        - runtime parity is established and checker metrics are pathological
+      ruleOutWhen:
+        - runtime or OS evidence explains the crash first
+
+shapes:
+  runtimeBaseline:
+    required:
+      - nodeVersion
+      - pnpmVersion
+      - typescriptVersion
+      - nodeOptions
+      - hostOs
+  evidenceShape:
+    required:
+      - crashSignature
+      - localVsCiNode24Comparison
+      - v8AbortEvidence
+      - osKillPathEvidence
+      - checkerMetrics
+  bugReportShape:
+    requiredSections:
+      - observed_crash_signature
+      - environment_baseline
+      - node24_parity_result
+      - layer_classification
+      - ruled_out_layers
+      - ruled_in_bug_path
+      - refactoring_procedures
+
+graphData:
+  requiredMetrics:
+    - Files
+    - Instantiations
+    - Memory used
+    - Check time
+    - Total time
+  comparisonAxes:
+    - local Node vs CI Node 24
+    - SIGABRT vs SIGKILL
+    - expected file count vs loaded file count
+  outputTables:
+    - layer classification table
+    - diagnostics metric table
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - a human-readable bug report artifact exists and names the ruled-in bug layer
+    - the bug report includes concise refactoring procedures for the ruled-in path
+    - the YAML story artifact records layers, shapes, and graphed metrics
+    - OS/kernel, Node/V8, and TypeScript checker layers are each ruled in or ruled out with evidence
+    - Node 24 parity has been checked or explicitly documented as unavailable
+
+definitionOfDone:
+  resultType: error-bug-report
+  mandatoryArtifacts:
+    - docs/artifacts/tsc-crash-forge-story.yaml
+    - docs/artifacts/tsc-crash-bug-report.md
+  doneStatement: >
+    Done means the investigation ends with an explicit bug report that states the
+    crash signature, records runtime and checker metrics, identifies the ruled-in
+    failure layer, rules out the competing layers with evidence, and provides
+    clear, concise refactoring procedures for remediation.
+
+refactoringProcedures:
+  style: concise
+  narration: yaml-authored
+  procedures:
+    - id: runtime-parity
+      when: local Node version is newer than the CI-pinned Node 24 baseline
+      action: rerun the repro under Node 24 before escalating to checker analysis
+      output: parity result recorded in bug report
+    - id: v8-abort
+      when: crash ends in SIGABRT with V8 heap diagnostics
+      action: collect GC trace, crash report, and heap-limit evidence
+      output: Node/V8 runtime refactoring path or runtime downgrade recommendation
+    - id: os-kill
+      when: kernel or cgroup evidence indicates external termination
+      action: record memory ceiling, host pressure, and cgroup limits
+      output: infrastructure refactoring path
+    - id: checker-density
+      when: runtime parity is established and checker metrics remain pathological
+      action: isolate heavy type surfaces and reduce recursive instantiation paths
+      output: code-level refactoring path
+
+bugReportTemplate:
+  path: docs/artifacts/tsc-crash-bug-report.md
+  sections:
+    - name: Observed crash signature
+    - name: Environment baseline
+    - name: Node 24 parity result
+    - name: Diagnostics metrics
+    - name: Layer classification
+    - name: Ruled-in bug path
+    - name: Ruled-out layers
+    - name: Refactoring procedures

@@ -28,7 +28,7 @@ Traditional browser automation (Selenium, Puppeteer) breaks every time a website
 
 ## Architecture
 
-```
+```text
 ai-vision CLI
      │
      ├── browser-use engine   ← Python/LangChain, headless Chromium (default)
@@ -44,7 +44,7 @@ Each engine shares a common interface — swap between them with `--engine` with
 
 ### 1. Prerequisites
 
-- Node.js 18+
+- Node.js 24.x
 - Python 3.10+
 - Rust (for the config GUI — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
@@ -75,13 +75,14 @@ node dist/cli/index.js config
 ```
 
 Navigate with arrow keys:
+
 1. **Select provider** — `anthropic` or `openai`
 2. **Select model** — pick your cost/capability tier
 3. **Enter API key** — paste with `Ctrl+Shift+V`, clear with `Ctrl+U`
 4. **Confirm** — press `Enter` to save to `.env`
 
 | Provider | Model | Tier |
-|----------|-------|------|
+| --- | --- | --- |
 | Anthropic | `claude-haiku-4-5-20251001` | Fastest · Cheapest |
 | Anthropic | `claude-sonnet-4-6` | Balanced · **Recommended** |
 | Anthropic | `claude-opus-4-6` | Most Capable · Most Expensive |
@@ -136,7 +137,7 @@ node dist/cli/index.js config
 
 ## Project Structure
 
-```
+```text
 ai-vision/
 ├── src/
 │   ├── cli/index.ts                   # CLI entry point (commander)
@@ -224,6 +225,38 @@ pnpm run sic:migrate:forge
 pnpm run cli -- run "your prompt here"
 ```
 
+## Critical Diagnostics
+
+When `pnpm run typecheck` or `tsc --noEmit` fails on memory, classify the failure in this order before treating it as a TypeScript regression.
+
+1. Compare the local Node runtime against the CI-pinned Node 24 baseline first. Version skew is the cheapest discriminator for runtime-layer regressions.
+2. Treat a V8 crash ending in `SIGABRT` and `heap out of memory` as a Node self-abort unless you also have `SIGKILL`, cgroup limits, or `dmesg` OOM-killer evidence.
+3. Only blame the TypeScript graph after Node-version parity and OS kill-path checks are ruled out.
+
+Use this quick check sequence on Linux:
+
+```bash
+node -v
+env | grep '^NODE_OPTIONS=' || true
+pnpm exec tsc --noEmit --listFilesOnly | wc -l
+pnpm exec tsc --noEmit --extendedDiagnostics || true
+dmesg | grep -i "oom\|killed process\|out of memory" | tail -n 50 || true
+free -h
+ulimit -a
+```
+
+Expected interpretation:
+
+- `SIGABRT` plus V8 fatal heap output: Node/V8 runtime abort path
+- `SIGKILL` plus kernel or cgroup evidence: OS memory-pressure path
+- Normal process exit with extreme `Instantiations`, `Memory used`, or `Check time`: TypeScript checker-path pathology
+
+## Static Seams
+
+- Keep runtime validation and compile-time contracts separate at subsystem boundaries. Large Zod unions should stay local to their owning module; downstream imports should consume static interfaces or DTOs.
+- Treat SDK registration seams the same way. If a library API mixes schemas, handlers, and generic inference, contain that expansion behind one local helper instead of repeating the full generic shape across the file.
+- If `tsc --noEmit` heap growth appears after adding a shared contract, inspect whether a runtime schema or generic-heavy helper leaked across a broad import surface before reaching for heap-size workarounds.
+
 ---
 
 ## Secrets Vault Container (Local)
@@ -237,6 +270,7 @@ pnpm run vault:up
 ```
 
 Defaults:
+
 - `VAULT_ADDR=http://127.0.0.1:8200`
 - `VAULT_TOKEN=root`
 - KV path: `secret/data/ai-vision`
@@ -270,6 +304,7 @@ pnpm run vault:down
 ```
 
 Notes:
+
 - `vault-init` and `vault-export` require `curl` and `jq`.
 - Keep `.env` for non-secret defaults only; prefer Vault for API keys.
 

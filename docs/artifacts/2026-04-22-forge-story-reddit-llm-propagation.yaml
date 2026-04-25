@@ -1,0 +1,94 @@
+id: EN-005
+title: Reddit LLM handoff tracing for draft propagation
+storyType: forge-enhancement
+status: proposed
+sourceArtifact: docs/artifacts/2026-04-23-reddit-workflow-run.md
+objective: >
+  Fix the Reddit publish path so generated title/body content survives the
+  handoff from Gemini draft generation through workflow orchestration and into
+  the browser-use submission step. Add an explicit trace call across the three
+  LLM layers so future runs can prove where the payload is lost.
+
+layers:
+  - id: gemini-draft-layer
+    name: Gemini Draft Layer
+    responsibility: Generate the Reddit title and body text
+    requiredSignal:
+      - emit generated title/body into workflow outputs
+      - record title/body lengths before orchestration handoff
+    exitDecision:
+      ruleInWhen:
+        - generated content exists but downstream consumers later see blank strings
+      ruleOutWhen:
+        - draft generation never produced a title/body payload
+
+  - id: workflow-resolution-layer
+    name: Workflow Resolution Layer
+    responsibility: Resolve step templates against live runtime outputs
+    requiredSignal:
+      - carry `reddit_post_title` and `reddit_post_text` into runtime params
+      - preserve resolved values when step templates are cloned for execution
+    exitDecision:
+      ruleInWhen:
+        - runtime resolution drops one or both generated fields before browser-use steps
+      ruleOutWhen:
+        - the resolved step payload still contains the expected title/body values
+
+  - id: browser-use-submit-layer
+    name: Browser-Use Submission Layer
+    responsibility: Fill the Reddit composer and submit the post
+    requiredSignal:
+      - log the exact title/body payload received by the agent prompt
+      - confirm the submit step consumes the resolved values and not fallback text
+    exitDecision:
+      ruleInWhen:
+        - the browser agent receives empty title/body or invents fallback copy
+      ruleOutWhen:
+        - the browser agent submits the generated Reddit content unchanged
+
+traceCall:
+  name: workflow.llm_layer.trace
+  purpose: >
+    Capture the three-layer payload handoff for Reddit publishing so the next
+    investigation can pinpoint whether the loss happens in draft generation,
+    workflow resolution, or browser-use execution.
+  requiredFields:
+    - sessionId
+    - workflowId
+    - stepId
+    - layerFrom
+    - layerTo
+    - title
+    - bodyPreview
+    - titleLength
+    - bodyLength
+    - resolvedKeys
+    - urlBefore
+    - urlAfter
+  emissionPoints:
+    - after Gemini draft generation
+    - after workflow runtime substitution resolves the submit-step payload
+    - immediately before browser-use receives the submit or draft prompt
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - the Reddit title/body handoff is traced across all three layers
+    - the submit step receives non-empty generated title/body content
+    - the final post URL is confirmed on `/comments/`
+    - the trace artifact explains the exact layer where payload loss occurred, if any
+
+definitionOfDone:
+  resultType: enhancement-story
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-22-forge-story-reddit-llm-propagation.yaml
+    - docs/artifacts/2026-04-23-reddit-workflow-run.md
+  doneStatement: >
+    Done means the Reddit workflow has a named trace call linking the Gemini,
+    workflow-resolution, and browser-use layers, and the resulting evidence
+    shows the generated title/body arriving intact at submission time.
+
+verificationNotes:
+  - Prefer the built-in `write_and_post_to_reddit` workflow for reproduction.
+  - Validate that `reddit_post_title` and `reddit_post_text` are non-empty at the submit-step boundary.
+  - If the browser agent falls back to a synthetic title, record the exact fallback and the missing upstream layer.

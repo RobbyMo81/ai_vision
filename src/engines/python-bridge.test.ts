@@ -1,14 +1,25 @@
 import {
+  BrowserUseActionEvent,
   BridgeExitEvent,
+  browserUseActionEvents,
   bridgeLifecycleEvents,
   getLatestBridgeExitEvent,
+  normalizeBrowserUseActionEvent,
+  recordBrowserUseActionEvent,
   recordBridgeExitEvent,
   resetLatestBridgeExitEventForTest,
 } from './python-bridge';
 
+jest.mock('../telemetry', () => ({
+  telemetry: { emit: jest.fn() },
+}));
+
+const { telemetry } = require('../telemetry') as { telemetry: { emit: jest.Mock } };
+
 describe('python-bridge lifecycle events', () => {
   beforeEach(() => {
     resetLatestBridgeExitEventForTest();
+    telemetry.emit.mockClear();
   });
 
   it('records and emits unexpected bridge exits', () => {
@@ -43,5 +54,38 @@ describe('python-bridge lifecycle events', () => {
 
     expect(getLatestBridgeExitEvent()).toEqual(event);
     expect(getLatestBridgeExitEvent()?.unexpected).toBe(false);
+  });
+
+  it('normalizes and emits browser-use action events', () => {
+    const captured: BrowserUseActionEvent[] = [];
+    const handler = (event: BrowserUseActionEvent) => captured.push(event);
+    browserUseActionEvents.on('browser_use_action', handler);
+
+    const event = normalizeBrowserUseActionEvent({
+      session_id: 'sess-123',
+      workflow_id: 'wf-123',
+      step_id: 'publish_post',
+      browser_use_step_number: 2,
+      action: 'click',
+      url: 'https://example.com/post',
+      actions: [{ name: 'click', params: { index: 4 } }],
+    });
+
+    recordBrowserUseActionEvent(event);
+
+    expect(telemetry.emit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'browser_use.action.click',
+      source: 'engine',
+      sessionId: 'sess-123',
+      workflowId: 'wf-123',
+      stepId: 'publish_post',
+    }));
+    expect(captured).toEqual([expect.objectContaining({
+      action: 'click',
+      browserUseStepId: 'browser-use-step-2',
+      url: 'https://example.com/post',
+    })]);
+
+    browserUseActionEvents.off('browser_use_action', handler);
   });
 });
