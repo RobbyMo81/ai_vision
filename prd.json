@@ -168,6 +168,41 @@
         "npx tsc --noEmit passes",
         "npm test passes"
       ]
+    },
+    {
+      "id": "US-020",
+      "title": "TSC crash diagnostic classification baseline",
+      "passes": false,
+      "description": "Create a reproducible FORGE investigation path for `tsc --noEmit` memory crashes that distinguishes Node/V8 heap aborts from kernel OOM kills and checker-graph pathologies.",
+      "acceptance": [
+        "Investigation flow records local Node, pnpm, TypeScript, and `NODE_OPTIONS` before reproducing the crash",
+        "Investigation compares local behavior against the CI-pinned Node 24 baseline before blaming the TypeScript graph",
+        "Investigation captures V8 abort evidence, file-count shape, and extended diagnostics values including `Instantiations`, `Memory used`, and `Check time`",
+        "Investigation captures Linux OOM evidence from `dmesg`, `free -h`, `ulimit -a`, and cgroup memory files",
+        "Final report classifies the failure as OS/kernel, Node/V8 runtime, or TypeScript checker path with evidence for the ruled-in and ruled-out layers",
+        "Story is complete only when a bug report artifact and YAML refactoring artifact both exist, record the observed crash signature, runtime baseline, Node 24 comparison result, layer-by-layer evidence, graphed metrics, and clear refactoring procedures for the ruled-in bug path"
+      ],
+      "exitCriteria": "Exit only when `docs/artifacts/tsc-crash-forge-story.yaml` authors the story with layers, shapes, graphed data, and bug-refactoring procedures, and the paired bug report artifact records a final ruled-in or ruled-out classification across OS/kernel, Node/V8, and TypeScript checker layers.",
+      "definitionOfDone": "Done means the investigation yields an explicit error or bug report with concise refactoring procedures, names the ruled-in layer, rules out the competing layers with evidence, and persists the result in the FORGE YAML story artifact plus a human-readable report.",
+      "technicalNotes": "Derived from `docs/artifacts/tsc_crash_error_investigation.md`. Preserve the `SIGABRT` versus `SIGKILL` distinction, treat Node 24 parity as the first discriminator, and use `docs/artifacts/tsc-crash-forge-story.yaml` as the structured story-authoring artifact.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-021",
+      "title": "TSC crash layered remediation protocol",
+      "passes": false,
+      "description": "Convert the tsc crash investigation output into an explicit remediation workflow that gates runtime parity first, separates Node/V8 remediation from OS remediation, delays TypeScript refactors until upstream layers are ruled out, and persists the result as a classified bug report.",
+      "acceptance": [
+        "Remediation protocol records local Node, pnpm, TypeScript, and `NODE_OPTIONS` and treats CI-pinned Node 24 parity as the first remediation gate",
+        "Remediation protocol separates `SIGABRT` Node/V8 evidence from `SIGKILL` or kernel/cgroup evidence and routes them to different remediation paths",
+        "TypeScript refactoring is blocked until Node 24 parity and OS kill-path checks are ruled out with evidence",
+        "Remediation result persists as a classified bug report that names the ruled-in layer, rules out competing layers, and provides concise refactoring procedures",
+        "Story is complete only when a YAML remediation story artifact and a paired bug report remediation artifact both exist and record layers, shapes, graphed metrics, and remediation procedures for the ruled-in path"
+      ],
+      "exitCriteria": "Exit only when `docs/artifacts/tsc-crash-remediation-forge-story.yaml` and its paired remediation bug report artifact both exist, runtime parity has been checked or explicitly documented as unavailable, and the final report names the ruled-in remediation layer with concise procedures and ruled-out competing layers.",
+      "definitionOfDone": "Done means the remediation workflow produces an explicit error or bug report that identifies whether the active remediation path is OS/kernel, Node/V8 runtime, or TypeScript checker, and persists the required refactoring procedures in both a human-readable report and a FORGE YAML story artifact.",
+      "technicalNotes": "Derived from the consolidated remediation requirements in `docs/artifacts/ts-memory-troubleshooting.md`, `docs/artifacts/tsc_crash_error_investigation.md`, `docs/artifacts/tsc-crash-bug-report.md`, and `docs/artifacts/tsc-crash-forge-story.yaml`. Preserve the layered order: runtime parity, OS kill-path elimination, then TypeScript refactoring.",
+      "safetyGates": []
     }
   ]
 }

@@ -35,7 +35,11 @@ export const TriggerPayloadSchema = z.object({
   callback_url: z.string().url().optional(),
 });
 
-export type TriggerPayload = z.infer<typeof TriggerPayloadSchema>;
+export interface TriggerPayload {
+  workflow_id: string;
+  params: Record<string, unknown>;
+  callback_url?: string;
+}
 
 export interface OutboundNotification {
   workflow_id: string;

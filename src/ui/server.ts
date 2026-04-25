@@ -23,7 +23,12 @@ import { hitlCoordinator } from '../session/hitl';
 import { workflowEngine } from '../workflow/engine';
 import { HitlEventPayload, SessionState } from '../session/types';
 import { telemetry } from '../telemetry';
-import { bridgeLifecycleEvents, BridgeExitEvent } from '../engines/python-bridge';
+import {
+  bridgeLifecycleEvents,
+  BridgeExitEvent,
+  browserUseActionEvents,
+  BrowserUseActionEvent,
+} from '../engines/python-bridge';
 
 // ---------------------------------------------------------------------------
 // Inline HTML (single-file, no build step)
@@ -261,6 +266,11 @@ function handleEvent(payload) {
   }
   if (payload.type === 'bridge_disconnected') {
     log(payload.state?.error ?? 'Automation bridge disconnected.', 'err');
+  }
+  if (payload.type === 'browser_use_action' && payload.browserUseEvent) {
+    const action = payload.browserUseEvent.actionNames.join(', ');
+    const url = payload.browserUseEvent.url ? ' @ ' + payload.browserUseEvent.url : '';
+    log('browser-use: ' + action + url, 'info');
   }
 }
 
@@ -520,10 +530,8 @@ telemetryRefreshTimer = setInterval(fetchTelemetry, 5000);
 // ---------------------------------------------------------------------------
 
 export async function startUiServer(port = 3000): Promise<void> {
-  // Lazy import ws to avoid loading it during CLI commands that don't need it
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const wsModule = (await import('ws')) as any;
-  const WebSocketServer = (wsModule.WebSocketServer ?? wsModule.default?.WebSocketServer ?? wsModule.Server) as typeof import('ws').WebSocketServer;
+  // Destructured import gives a fully-typed WebSocketServer without any cast.
+  const { WebSocketServer } = await import('ws');
 
   const wss = new WebSocketServer({ noServer: true });
   telemetry.emit({
@@ -615,6 +623,23 @@ export async function startUiServer(port = 3000): Promise<void> {
     });
 
     broadcast({ type: 'bridge_disconnected', state: disconnectedState });
+  });
+
+  browserUseActionEvents.on('browser_use_action', (event: BrowserUseActionEvent) => {
+    const now = new Date();
+    const current = workflowEngine.currentState;
+    const actionSummary = event.actionNames.join(', ');
+    const state: SessionState = {
+      id: event.sessionId ?? current?.id ?? 'browser-use-live',
+      phase: current?.phase ?? 'running',
+      startedAt: current?.startedAt ?? now,
+      lastUpdatedAt: now,
+      ...current,
+      currentStep: current?.currentStep ?? `browser-use: ${actionSummary}`,
+      currentUrl: event.url ?? current?.currentUrl,
+    };
+
+    broadcast({ type: 'browser_use_action', state, browserUseEvent: event });
   });
 
   const server = http.createServer((req, res) => {

@@ -12,6 +12,9 @@ const mockSessionManager = {
   start: jest.fn(),
   currentUrl: jest.fn(),
   getPage: jest.fn(),
+  navigate: jest.fn(),
+  startScreenshotTimer: jest.fn(),
+  stopScreenshotTimer: jest.fn(),
   close: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -88,6 +91,7 @@ jest.mock('../memory', () => ({
   ShortTermMemoryManager: {
     getOutputFormatInstruction: jest.fn(() => ''),
   },
+  formatBankContext: jest.fn(() => ''),
 }));
 
 const mockRunOrchestratorLoop = jest.fn();
@@ -102,11 +106,16 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWriter.writePost.mockReset();
     delete process.env.AI_VISION_UI_PORT;
     mockSessionManager.start.mockResolvedValue(undefined);
     mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
-    mockPage.evaluate.mockResolvedValue('Rendered page body');
+    mockSessionManager.navigate.mockRejectedValue(new Error('unexpected fallback step executed'));
     mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
     mockWriter.writePost.mockResolvedValue({
       text: 'Generated post body',
       platform: 'x',
@@ -115,9 +124,22 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
   });
 
   it('resolves downstream placeholders from same-run outputs', async () => {
+    mockWriter.writePost
+      .mockResolvedValueOnce({
+        text: 'Generated post body',
+        platform: 'x',
+        model: 'gemini-test',
+      })
+      .mockResolvedValueOnce({
+        text: 'Followup post body',
+        platform: 'x',
+        model: 'gemini-test',
+      });
+
     const definition = {
       id: 'rf001-test',
       name: 'RF-001 runtime substitution test',
+      mode: 'direct' as const,
       params: {},
       steps: [
         {
@@ -128,10 +150,11 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
           outputKey: 'x_post_text',
         },
         {
-          type: 'extract' as const,
-          id: 'inspect_generated_text',
-          instruction: 'Verify generated text: {{x_post_text}}',
-          outputKey: 'inspection',
+          type: 'generate_content' as const,
+          id: 'write_followup_post',
+          topic: 'Followup: {{x_post_text}}',
+          platform: 'x' as const,
+          outputKey: 'followup_post_text',
         },
       ],
     };
@@ -140,7 +163,70 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
 
     expect(result.success).toBe(true);
     expect(result.outputs.x_post_text).toBe('Generated post body');
-    expect(result.outputs.inspection).toContain('[Extract instruction: Verify generated text: Generated post body]');
+    expect(result.outputs.followup_post_text).toBe('Followup post body');
+  });
+
+  it('keeps the execution loop on the resolved step array when the original step source changes later', async () => {
+    mockWriter.writePost
+      .mockResolvedValueOnce({
+        text: 'Generated post body',
+        platform: 'x',
+        model: 'gemini-test',
+      })
+      .mockResolvedValueOnce({
+        text: 'Followup post body',
+        platform: 'x',
+        model: 'gemini-test',
+      });
+
+    const primarySteps = [
+      {
+        type: 'generate_content' as const,
+        id: 'write_x_post',
+        topic: 'Test topic',
+        platform: 'x' as const,
+        outputKey: 'x_post_text',
+      },
+      {
+        type: 'generate_content' as const,
+        id: 'write_followup_post',
+        topic: 'Followup: {{x_post_text}}',
+        platform: 'x' as const,
+        outputKey: 'followup_post_text',
+      },
+    ];
+    const fallbackSteps = [
+      {
+        type: 'navigate' as const,
+        id: 'unexpected_fallback_step',
+        url: 'https://should-not-run.invalid',
+      },
+    ];
+
+    let stepsAccessCount = 0;
+    const definition = {
+      id: 'rf002-test',
+      name: 'RF-002 unified step source test',
+      mode: 'direct' as const,
+      params: {},
+      get steps() {
+        stepsAccessCount += 1;
+        return stepsAccessCount === 1 ? primarySteps : fallbackSteps;
+      },
+    } as unknown as {
+      id: string;
+      name: string;
+      mode: 'direct';
+      params: Record<string, never>;
+      steps: typeof primarySteps;
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(result.outputs.x_post_text).toBe('Generated post body');
+    expect(result.outputs.followup_post_text).toBe('Followup post body');
+    expect(mockSessionManager.navigate).not.toHaveBeenCalled();
   });
 
   it('pre-flight hands off to GeminiWriter when social message is missing', async () => {
@@ -154,6 +240,7 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     const definition = {
       id: 'post_to_x',
       name: 'Pre-flight writer handoff test',
+      mode: 'direct' as const,
       params: {
         post_text: { type: 'string' as const, required: true },
       },
@@ -175,6 +262,7 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     const definition = {
       id: 'post_to_x',
       name: 'Pre-flight writer skip test',
+      mode: 'direct' as const,
       params: {
         post_text: { type: 'string' as const, required: true },
       },
@@ -211,6 +299,7 @@ describe('workflowEngine US-009 orchestrator loop delegation', () => {
       id: 'yaml-test',
       name: 'YAML Test Workflow',
       source: 'yaml' as const,
+      mode: 'agentic' as const,
       params: {},
       steps: [],
     };
@@ -222,6 +311,7 @@ describe('workflowEngine US-009 orchestrator loop delegation', () => {
       expect.objectContaining({ id: 'yaml-test', source: 'yaml' }),
       expect.objectContaining({ topic: 'test' }),
       'sess-001',
+      expect.any(Function),
     );
     expect(result.success).toBe(true);
     expect(result.outputs.result).toBe('done');
@@ -232,6 +322,7 @@ describe('workflowEngine US-009 orchestrator loop delegation', () => {
       id: 'builtin-test',
       name: 'Builtin Test',
       source: 'builtin' as const,
+      mode: 'direct' as const,
       params: {},
       steps: [],
     };

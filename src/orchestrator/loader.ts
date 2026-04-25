@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as jsYaml from 'js-yaml';
-import { WorkflowDefinitionSchema, WorkflowDefinition } from '../workflow/types';
+import { parseWorkflowDefinition, WorkflowDefinition } from '../workflow/types';
 
 const WORKFLOWS_DIR = path.resolve(process.cwd(), 'workflows');
 const INSTRUCTIONS_DIR = path.resolve(process.cwd(), 'instructions');
@@ -18,7 +18,7 @@ const INSTRUCTIONS_DIR = path.resolve(process.cwd(), 'instructions');
 export function loadYamlWorkflow(filePath: string): WorkflowDefinition {
   const content = fs.readFileSync(filePath, 'utf-8');
   const parsed = jsYaml.load(content);
-  const result = WorkflowDefinitionSchema.parse(parsed);
+  const result = parseWorkflowDefinition(parsed);
   return { ...result, source: 'yaml' };
 }
 

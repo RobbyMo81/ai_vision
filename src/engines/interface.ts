@@ -37,6 +37,10 @@ export interface TaskContext {
   /** Override the engine's default max_steps for this specific task.
    *  Use low values (3–6) for focused single-action steps to cut planning overhead. */
   maxSteps?: number;
+  /** Correlates live engine events back to the active orchestrator/workflow run. */
+  sessionId?: string;
+  workflowId?: string;
+  stepId?: string;
 }
 
 // ---------------------------------------------------------------------------

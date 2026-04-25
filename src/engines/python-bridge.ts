@@ -7,8 +7,10 @@ import axios, { AxiosInstance } from 'axios';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as net from 'net';
 import * as path from 'path';
+import { telemetry } from '../telemetry';
 
 // Resolve the project root (works from both src/ and dist/)
 const PROJECT_ROOT = (() => {
@@ -64,12 +66,53 @@ export interface BridgeExitEvent {
   unexpected: boolean;
 }
 
+export interface BrowserUseActionEvent {
+  engineId: 'browser-use';
+  name: string;
+  sessionId?: string;
+  workflowId?: string;
+  stepId?: string;
+  browserUseStepId: string;
+  browserUseStepNumber: number;
+  action: string;
+  actionNames: string[];
+  actions: Array<{ name: string; params: Record<string, unknown> }>;
+  selector?: string;
+  url?: string;
+  title?: string;
+  screenshotBase64?: string;
+  evaluationPreviousGoal?: string;
+  memory?: string;
+  nextGoal?: string;
+  timestamp: string;
+}
+
+interface BrowserUseActionEventInput {
+  session_id?: string;
+  workflow_id?: string;
+  step_id?: string;
+  browser_use_step_id?: string;
+  browser_use_step_number?: number;
+  action?: string;
+  selector?: string;
+  url?: string;
+  title?: string;
+  screenshot_b64?: string;
+  timestamp?: string;
+  evaluation_previous_goal?: string;
+  memory?: string;
+  next_goal?: string;
+  actions?: Array<{ name?: string; params?: Record<string, unknown> }>;
+}
+
 /**
  * Process-level lifecycle events for Python bridges.
  * Consumers (UI/MCP) can subscribe to propagate bridge failures immediately.
  */
 export const bridgeLifecycleEvents = new EventEmitter();
+export const browserUseActionEvents = new EventEmitter();
 let latestBridgeExitEvent: BridgeExitEvent | null = null;
+let browserUseCallbackServerPromise: Promise<string> | null = null;
 
 export function getLatestBridgeExitEvent(): BridgeExitEvent | null {
   return latestBridgeExitEvent;
@@ -82,6 +125,115 @@ export function recordBridgeExitEvent(event: BridgeExitEvent): void {
 
 export function resetLatestBridgeExitEventForTest(): void {
   latestBridgeExitEvent = null;
+}
+
+export function normalizeBrowserUseActionEvent(
+  input: BrowserUseActionEventInput,
+): BrowserUseActionEvent {
+  const actions = (input.actions ?? []).map((action) => ({
+    name: String(action.name ?? 'unknown'),
+    params: action.params ?? {},
+  }));
+  const actionNames = actions.length > 0
+    ? actions.map((action) => action.name)
+    : [String(input.action ?? 'step')];
+  const primaryAction = String(input.action ?? actionNames[0] ?? 'step');
+  const browserUseStepNumber = input.browser_use_step_number ?? 0;
+
+  return {
+    engineId: 'browser-use',
+    name: `browser_use.action.${primaryAction}`,
+    sessionId: input.session_id,
+    workflowId: input.workflow_id,
+    stepId: input.step_id,
+    browserUseStepId: input.browser_use_step_id ?? `browser-use-step-${browserUseStepNumber}`,
+    browserUseStepNumber,
+    action: primaryAction,
+    actionNames,
+    actions,
+    selector: input.selector,
+    url: input.url,
+    title: input.title,
+    screenshotBase64: input.screenshot_b64,
+    evaluationPreviousGoal: input.evaluation_previous_goal,
+    memory: input.memory,
+    nextGoal: input.next_goal,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  };
+}
+
+export function recordBrowserUseActionEvent(event: BrowserUseActionEvent): void {
+  telemetry.emit({
+    source: 'engine',
+    name: event.name,
+    sessionId: event.sessionId,
+    workflowId: event.workflowId,
+    stepId: event.stepId,
+    details: {
+      action: event.action,
+      actionNames: event.actionNames,
+      browserUseStepId: event.browserUseStepId,
+      browserUseStepNumber: event.browserUseStepNumber,
+      selector: event.selector,
+      url: event.url,
+      title: event.title,
+      evaluationPreviousGoal: event.evaluationPreviousGoal,
+      memory: event.memory,
+      nextGoal: event.nextGoal,
+      screenshotIncluded: Boolean(event.screenshotBase64),
+    },
+  });
+  browserUseActionEvents.emit('browser_use_action', event);
+}
+
+export async function ensureBrowserUseCallbackServer(): Promise<string> {
+  if (browserUseCallbackServerPromise) return browserUseCallbackServerPromise;
+
+  browserUseCallbackServerPromise = new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      if (req.method !== 'POST' || req.url !== '/browser-use-events') {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}') as BrowserUseActionEventInput;
+          recordBrowserUseActionEvent(normalizeBrowserUseActionEvent(payload));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        }
+      });
+    });
+
+    server.on('error', (error) => {
+      browserUseCallbackServerPromise = null;
+      reject(error);
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        browserUseCallbackServerPromise = null;
+        reject(new Error('Could not resolve browser-use callback server address'));
+        return;
+      }
+      resolve(`http://127.0.0.1:${address.port}/browser-use-events`);
+    });
+  });
+
+  return browserUseCallbackServerPromise;
 }
 
 export abstract class PythonBridgeEngine implements AutomationEngine {
@@ -200,7 +352,13 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
       error?: string;
       screenshots: Array<{ path: string; base64: string; taken_at: string }>;
       duration_ms: number;
-    }>('/task', { prompt, ...(context?.maxSteps != null ? { max_steps: context.maxSteps } : {}) });
+    }>('/task', {
+      prompt,
+      ...(context?.maxSteps != null ? { max_steps: context.maxSteps } : {}),
+      ...(context?.sessionId ? { session_id: context.sessionId } : {}),
+      ...(context?.workflowId ? { workflow_id: context.workflowId } : {}),
+      ...(context?.stepId ? { step_id: context.stepId } : {}),
+    });
     return {
       success: res.success,
       output: res.output,
@@ -293,9 +451,16 @@ export abstract class PythonBridgeEngine implements AutomationEngine {
     // This preserves cookies and auth state across HITL handoffs.
     // BROWSER_CDP_URL is set in process.env by the serve command before any engines are started.
     const cdpUrl = process.env.BROWSER_CDP_URL ?? '';
+    const browserUseCallbackUrl = this.id === 'browser-use'
+      ? await ensureBrowserUseCallbackServer()
+      : '';
 
     const proc = spawn(pythonBin, [this.config.serverScript], {
-      env: { ...process.env, ...(cdpUrl ? { BROWSER_CDP_URL: cdpUrl } : {}) },
+      env: {
+        ...process.env,
+        ...(cdpUrl ? { BROWSER_CDP_URL: cdpUrl } : {}),
+        ...(browserUseCallbackUrl ? { BROWSER_USE_CALLBACK_URL: browserUseCallbackUrl } : {}),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

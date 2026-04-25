@@ -68,7 +68,7 @@ export class LongTermMemoryManager {
     const forgeStore = forgeSicStore.loadImprovementStore();
     if (forgeStore) {
       this._store = forgeStore;
-      return this._store;
+      return forgeStore;
     }
 
     if (forgeSicStore.isStrictMode()) {

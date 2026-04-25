@@ -1,5 +1,6 @@
 import { runOrchestratorLoop } from './loop';
 import { WorkflowDefinition } from '../workflow/types';
+import { browserUseActionEvents } from '../engines/python-bridge';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -56,6 +57,13 @@ jest.mock('../telemetry', () => ({
   telemetry: { emit: jest.fn() },
 }));
 
+const mockRunTask = jest.fn();
+jest.mock('../engines/registry', () => ({
+  registry: {
+    getReady: jest.fn(async () => ({ runTask: mockRunTask })),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -77,6 +85,7 @@ function makeToolUseResponse(tools: Array<{ id: string; name: string; input: Rec
 const BASE_DEFINITION: WorkflowDefinition = {
   id: 'loop-unit-test',
   name: 'Loop Unit Test',
+  mode: 'direct',
   source: 'yaml',
   params: {},
   steps: [],
@@ -91,6 +100,7 @@ describe('runOrchestratorLoop US-009', () => {
     jest.clearAllMocks();
     mockLoadAllInstructions.mockReturnValue({});
     mockFormatBankContext.mockReturnValue('');
+    mockRunTask.mockReset();
   });
 
   it('reads instructions before first tool call', async () => {
@@ -228,5 +238,52 @@ describe('runOrchestratorLoop US-009', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('API rate limit');
+  });
+
+  it('receives browser-use live events during agent_task without polling', async () => {
+    mockRunTask.mockImplementation(async (_prompt: string, context?: { sessionId?: string; workflowId?: string; stepId?: string }) => {
+      browserUseActionEvents.emit('browser_use_action', {
+        engineId: 'browser-use',
+        name: 'browser_use.action.click',
+        sessionId: context?.sessionId,
+        workflowId: context?.workflowId,
+        stepId: context?.stepId,
+        browserUseStepId: 'browser-use-step-1',
+        browserUseStepNumber: 1,
+        action: 'click',
+        actionNames: ['click'],
+        actions: [{ name: 'click', params: { index: 2 } }],
+        url: 'https://example.com/dashboard',
+        timestamp: new Date('2026-04-23T00:00:00.000Z').toISOString(),
+      });
+      return {
+        success: true,
+        output: 'posted',
+        screenshots: [],
+        durationMs: 5,
+      };
+    });
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce(
+        makeToolUseResponse([
+          { id: 'tu-1', name: 'agent_task', input: { step_id: 'publish_post', prompt: 'Post the draft', engine: 'browser-use' } },
+        ]),
+      )
+      .mockResolvedValue(makeEndTurnResponse());
+
+    const onStateUpdate = jest.fn();
+    const result = await runOrchestratorLoop(BASE_DEFINITION, {}, 'sess-live', onStateUpdate);
+
+    expect(result.success).toBe(true);
+    expect(mockRunTask).toHaveBeenCalledWith('Post the draft', expect.objectContaining({
+      sessionId: 'sess-live',
+      workflowId: 'loop-unit-test',
+      stepId: 'publish_post',
+    }));
+    expect(onStateUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      currentUrl: 'https://example.com/dashboard',
+      currentStep: 'browser-use: click',
+    }));
   });
 });

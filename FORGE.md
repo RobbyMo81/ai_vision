@@ -52,8 +52,8 @@
 ## SQLite Memory Layer (MANDATORY)
 
 **File:** `forge-memory.db` (project root, gitignored, WAL mode)  
-**Protocol:** MEMORY_PROTOCOL.md  
-**Client:** `scripts/forge/forge-memory-client.ts`
+**Protocol:** `ForgeMP/MEMORY_PROTOCOL.md`  
+**Client:** `ForgeMP/forge-memory-client.ts`
 
 Every agent MUST:
 1. Call `mem.entry()` before writing any code (reads DB, marks messages read)
@@ -63,6 +63,9 @@ Every agent MUST:
 5. NEVER write credentials, tokens, or API keys to the DB
 
 The DB is initialized and health-checked by `forge.sh` at startup. If the DB is missing or schema version is wrong, forge.sh halts with an error. There is no bypass.
+
+Canonical FORGE implementation files live under `ForgeMP/`.
+Compatibility shims are provided under `scripts/forge/` for older docs and command paths.
 
 DB tables: `forge_sessions`, `agent_iterations`, `agent_messages`, `context_store`, `discoveries`, `story_state`, `audit_log`
 
@@ -82,6 +85,8 @@ For every change in the categories above, contributors MUST:
 3. Write FORGE memory context/messages/discoveries for handoff continuity.
 4. Update `progress.txt` and `AGENTS.md` when behavior changes.
 5. Save all agent-generated explainers/reports under `docs/artifacts/` using date-prefixed filenames.
+6. For every engineering build handoff, provide the complete four-part package documented in `AGENTS.md`: a first-class Forge storyline, a compact YAML tracing story card when tracing is involved, an AI agent prompt that explicitly follows the Forge system and Forge build loop, and an explicit definition of done.
+7. **Deliver a Summary of Work** at the end of every completed story or task. The summary must state: what changed, which files were touched, what the acceptance criteria were, and the final validation result (typecheck exit code + test counts). This summary must appear in the agent's closing response and be recorded in `progress.txt`.
 
 Changes that bypass these obligations are out of policy.
 
@@ -89,8 +94,8 @@ Query the DB directly for debugging:
 ```bash
 sqlite3 forge-memory.db "SELECT * FROM agent_messages WHERE read_at IS NULL;"
 sqlite3 forge-memory.db "SELECT * FROM discoveries ORDER BY created_at DESC LIMIT 5;"
-npx ts-node scripts/forge/forge-memory-client.ts messages
-npx ts-node scripts/forge/forge-memory-client.ts discoveries
+npx ts-node ForgeMP/forge-memory-client.ts messages
+npx ts-node ForgeMP/forge-memory-client.ts discoveries
 ```
 
 ## What NOT to Do

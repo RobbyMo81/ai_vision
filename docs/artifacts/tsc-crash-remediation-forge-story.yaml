@@ -1,0 +1,109 @@
+id: US-021
+title: TSC crash layered remediation protocol
+storyType: forge-enhancement
+status: proposed
+sourceArtifacts:
+  - docs/artifacts/ts-memory-troubleshooting.md
+  - docs/artifacts/tsc_crash_error_investigation.md
+  - docs/artifacts/tsc-crash-bug-report.md
+  - docs/artifacts/tsc-crash-forge-story.yaml
+objective: >
+  Turn the classified tsc crash diagnosis into an explicit remediation workflow
+  that gates runtime parity first, separates runtime and OS repair paths, and
+  only permits TypeScript refactoring after the upstream layers are ruled out.
+
+layers:
+  - id: runtime-parity-gate
+    name: Runtime Parity Gate
+    remediationRequirement:
+      - capture local Node, pnpm, TypeScript, and NODE_OPTIONS
+      - compare the failing environment against the CI-pinned Node 24 baseline
+      - block checker refactoring until parity is checked or explicitly unavailable
+
+  - id: node-v8-remediation
+    name: Node.js / V8 Remediation
+    remediationRequirement:
+      - treat SIGABRT plus V8 heap output as a runtime-layer remediation path
+      - collect GC traces, fatal reports, and heap-near-limit evidence
+      - keep the bug path on Node/V8 until disproven by parity or OS evidence
+
+  - id: os-kernel-remediation
+    name: OS / Kernel Remediation
+    remediationRequirement:
+      - treat SIGKILL, dmesg OOM lines, and cgroup ceilings as infrastructure-layer evidence
+      - route remediation to host-memory or cgroup correction instead of TypeScript refactoring
+
+  - id: typescript-refactor-gate
+    name: TypeScript Refactor Gate
+    remediationRequirement:
+      - allow TypeScript refactoring only after runtime parity and OS kill-path checks are ruled out
+      - capture Files, Instantiations, Memory used, Check time, and Total time
+      - isolate heavy type surfaces before changing checker-facing code
+
+shapes:
+  remediationSummary:
+    required:
+      - runtimeParityDecision
+      - ruledInLayer
+      - ruledOutLayers
+      - remediationProcedureSet
+  bugReportShape:
+    requiredSections:
+      - observed_crash_signature
+      - runtime_parity_gate
+      - ruled_in_remediation_layer
+      - ruled_out_layers
+      - remediation_procedures
+  graphShape:
+    requiredTables:
+      - layer classification table
+      - diagnostics metric table
+
+graphData:
+  requiredMetrics:
+    - Files
+    - Instantiations
+    - Memory used
+    - Check time
+    - Total time
+  requiredComparisons:
+    - local Node vs CI Node 24
+    - SIGABRT vs SIGKILL
+    - runtime-layer evidence vs checker-layer evidence
+
+remediationProcedures:
+  style: concise
+  narration: yaml-authored
+  procedures:
+    - id: establish-runtime-parity
+      action: capture runtime baseline and compare against CI-pinned Node 24
+      output: runtime parity decision
+    - id: separate-runtime-from-os
+      action: route SIGABRT and V8 heap evidence to Node/V8 remediation, route SIGKILL and OOM evidence to OS remediation
+      output: ruled-in upstream remediation layer
+    - id: delay-checker-refactor
+      action: block TypeScript refactoring until runtime and OS layers are ruled out
+      output: checker refactor eligibility decision
+    - id: persist-classified-remediation
+      action: write a human-readable bug report that names the ruled-in layer and the concise refactoring procedures
+      output: remediation artifact set
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - runtime parity has been checked or explicitly documented as unavailable
+    - the ruled-in remediation layer is named as OS/kernel, Node/V8, or TypeScript checker
+    - the competing remediation layers are ruled out with evidence
+    - concise refactoring procedures are written for the ruled-in path
+    - the remediation result is persisted as both a YAML story artifact and a human-readable bug report
+
+definitionOfDone:
+  resultType: remediation-bug-report
+  mandatoryArtifacts:
+    - docs/artifacts/tsc-crash-remediation-forge-story.yaml
+    - docs/artifacts/tsc-crash-remediation-bug-report.md
+  doneStatement: >
+    Done means the remediation workflow produces a classified bug report that
+    states the active remediation layer, rules out the competing layers with
+    evidence, and records concise refactoring procedures in both YAML and
+    human-readable form.

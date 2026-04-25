@@ -12,6 +12,136 @@
 import { z } from 'zod';
 import type { SocialPublishOutcome } from '../session/types';
 
+export interface AuthVerification {
+  urlIncludes?: string[];
+  visibleSelectors?: string[];
+  textIncludes?: string[];
+}
+
+export interface FieldIntent {
+  id: string;
+  label: string;
+  kind: FieldKind;
+  sensitivity?: FieldSensitivity;
+  source?: FieldValueSource;
+}
+
+export interface NavigateStep {
+  type: 'navigate';
+  id: string;
+  description?: string;
+  url: string;
+  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
+}
+
+export interface ClickStep {
+  type: 'click';
+  id: string;
+  description?: string;
+  selector: string;
+}
+
+export interface TypeStep {
+  type: 'type';
+  id: string;
+  description?: string;
+  selector: string;
+  text: string;
+  clearFirst?: boolean;
+  field?: FieldIntent;
+}
+
+export interface ScreenshotStep {
+  type: 'screenshot';
+  id: string;
+  description?: string;
+  outputKey?: string;
+}
+
+export interface FillStep {
+  type: 'fill';
+  id: string;
+  description?: string;
+  selector?: string;
+  text: string;
+  focused?: boolean;
+}
+
+export interface ExtractStep {
+  type: 'extract';
+  id: string;
+  description?: string;
+  instruction: string;
+  outputKey: string;
+}
+
+export interface AgentTaskStep {
+  type: 'agent_task';
+  id: string;
+  description?: string;
+  prompt: string;
+  engine?: 'auto' | 'browser-use' | 'skyvern';
+  memorySection?: string;
+  targets?: FieldIntent[];
+  outputFailsOn?: string[];
+  rawPrompt?: boolean;
+  maxSteps?: number;
+}
+
+export interface HumanTakeoverStep {
+  type: 'human_takeover';
+  id: string;
+  reason: string;
+  instructions?: string;
+  mode?: 'takeover' | 'confirm_completion';
+  authVerification?: AuthVerification;
+}
+
+export interface GenerateContentStep {
+  type: 'generate_content';
+  id: string;
+  description?: string;
+  topic: string;
+  context?: string;
+  platform: 'x' | 'reddit' | 'linkedin';
+  tone?: 'factual' | 'conversational' | 'professional' | 'direct';
+  outputKey: string;
+  outputTitleKey?: string;
+}
+
+export type WorkflowStep =
+  | NavigateStep
+  | ClickStep
+  | TypeStep
+  | FillStep
+  | ScreenshotStep
+  | ExtractStep
+  | AgentTaskStep
+  | HumanTakeoverStep
+  | GenerateContentStep;
+
+export interface ParamDefinition {
+  type: 'string' | 'number' | 'boolean';
+  description?: string;
+  required?: boolean;
+  default?: unknown;
+}
+
+export interface WorkflowPermissions {
+  require_human_approval_before?: string[];
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description?: string;
+  source?: 'builtin' | 'yaml';
+  mode?: 'direct' | 'agentic';
+  permissions?: WorkflowPermissions;
+  params?: Record<string, ParamDefinition>;
+  steps: WorkflowStep[];
+}
+
 // ---------------------------------------------------------------------------
 // Step schemas
 // ---------------------------------------------------------------------------
@@ -45,6 +175,10 @@ export const FieldValueSourceSchema = z.enum([
   'hitl',
   'derived',
 ]);
+
+export type FieldKind = z.infer<typeof FieldKindSchema>;
+export type FieldSensitivity = z.infer<typeof FieldSensitivitySchema>;
+export type FieldValueSource = z.infer<typeof FieldValueSourceSchema>;
 
 export const AuthVerificationSchema = z.object({
   /** Match when the current URL contains any of these fragments. */
@@ -222,7 +356,7 @@ export const WorkflowStepSchema = z.discriminatedUnion('type', [
   AgentTaskStepSchema,
   HumanTakeoverStepSchema,
   GenerateContentStepSchema,
-]);
+]) as z.ZodType<WorkflowStep>;
 
 // ---------------------------------------------------------------------------
 // Param schema
@@ -259,26 +393,16 @@ export const WorkflowDefinitionSchema = z.object({
   permissions: WorkflowPermissionsSchema.optional(),
   params: z.record(ParamDefinitionSchema).optional().default({}),
   steps: z.array(WorkflowStepSchema),
-});
+}) as z.ZodType<WorkflowDefinition>;
 
-// ---------------------------------------------------------------------------
-// TypeScript types
-// ---------------------------------------------------------------------------
-
-export type NavigateStep = z.infer<typeof NavigateStepSchema>;
-export type ClickStep = z.infer<typeof ClickStepSchema>;
-export type TypeStep = z.infer<typeof TypeStepSchema>;
-export type ScreenshotStep = z.infer<typeof ScreenshotStepSchema>;
-export type ExtractStep = z.infer<typeof ExtractStepSchema>;
-export type FillStep = z.infer<typeof FillStepSchema>;
-export type AgentTaskStep = z.infer<typeof AgentTaskStepSchema>;
-export type HumanTakeoverStep = z.infer<typeof HumanTakeoverStepSchema>;
-export type GenerateContentStep = z.infer<typeof GenerateContentStepSchema>;
-
-export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
-export type ParamDefinition = z.infer<typeof ParamDefinitionSchema>;
-export type WorkflowPermissions = z.infer<typeof WorkflowPermissionsSchema>;
-export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
+/**
+ * Parse an unknown value as a validated WorkflowDefinition.
+ * Use this instead of importing WorkflowDefinitionSchema directly from other modules
+ * so the Zod schema graph stays local to this file.
+ */
+export function parseWorkflowDefinition(raw: unknown): WorkflowDefinition {
+  return WorkflowDefinitionSchema.parse(raw);
+}
 
 // ---------------------------------------------------------------------------
 // Workflow result

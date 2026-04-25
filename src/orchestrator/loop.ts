@@ -7,6 +7,8 @@ import { sessionManager } from '../session/manager';
 import { hitlCoordinator } from '../session/hitl';
 import { telemetry } from '../telemetry';
 import { registry } from '../engines/registry';
+import { browserUseActionEvents, BrowserUseActionEvent } from '../engines/python-bridge';
+import { EngineId } from '../engines/interface';
 
 const MODEL = process.env.ORCHESTRATOR_MODEL ?? 'claude-sonnet-4-6';
 const MAX_ITERATIONS = 50;
@@ -155,6 +157,7 @@ async function executeTool(
   input: ToolInput,
   outputs: Record<string, string>,
   onStateUpdate: (partial: Partial<SessionState>) => void,
+  eventScope?: { sessionId?: string; workflowId?: string; stepId?: string },
 ): Promise<{ ok: boolean; result?: string; error?: string }> {
   try {
     switch (name) {
@@ -198,9 +201,36 @@ async function executeTool(
         const rawPrompt = input['prompt'] as string;
         const bankCtx = formatBankContext();
         const prompt = bankCtx ? `${bankCtx}\n\n---\n\n${rawPrompt}` : rawPrompt;
-        const engineId = (input['engine'] as string) ?? 'browser-use';
+        const engineId = ((input['engine'] as string) ?? 'browser-use') as EngineId;
         const eng = await registry.getReady(engineId);
-        const taskResult = await eng.runTask(prompt);
+        const handler = (event: BrowserUseActionEvent) => {
+          if (engineId !== 'browser-use') return;
+          if (eventScope?.sessionId && event.sessionId && event.sessionId !== eventScope.sessionId) return;
+          if (eventScope?.workflowId && event.workflowId && event.workflowId !== eventScope.workflowId) return;
+          if (eventScope?.stepId && event.stepId && event.stepId !== eventScope.stepId) return;
+          onStateUpdate({
+            currentUrl: event.url,
+            currentStep: `browser-use: ${event.actionNames.join(', ')}`,
+            lastUpdatedAt: new Date(event.timestamp),
+          });
+        };
+
+        if (engineId === 'browser-use') {
+          browserUseActionEvents.on('browser_use_action', handler);
+        }
+
+        let taskResult;
+        try {
+          taskResult = await eng.runTask(prompt, {
+            sessionId: eventScope?.sessionId,
+            workflowId: eventScope?.workflowId,
+            stepId: eventScope?.stepId,
+          });
+        } finally {
+          if (engineId === 'browser-use') {
+            browserUseActionEvents.off('browser_use_action', handler);
+          }
+        }
         await sessionManager.syncActivePage().catch(() => {});
         const result = taskResult.output ?? (taskResult.success ? 'Task completed' : taskResult.error ?? 'Task failed');
         if (input['output_key']) outputs[input['output_key'] as string] = result;
@@ -397,7 +427,11 @@ export async function runOrchestratorLoop(
           );
         }
 
-        const toolResult = await executeTool(block.name, toolInput, outputs, onStateUpdate);
+        const toolResult = await executeTool(block.name, toolInput, outputs, onStateUpdate, {
+          sessionId: id,
+          workflowId: definition.id,
+          stepId: String(stepId),
+        });
 
         const stepResult: StepResult = {
           stepId: String(stepId),

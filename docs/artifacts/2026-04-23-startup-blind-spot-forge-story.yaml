@@ -1,0 +1,115 @@
+id: EN-008
+title: Startup blind-spot seam closure
+storyType: forge-enhancement
+status: proposed
+sourceArtifacts:
+  - docs/artifacts/telemetry-audit-2026-04-22.md
+  - src/workflow/engine.ts
+  - src/mcp/server.ts
+  - src/webhooks/server.ts
+  - src/ui/server.ts
+objective: >
+  Remove the compile-time-only blind spots on the startup path by replacing
+  audited casts and inferred boundary types with explicit typed helpers or
+  exported interfaces, while preserving the current runtime behavior and
+  startup flow.
+
+layers:
+  - id: workflow-step-cast
+    name: Workflow step substitution cast
+    sourceAnchor: src/workflow/engine.ts#L114
+    remediationRequirement:
+      - replace the `result as unknown as WorkflowStep` seam with an explicit typed conversion or narrower return path
+      - keep runtime workflow execution semantics unchanged
+
+  - id: workflow-schema-expansion
+    name: Workflow schema expansion seam
+    sourceAnchor: src/workflow/types.ts#L381
+    remediationRequirement:
+      - keep large workflow schemas local to their owning module
+      - export static interfaces or DTOs across module boundaries instead of re-expanding schema graphs
+
+  - id: mcp-server-boundary
+    name: MCP server boundary cast
+    sourceAnchor: src/mcp/server.ts#L143
+    remediationRequirement:
+      - replace the `server as { tool: ... }` helper boundary with a typed adapter that does not hide the registration shape
+      - preserve tool registration behavior and startup order
+
+  - id: webhook-payload-inference
+    name: Webhook payload inference seam
+    sourceAnchor: src/webhooks/server.ts#L38
+    remediationRequirement:
+      - replace exported inferred payload shapes with explicit module contracts where practical
+      - keep request validation and webhook startup semantics unchanged
+
+  - id: ui-websocket-import-cast
+    name: UI websocket import cast
+    sourceAnchor: src/ui/server.ts#L535
+    remediationRequirement:
+      - remove the `as any` websocket import boundary or narrow it behind a typed local adapter
+      - preserve the HITL UI startup path
+
+shapes:
+  remediationSummary:
+    required:
+      - startupBoundaryMap
+      - seamClassificationTable
+      - validationNotes
+  storyReportShape:
+    requiredSections:
+      - audited_blind_spots
+      - source_anchors
+      - seam_remediation_plan
+      - validation_plan
+  graphShape:
+    requiredTables:
+      - startup module map
+      - seam to owner table
+
+graphData:
+  mermaid: |
+    flowchart TD
+        CLI["CLI startup\nsrc/cli/index.ts"]
+        WF["Workflow engine\nsrc/workflow/engine.ts"]
+        WT["Workflow types\nsrc/workflow/types.ts"]
+        MCP["MCP server\nsrc/mcp/server.ts"]
+        WH["Webhook server\nsrc/webhooks/server.ts"]
+        UI["UI server\nsrc/ui/server.ts"]
+        TEL["Telemetry\nsrc/telemetry/manager.ts"]
+
+        CLI --> WF
+        CLI --> MCP
+        CLI --> WH
+        CLI --> UI
+        WF --> WT
+        MCP --> WT
+        WH --> WT
+        UI --> TEL
+
+        WF -. audited cast seam .-> WT
+        MCP -. audited adapter seam .-> WT
+        WH -. audited payload seam .-> WT
+        UI -. audited import seam .-> TEL
+
+validationPlan:
+  - run targeted tests for workflow, MCP, webhook, and UI startup seams
+  - run `pnpm exec tsc --noEmit` to confirm the cleanup does not regress checker health
+  - confirm no audited startup seam remains as a hidden `as unknown as` or `as any` boundary
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - the audited startup seams are replaced with explicit typed helpers or interfaces
+    - startup behavior remains intact for workflow, MCP, webhook, and UI boot paths
+    - validation proves the repo still compiles and the startup flow still initializes cleanly
+
+definitionOfDone:
+  resultType: startup-boundary-cleanup
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-23-startup-blind-spot-forge-story.yaml
+    - docs/artifacts/2026-04-23-startup-blind-spot-implementation-handoff.md
+  doneStatement: >
+    Done means the startup audit blind spots have been reduced to explicit typed
+    boundaries or local helpers, the startup path still works, and the repo has
+    a Forge-backed evidence trail with the story card and implementation handoff.
