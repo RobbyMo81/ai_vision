@@ -49,6 +49,15 @@ export class HitlCoordinator extends EventEmitter {
     });
   }
 
+  /**
+   * Silently sync the internal phase to match the engine-published state.
+   * Called by publishStateTransition in the workflow engine to keep both
+   * state surfaces aligned without emitting a second phase_changed event.
+   */
+  syncPhase(phase: TaskPhase): void {
+    this._phase = phase;
+  }
+
   // ---------------------------------------------------------------------------
   // HITL protocol
   // ---------------------------------------------------------------------------

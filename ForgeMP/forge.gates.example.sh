@@ -5,19 +5,21 @@
 
 set -euo pipefail
 
+echo "[GATES] Running lint..."
+pnpm run lint
+
 echo "[GATES] Running TypeScript typecheck..."
-npx tsc --noEmit
+pnpm run typecheck
 
 echo "[GATES] Running tests..."
-npm test
+pnpm test
+
+echo "[GATES] Running build..."
+pnpm run build
 
 # Uncomment if Python backend is present:
 # echo "[GATES] Running Python tests..."
 # python -m pytest tests/ -v --tb=short
 
-# Uncomment if linting is configured:
-# echo "[GATES] Running linter..."
-# npm run lint
-
-echo "[GATES] All gates passed ✓"
+echo "[GATES] All gates passed"
 exit 0

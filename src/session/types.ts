@@ -37,7 +37,8 @@ export interface SessionState {
     | 'capture_notes'
     | 'approve_draft'
     | 'secure_input'
-    | 'verify_authentication';
+    | 'verify_authentication'
+    | 'approve_step';
   /** Name of the current workflow step being executed */
   currentStep?: string;
   stepIndex?: number;

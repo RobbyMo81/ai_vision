@@ -1,29 +1,18 @@
-#!/bin/bash
-# forge.gates.sh — Quality gate commands for AI-Vision
+#!/usr/bin/env bash
+# forge.gates.sh — enforced quality gates for FORGE stories.
 
-set -e
+set -euo pipefail
 
-echo "--- RUNNING QUALITY GATES ---"
+echo "[GATES] Running lint..."
+pnpm run lint
 
-# 1. TypeScript Check
-echo "Checking types..."
-if [ -f "tsconfig.json" ]; then
-  npx tsc --noEmit
-else
-  echo "Skipping tsc (no tsconfig.json yet)"
-fi
+echo "[GATES] Running TypeScript typecheck..."
+pnpm run typecheck
 
-# 2. Linting (if configured)
-# echo "Linting..."
-# npm run lint
+echo "[GATES] Running tests..."
+pnpm test
 
-# 3. Unit Tests
-echo "Running tests..."
-if [ -d "node_modules" ] && [ -f "package.json" ]; then
-  npm test || echo "Tests failed or not found, but continuing for now..."
-else
-  echo "Skipping tests (no node_modules or package.json yet)"
-fi
+echo "[GATES] Running build..."
+pnpm run build
 
-echo "--- GATES PASSED ---"
-exit 0
+echo "[GATES] All gates passed"

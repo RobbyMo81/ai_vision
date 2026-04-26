@@ -1,0 +1,127 @@
+id: US-022
+title: Direct workflow gate layer design
+storyType: forge-refactor
+status: proposed
+trackerRow: RF-004
+sourceArtifacts:
+  - docs/architecture/as-built_execution_atlas.md
+  - docs/artifacts/Discovery_mode-agentic.md
+  - src/workflow/engine.ts
+  - src/session/hitl.ts
+  - src/ui/server.ts
+  - src/orchestrator/loop.ts
+objective: >
+  Define the direct workflow gate layer that makes the TypeScript workflow
+  engine the semantically authoritative production kernel for skip logic,
+  approval enforcement, HITL publication, side-effect policy, and output
+  validation, without removing `mode: agentic` yet.
+
+layers:
+  - id: hitl-publication-gate
+    name: HITL state publication gate
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - define the canonical relationship between `hitlCoordinator` internal wait state and `workflowEngine.currentState`
+      - define how `/api/status` and websocket projections remain visibly aligned during every wait state
+
+  - id: approval-gate
+    name: Approval enforcement gate
+    sourceAnchor: src/workflow/types.ts
+    remediationRequirement:
+      - design how `permissions.require_human_approval_before` or equivalent approval policy is enforced in the direct engine
+      - place the gate before irreversible side-effect steps
+
+  - id: side-effect-gate
+    name: Browser side-effect gate
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - define the direct-path checks required before Python/browser-use may mutate the browser or submit externally
+      - include auth state, approval state, target page, required outputs, and platform policy
+
+  - id: output-validation-gate
+    name: Content and output validation gate
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - define validation for empty, placeholder, unresolved, and context-invalid generated outputs
+      - define the post-generation and pre-submit validation points
+
+  - id: precondition-skip-gate
+    name: Precondition and skip gate
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - define deterministic skip logic that replaces the useful flexibility previously supplied by `mode: agentic`
+      - include authenticated skip, navigate skip, generation skip, fill skip, and irrelevant-step skip
+
+shapes:
+  designSummary:
+    required:
+      - GateDecision contract
+      - GateContext contract
+      - GateTrace contract
+      - approval state model
+      - state ownership table
+  storyReportShape:
+    requiredSections:
+      - gate_contracts
+      - insertion_points
+      - state_ownership
+      - bounded_intelligence_boundary
+      - test_matrix
+      - retirement_preconditions_for_agentic_mode
+  graphShape:
+    requiredTables:
+      - gate to engine insertion map
+      - state owner to projection table
+      - gate decision to trace event table
+
+graphData:
+  mermaid: |
+    flowchart TD
+        YAML["YAML workflow intent"]
+        ENG["Direct workflow engine\nsrc/workflow/engine.ts"]
+        G1["Precondition / skip gate"]
+        G2["Approval gate"]
+        G3["Side-effect gate"]
+        G4["Output validation gate"]
+        HITL["HITL coordinator + UI"]
+        PY["Python bounded worker"]
+        SIC["Story / SIC wrap-up"]
+
+        YAML --> ENG
+        ENG --> G1
+        G1 --> G2
+        G2 --> G3
+        G3 --> PY
+        PY --> G4
+        G2 --> HITL
+        G4 --> SIC
+
+validationPlan:
+  - define the minimum test set needed before direct-path gates can replace the useful flexibility of `mode: agentic`
+  - require explicit coverage for HITL publication, approval enforcement, precondition skips, content validation, and side-effect blocking
+  - keep the story design-only; runtime behavior should not change during this story
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - the direct workflow gate layer contracts are written and specific
+    - the gate insertion points in the direct engine are mapped explicitly
+    - the canonical HITL state publication model is defined
+    - the approval and side-effect blocking model is defined
+    - the minimum test matrix for retiring `mode: agentic` is defined
+    - the story remains design-only and does not alter runtime semantics
+
+definitionOfDone:
+  resultType: gate-layer-design-package
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-storyline.md
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-forge-story.yaml
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-implementation-handoff.md
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-definition-of-done.md
+  doneStatement: >
+    Done means the repo contains a governed design package for the direct
+    workflow gate layer that is explicit enough for a later implementation
+    story to execute without re-discovering the kernel architecture, while
+    keeping TypeScript as the workflow kernel, Python as the bounded worker
+    layer, Rust out of scope, and `mode: agentic` still present until the
+    direct-path gates are proven by tests.

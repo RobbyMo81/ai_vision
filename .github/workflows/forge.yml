@@ -1,4 +1,4 @@
-name: CI
+name: Forge Gates
 
 on:
   push:
@@ -11,16 +11,16 @@ on:
       - 'forge/**'
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: forge-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  validate:
+  gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
@@ -40,14 +40,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm run build
+      - name: Run Forge gates
+        run: bash forge.gates.sh

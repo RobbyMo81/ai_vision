@@ -181,3 +181,52 @@
 - Corrected active Forge governance docs to name `ForgeMP/` as canonical while explicitly documenting the compatibility layer.
 - Switched the Forge memory client from undeclared `better-sqlite3` to built-in `node:sqlite` so the documented `ts-node` workflow executes on the repo's pinned Node 24 runtime.
 - Validation: `pnpm run typecheck` exit `0`; `pnpm test` 10/10 suites and 47/47 tests passed; `pnpm exec ts-node ForgeMP/forge-memory-client.ts messages` and `pnpm exec ts-node scripts/forge/forge-memory-client.ts messages` both succeeded.
+
+[2026-04-24] US-022 / RF-004 — Direct Workflow Gate Layer Design Handoff
+- Created the Forge handoff package for the direct workflow gate layer design: storyline, YAML story card, implementation handoff, and explicit definition-of-done artifacts under `docs/artifacts/`.
+- Added tracker row `RF-004` and PRD story `US-022` so the new work is linked to governed backlog surfaces instead of living only in discussion.
+- Normalized false-story priorities in `prd.json` so the new direct-gate design story is the next deterministic Forge target rather than depending on `null` priority sort behavior.
+- Validation: docs and backlog package only; no runtime code changes executed for this task.
+
+[2026-04-25] EN-010 — Chief-Engineer Supervision Daemon
+- Added a repo-owned chief-engineer daemon script that wakes, reports the active Forge storyline from `forge-memory.db`, and runs the existing chief-engineer observer for a one-cycle supervision snapshot.
+- Added an idempotent cron installer that registers the chief-engineer wake-up every 5 minutes and preserves the rest of the user crontab.
+- Linked the change into the enhancement tracker and institutional memory so the supervision path is governed rather than ad hoc.
+
+[2026-04-25] US-023 / RF-005 — Direct Workflow HITL State Publication Handoff
+- Seeded the first implementation story after `US-022` as a narrow Phase 1 Forge package focused on canonical direct-path HITL/public-state publication.
+- Added tracker row `RF-005` and PRD story `US-023` so the next governed implementation target is explicit instead of competing with older unrelated backlog items.
+- Created the four required Forge handoff artifacts for the implementation story under `docs/artifacts/`.
+- Validation: backlog and handoff package only; runtime code unchanged; typecheck/tests not run for this seeding task.
+
+[2026-04-24] US-022 — Direct Workflow Gate Layer Design
+- Created primary design artifact: docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+  - Section 1: GateDecision (run|skip|fail|hitl|retry), GateContext, GateTrace, ApprovalState interfaces
+  - Section 2: 7 gate insertion points mapped to exact engine.ts locations
+  - Section 3: State ownership table — WorkflowEngine._currentState is single source of truth; HITL UI/MCP are projections
+  - Section 4: Approval and side-effect blocking model; publishStateTransition wrapper closes phase-sync gap
+  - Section 5: Direct-path replacements for agentic flexibility
+  - Section 6: workflow.gate.evaluated telemetry event spec
+  - Section 7: Minimum 7-subsection test matrix required before mode:agentic can be retired
+  - Section 8: New YAML fields (targetUrlPattern, onUrlMismatch, successEvidence, expectedUrlAfter) and approve_step hitlAction value
+  - Section 9: Design constraints preserved (mode:agentic NOT removed in this story)
+- Updated docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md: RF-004 row status Proposed → Completed
+- Updated prd.json: US-022 passes false → true
+- Wrote forge-memory.db: story_state, 3 context_store entries, 2 discoveries (PATTERN + GOTCHA)
+- Design-only story: no runtime code changes, no typecheck run required
+- Validation: artifact exists at expected path, tracker updated, DB entries verified (exit 0)
+
+[2026-04-25] US-023 — Direct Workflow Gate Layer Implementation (Phase 1 HITL State Publication)
+- Implemented canonical terminal-state publication hardening in the direct workflow engine by routing remaining direct-path error and success terminal transitions through the engine state publisher (`onStateUpdate`), removing the last explicit success-phase bypass and publishing bootstrap-failure errors to the same canonical path.
+- Preserved ownership contract: `workflowEngine.currentState` remains the canonical public projection, `hitlCoordinator` remains the blocking wait owner, and `mode: agentic` remains untouched.
+- Added direct-path regression tests in `src/workflow/engine.test.ts` covering visible wait/action publication for:
+  - `awaiting_human` + `hitlAction=return_control`
+  - `pii_wait` + `hitlAction=secure_input`
+  - `hitl_qa` + `hitlAction=confirm_completion`
+  - terminal `complete` visibility through canonical publisher
+  - terminal `error` visibility through canonical publisher
+- Updated governance surfaces: RF-005 marked Completed in tracker; US-023 marked pass=true in PRD.
+- Validation:
+  - `pnpm test -- src/workflow/engine.test.ts` -> 11/11 tests passed
+  - `pnpm run typecheck` -> exit 0
+  - `pnpm test` -> 10/10 suites, 52/52 tests passed

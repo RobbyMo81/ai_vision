@@ -144,6 +144,7 @@
     {
       "id": "US-012",
       "title": "browser-use live event bridge",
+      "priority": 12,
       "passes": false,
       "acceptance": [
         "browser-use Python server POSTs action events to BROWSER_USE_CALLBACK_URL",
@@ -172,6 +173,7 @@
     {
       "id": "US-020",
       "title": "TSC crash diagnostic classification baseline",
+      "priority": 20,
       "passes": false,
       "description": "Create a reproducible FORGE investigation path for `tsc --noEmit` memory crashes that distinguishes Node/V8 heap aborts from kernel OOM kills and checker-graph pathologies.",
       "acceptance": [
@@ -190,6 +192,7 @@
     {
       "id": "US-021",
       "title": "TSC crash layered remediation protocol",
+      "priority": 21,
       "passes": false,
       "description": "Convert the tsc crash investigation output into an explicit remediation workflow that gates runtime parity first, separates Node/V8 remediation from OS remediation, delays TypeScript refactors until upstream layers are ruled out, and persists the result as a classified bug report.",
       "acceptance": [
@@ -202,6 +205,47 @@
       "exitCriteria": "Exit only when `docs/artifacts/tsc-crash-remediation-forge-story.yaml` and its paired remediation bug report artifact both exist, runtime parity has been checked or explicitly documented as unavailable, and the final report names the ruled-in remediation layer with concise procedures and ruled-out competing layers.",
       "definitionOfDone": "Done means the remediation workflow produces an explicit error or bug report that identifies whether the active remediation path is OS/kernel, Node/V8 runtime, or TypeScript checker, and persists the required refactoring procedures in both a human-readable report and a FORGE YAML story artifact.",
       "technicalNotes": "Derived from the consolidated remediation requirements in `docs/artifacts/ts-memory-troubleshooting.md`, `docs/artifacts/tsc_crash_error_investigation.md`, `docs/artifacts/tsc-crash-bug-report.md`, and `docs/artifacts/tsc-crash-forge-story.yaml`. Preserve the layered order: runtime parity, OS kill-path elimination, then TypeScript refactoring.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-022",
+      "title": "Direct workflow gate layer design",
+      "priority": 1,
+      "passes": true,
+      "description": "Design the direct workflow gate layer that makes the TypeScript engine the authoritative workflow kernel for skip logic, approval enforcement, HITL publication, side-effect policy, and output validation, without deleting `mode: agentic` yet.",
+      "acceptance": [
+        "Produce a gate-layer design artifact that defines `GateDecision`, `GateContext`, and the trace/state surfaces required by the direct engine",
+        "Map the exact gate insertion points in `src/workflow/engine.ts` for before-step, in-step, post-step, HITL, side-effect, and wrap-up boundaries",
+        "Define the canonical HITL state publication model across `hitlCoordinator`, `workflowEngine.currentState`, `/api/status`, and websocket projection",
+        "Define how approval and side-effect policies block Python/browser-use execution before irreversible browser mutations",
+        "Define the direct-path validation rules for empty, placeholder, unresolved, and context-invalid generated outputs",
+        "Define the minimum test matrix required before `mode: agentic` can be quarantined or retired",
+        "Do not implement the gate layer yet and do not remove `mode: agentic` in this story"
+      ],
+      "exitCriteria": "Exit only when the repo contains a Forge storyline, YAML story card, implementation handoff, and explicit definition-of-done for the direct workflow gate layer design, and the design package clearly identifies the future gate interfaces, insertion points, state owners, and test map without changing runtime behavior.",
+      "definitionOfDone": "Done means the direct workflow gate layer has a governed design package that is specific enough for a later implementation story to execute without re-discovering the architecture, and the package explicitly keeps TypeScript as the workflow kernel, Python as the bounded intelligence layer, Rust out of scope, and `mode: agentic` still present until direct-path gates are proven.",
+      "technicalNotes": "Derived from `docs/architecture/as-built_execution_atlas.md` and `docs/artifacts/Discovery_mode-agentic.md`. Keep the story design-only: interface and placement first, implementation later.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-023",
+      "title": "Direct workflow gate layer implementation - Phase 1 HITL state publication",
+      "priority": 2,
+      "passes": true,
+      "description": "Implement the first direct-path gate-layer slice by making the TypeScript workflow engine publish every direct HITL wait and terminal transition through one canonical public state path, without removing `mode: agentic` or widening into approval and side-effect enforcement yet.",
+      "acceptance": [
+        "Implement a canonical state publication helper in `src/workflow/engine.ts` for direct-path running, wait, complete, and error transitions",
+        "Every direct HITL wait publishes a visible operator state (`phase` plus `hitlAction`) before the blocking wait begins",
+        "`workflowEngine.currentState` remains the canonical public workflow projection while `hitlCoordinator` remains the blocking wait owner",
+        "`/api/status` and websocket/UI projection reflect the same converged direct-engine state for every direct wait and terminal transition",
+        "Regression tests cover `awaiting_human`, `pii_wait`, `hitl_qa`, final confirmation, and terminal `complete` / `error` visibility",
+        "`mode: agentic` remains present and untouched in this story",
+        "`pnpm run typecheck` passes",
+        "`pnpm test` passes"
+      ],
+      "exitCriteria": "Exit only when the direct engine publishes all direct HITL waits and terminal transitions through one canonical visible state path, the corresponding regression tests pass, and the story leaves approval, side-effect, and skip-gate implementation for later work.",
+      "definitionOfDone": "Done means the direct workflow engine has a working Phase 1 gate-layer implementation for canonical HITL/public-state publication, operators can see every human-action state reliably through the existing UI/status surfaces, and the repo remains on the current strategic path: TypeScript kernel, Python bounded worker, `mode: agentic` not yet retired.",
+      "technicalNotes": "Derived from `docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md`, especially the state ownership and `publishStateTransition()` sections. Keep this story narrow: implement state publication only, not approval or side-effect enforcement.",
       "safetyGates": []
     }
   ]

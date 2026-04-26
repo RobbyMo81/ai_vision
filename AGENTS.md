@@ -239,4 +239,25 @@ If any one of those artifacts is missing, the handoff is incomplete and must not
 **Gotcha:** A documented workflow is broken even if the code exists; missing `pnpm run forge` and stale `scripts/forge/*` references are operator-facing defects, not just doc drift.
 **Files:** `package.json`, `FORGE.md`, `ForgeMP/ForgeMP_modules.md`, `ForgeMP/MEMORY_PROTOCOL.md`, `ForgeMP/forge-memory-client.ts`, `scripts/forge/forge.sh`, `scripts/forge/forge-memory.sh`, `scripts/forge/forge-memory-client.ts`, `scripts/forge/forge.gates.example.sh`, `scripts/forge/migrate-sic-to-forge.ts`, `scripts/forge/prompt.md`, `scripts/forge/MEMORY_PROTOCOL.md`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `progress.txt`
 
+### [US-022] — Direct Workflow Gate Layer Design — 2026-04-24
+
+**Status:** PASS
+**Pattern:** Design-only story. `GateDecision`/`GateContext`/`GateTrace`/`ApprovalState` contracts define the direct engine's gate layer. Seven insertion points mapped in `src/workflow/engine.ts`. `publishStateTransition()` closes the `hitlCoordinator`/`WorkflowEngine` phase-sync gap. `approve_step` added to `SessionState.hitlAction`. `mode: agentic` preserved — retirement requires passing the full 7-subsection test matrix in Section 7 of the design artifact.
+**Gotcha:** The precondition gate replaces three separate inline short-circuit checks (auth skip in `human_takeover`, outputKey skip in `generate_content`, unresolved-var fail in `agent_task`) — lift those to the loop boundary before testing them independently. `approvalState` must be run-scoped (initialized once per `engine.run()`), not session-scoped, or it bleeds approval across concurrent runs.
+**Files:** `docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `prd.json`, `forge-memory.db`, `progress.txt`
+
+### [EN-010] — Chief-Engineer Supervision Daemon — 2026-04-25
+
+**Status:** PASS
+**Pattern:** Use the existing chief-engineer observer as a one-cycle probe, then wrap it in a repo-owned daemon script plus an idempotent cron installer so supervision wakes on schedule and records the active Forge storyline.
+**Gotcha:** A monitor that only checks generic repo health is too weak for Forge supervision; the wake-up path must query `forge-memory.db` for the active `agent_iterations` story and log that storyline explicitly.
+**Files:** `scripts/chief-engineer/chief-engineer-daemon.sh`, `scripts/chief-engineer/install-chief-engineer-cron.sh`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `AGENTS.md`, `progress.txt`
+
+### [US-023] — Direct Workflow Gate Layer Implementation (Phase 1 HITL State Publication) — 2026-04-25
+
+**Status:** PASS
+**Pattern:** Keep `workflowEngine.currentState` as the canonical public projection and publish direct wait/terminal state through one engine-owned state path; keep `hitlCoordinator` as the blocking wait owner, not a second public state machine.
+**Gotcha:** A canonical wrapper is insufficient if any terminal path still calls `hitlCoordinator.setPhase(...)` directly or returns on preflight failure without publishing `phase: 'error'`; both bypasses must be removed or Phase 1 visibility remains incomplete.
+**Files:** `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `prd.json`, `progress.txt`
+
 ---

@@ -1314,10 +1314,17 @@ export class WorkflowEngine {
 
     // Ensure browser session is running before any work (including YAML loop)
     await sessionManager.start();
-    hitlCoordinator.setPhase('running');
+    hitlCoordinator.syncPhase('running');
     sessionManager.startScreenshotTimer(5000);
 
-    const onStateUpdate = (partial: Partial<SessionState>): void => {
+    // Canonical direct-path state publication wrapper (US-023 Phase 1).
+    // All phase transitions in the direct engine must go through this function so
+    // that workflowEngine.currentState and hitlCoordinator._phase stay atomically
+    // aligned and the WebSocket/UI projection always receives a full SessionState.
+    const publishStateTransition = (
+      partial: Partial<SessionState>,
+      source?: string,
+    ): void => {
       const previousPhase = this._currentState?.phase;
       this._currentState = {
         id,
@@ -1327,6 +1334,12 @@ export class WorkflowEngine {
         ...this._currentState,
         ...partial,
       };
+      if (partial.phase && partial.phase !== previousPhase) {
+        // Sync hitlCoordinator._phase before the event fires so every listener
+        // sees both surfaces in agreement.
+        hitlCoordinator.syncPhase(partial.phase);
+      }
+      // Broadcast the full SessionState snapshot (not just { phase }).
       hitlCoordinator.emit('phase_changed', this._currentState);
       if (partial.phase && partial.phase !== previousPhase) {
         telemetry.emit({
@@ -1336,11 +1349,17 @@ export class WorkflowEngine {
           workflowId: definition.id,
           details: {
             phase: partial.phase,
+            source: source ?? 'engine',
             currentStep: this._currentState.currentStep ?? '',
           },
         });
       }
     };
+
+    // Alias with the narrower signature expected by executeStep and
+    // bootstrapEditorialDraft parameters.
+    const onStateUpdate = (partial: Partial<SessionState>): void =>
+      publishStateTransition(partial);
 
     // ---- Route agentic YAML workflows to the Claude orchestrator loop ----
     // mode: direct (default) → step-by-step engine (fast, deterministic)
@@ -1413,6 +1432,10 @@ export class WorkflowEngine {
       );
     } catch (e) {
       const errorText = e instanceof Error ? e.message : String(e);
+      onStateUpdate({
+        phase: 'error',
+        error: errorText,
+      });
       telemetry.emit({
         source: 'workflow',
         name: 'workflow.content.bootstrap.failed',
@@ -1502,7 +1525,6 @@ export class WorkflowEngine {
         stepResults.push(result);
 
         if (!result.success) {
-          hitlCoordinator.setPhase('error');
           onStateUpdate({ phase: 'error', error: result.error });
           finalResult = {
             workflowId: definition.id,
@@ -1518,7 +1540,6 @@ export class WorkflowEngine {
       }
 
       if (!finalResult!) {
-        hitlCoordinator.setPhase('complete');
         onStateUpdate({ phase: 'complete', completedSteps: executionDefinition.steps.length });
         finalResult = {
           workflowId: definition.id,
@@ -1530,6 +1551,10 @@ export class WorkflowEngine {
         };
       }
     } catch (e) {
+      onStateUpdate({
+        phase: 'error',
+        error: e instanceof Error ? e.message : String(e),
+      });
       finalResult = {
         workflowId: definition.id,
         success: false,

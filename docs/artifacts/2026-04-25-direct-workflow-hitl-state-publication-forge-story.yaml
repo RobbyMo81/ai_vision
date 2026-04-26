@@ -1,0 +1,108 @@
+id: US-023
+title: Direct workflow gate layer implementation - Phase 1 HITL state publication
+storyType: forge-refactor
+status: proposed
+trackerRow: RF-005
+sourceArtifacts:
+  - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+  - docs/architecture/as-built_execution_atlas.md
+  - src/workflow/engine.ts
+  - src/session/hitl.ts
+  - src/ui/server.ts
+  - src/session/types.ts
+objective: >
+  Implement the first direct-path gate-layer slice by making the workflow
+  engine publish every direct HITL wait and terminal transition through one
+  canonical public state path, without removing mode: agentic or widening into
+  approval and side-effect enforcement yet.
+
+layers:
+  - id: engine-state-wrapper
+    name: Workflow engine state publication wrapper
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - implement the canonical publishStateTransition-style wrapper defined by US-022
+      - route running, waiting, completed, and failed transitions through that wrapper
+
+  - id: hitl-wait-publication
+    name: HITL wait publication
+    sourceAnchor: src/session/hitl.ts
+    remediationRequirement:
+      - publish a visible direct-engine state before each blocking wait
+      - preserve hitlCoordinator as the wait owner instead of duplicating its blocking semantics
+
+  - id: ui-state-projection
+    name: UI and status projection convergence
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - keep /api/status and websocket projections aligned with the engine-published state
+      - ensure every wait exposes the correct hitlAction and phase to operators
+
+  - id: terminal-state-publication
+    name: Terminal transition publication
+    sourceAnchor: src/workflow/engine.ts
+    remediationRequirement:
+      - publish complete and error via the canonical wrapper before shutdown/wrap-up
+      - preserve existing terminal-state UX guarantees introduced by US-007
+
+shapes:
+  implementationSummary:
+    required:
+      - one canonical state transition helper
+      - one state owner table grounded in runtime code
+      - one direct wait publication path
+      - one regression test matrix for visible waits and terminal transitions
+  storyReportShape:
+    requiredSections:
+      - implementation_scope
+      - state_owner_contract
+      - engine_insertion_points
+      - wait_state_matrix
+      - test_coverage
+      - agentic_non_goals
+
+graphData:
+  mermaid: |
+    flowchart TD
+        RUN["Direct engine step flow"]
+        PUB["publishStateTransition(...)"]
+        CUR["workflowEngine.currentState"]
+        HITL["hitlCoordinator wait"]
+        API["/api/status"]
+        WS["WebSocket/UI projection"]
+        TERM["complete/error terminal transitions"]
+
+        RUN --> PUB
+        PUB --> CUR
+        PUB --> HITL
+        CUR --> API
+        CUR --> WS
+        TERM --> PUB
+
+validationPlan:
+  - prove every direct HITL wait publishes visible action state before blocking
+  - prove terminal completion and failure still reach the UI through the canonical state path
+  - keep mode: agentic untouched in this story
+  - defer approval, side-effect, and skip gates to later implementation stories
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - a canonical engine state publication helper exists in the direct path
+    - all direct HITL waits publish visible phase plus hitlAction before blocking
+    - /api/status and websocket projections consume the converged state surface
+    - regression tests cover wait-state and terminal-state visibility
+    - mode: agentic remains present
+
+definitionOfDone:
+  resultType: phase-1-gate-implementation
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-25-direct-workflow-hitl-state-publication-storyline.md
+    - docs/artifacts/2026-04-25-direct-workflow-hitl-state-publication-forge-story.yaml
+    - docs/artifacts/2026-04-25-direct-workflow-hitl-state-publication-implementation-handoff.md
+    - docs/artifacts/2026-04-25-direct-workflow-hitl-state-publication-definition-of-done.md
+  doneStatement: >
+    Done means the direct workflow engine publishes human-wait and terminal
+    states through one canonical path that keeps the HITL UI, /api/status, and
+    websocket projection visibly aligned, while leaving approval, side-effect,
+    and agentic-retirement work for later stories.

@@ -34,78 +34,91 @@ What is missing is a generalized gate layer that can replace the hidden flexibil
 ## B. Layer Map
 
 ### 1. CLI layer
+
 - **Role:** User entrypoint for `run`, `serve`, `workflow`, `history`, `engines`, `config`
 - **Primary files:** [`src/cli/index.ts`](/home/spoq/ai-vision/src/cli/index.ts)
 - **Shape:** command dispatcher, bootstrapper, terminal process owner
 - **Triggers:** direct CLI invocation
 
 ### 2. YAML workflow loading layer
+
 - **Role:** load built-in and YAML workflows, resolve definitions, expose listings
 - **Primary files:** [`src/orchestrator/loader.ts`](/home/spoq/ai-vision/src/orchestrator/loader.ts), [`workflows/*.yaml`](/home/spoq/ai-vision/workflows)
 - **Shape:** loader, registry, schema boundary
 - **Triggers:** `workflow` CLI command, orchestration bootstrap, YAML discovery
 
 ### 3. Workflow schema/type layer
+
 - **Role:** define workflow definitions, steps, permissions, outputs, hitl contracts
 - **Primary files:** [`src/workflow/types.ts`](/home/spoq/ai-vision/src/workflow/types.ts)
 - **Shape:** schema boundary, static contract surface
 - **Triggers:** YAML parse, CLI run, runtime validation
 
 ### 4. Direct workflow engine layer
+
 - **Role:** execute workflow steps deterministically, maintain runtime state, publish HITL/UI state, wrap up sessions
 - **Primary files:** [`src/workflow/engine.ts`](/home/spoq/ai-vision/src/workflow/engine.ts)
 - **Shape:** state machine, dispatcher, loop, gate host
 - **Triggers:** CLI workflow run, webhook trigger, MCP workflow_run, internal workflow chaining
 
 ### 5. Agentic/orchestrator layer
+
 - **Role:** outer Claude planner, instruction loader, tool-call executor, permission gate manager
 - **Primary files:** [`src/orchestrator/loop.ts`](/home/spoq/ai-vision/src/orchestrator/loop.ts)
 - **Shape:** planner loop, tool dispatcher, prompt assembler
 - **Triggers:** YAML workflows with `mode: agentic`
 
 ### 6. TypeScript UI/server layer
+
 - **Role:** HITL web UI, status projection, screenshot viewer, control endpoints, websocket broadcaster
 - **Primary files:** [`src/ui/server.ts`](/home/spoq/ai-vision/src/ui/server.ts)
 - **Shape:** HTTP server, websocket event sink, state projection, control surface
 - **Triggers:** workflow state changes, HITL waits, browser-use events, user actions
 
 ### 7. HITL/session layer
+
 - **Role:** blocking human wait coordinator for takeover, secure input, final confirmation, QA pause
 - **Primary files:** [`src/session/hitl.ts`](/home/spoq/ai-vision/src/session/hitl.ts), [`src/session/types.ts`](/home/spoq/ai-vision/src/session/types.ts), [`src/session/manager.ts`](/home/spoq/ai-vision/src/session/manager.ts)
 - **Shape:** blocking wait, event emitter, state owner
 - **Triggers:** direct engine gates, agentic planner tool calls, UI endpoints
 
 ### 8. Python intelligence layer
+
 - **Role:** run browser automation engines and bridge servers; expose runtime actions over HTTP
 - **Primary files:** [`src/engines/python-bridge.ts`](/home/spoq/ai-vision/src/engines/python-bridge.ts), [`src/engines/browser-use/engine.ts`](/home/spoq/ai-vision/src/engines/browser-use/engine.ts), [`src/engines/skyvern/engine.ts`](/home/spoq/ai-vision/src/engines/skyvern/engine.ts), [`src/engines/browser-use/server/main.py`](/home/spoq/ai-vision/src/engines/browser-use/server/main.py), [`src/engines/skyvern/server/main.py`](/home/spoq/ai-vision/src/engines/skyvern/server/main.py)
 - **Shape:** subprocess bridge, HTTP adapter, bounded worker
 - **Triggers:** `agent_task`, explicit engine selection, browser-use navigation/action requests
 
 ### 9. Browser-use bridge layer
+
 - **Role:** browser-use event/server boundary and callback publication back to TypeScript
 - **Primary files:** [`src/engines/python-bridge.ts`](/home/spoq/ai-vision/src/engines/python-bridge.ts), [`src/engines/browser-use/server/main.py`](/home/spoq/ai-vision/src/engines/browser-use/server/main.py)
 - **Shape:** bridge, callback sink, live telemetry source
 - **Triggers:** browser-use step execution, step callbacks, browser action events
 
 ### 10. Browser automation/tool adapter layer
+
 - **Role:** Playwright-like browser actions exposed through TS engine abstraction and Python bridge
 - **Primary files:** [`src/engines/interface.ts`](/home/spoq/ai-vision/src/engines/interface.ts), [`src/engines/registry.ts`](/home/spoq/ai-vision/src/engines/registry.ts)
 - **Shape:** adapter, registry, tool-call surface
 - **Triggers:** workflow steps, MCP browser tools, CLI `run`
 
 ### 11. Memory/story/SIC layer
+
 - **Role:** persistence and learning surface for short-term memory, stories, improvements, and SIC triggers
 - **Primary files:** [`src/memory/short-term.ts`](/home/spoq/ai-vision/src/memory/short-term.ts), [`src/memory/long-term.ts`](/home/spoq/ai-vision/src/memory/long-term.ts), [`src/memory/forge-sic.ts`](/home/spoq/ai-vision/src/memory/forge-sic.ts), [`src/workflow/wrap-up.ts`](/home/spoq/ai-vision/src/workflow/wrap-up.ts)
 - **Shape:** persistence sink, learning pipeline, correlation layer
 - **Triggers:** wrap-up, rejection handling, improvement capture, MCP memory tools
 
 ### 12. Test layer
+
 - **Role:** encode workflow, engine, HITL, bridge, UI, and memory assumptions
 - **Primary files:** `*.test.ts`, `*.spec.ts` in `src/`
 - **Shape:** guardrail set, regression detector
 - **Triggers:** CI, local validation, workflow refactor verification
 
 ### 13. Documentation/artifact layer
+
 - **Role:** repository knowledge, traces, build notes, architecture cartography, SIC tracker
 - **Primary files:** `docs/**`, `progress.txt`, `FORGE.md`, `AGENTS.md`
 - **Shape:** artifact store, operational memory, handoff surface
@@ -168,6 +181,7 @@ graph TD
 ```
 
 ### TypeScript -> TypeScript
+
 - `src/cli/index.ts` → `src/workflow/engine.ts`, `src/ui/server.ts`, `src/mcp/server.ts`, `src/orchestrator/loader.ts`
 - `src/workflow/engine.ts` → `src/session/hitl.ts`, `src/workflow/wrap-up.ts`, `src/memory/*`, `src/engines/*`, `src/orchestrator/loop.ts`
 - `src/ui/server.ts` → `src/workflow/engine.ts`, `src/session/hitl.ts`, `src/session/manager.ts`, `src/engines/python-bridge.ts`
@@ -175,24 +189,29 @@ graph TD
 - `src/orchestrator/loop.ts` → HITL coordinator, browser engines, instruction loader, workflow types
 
 ### TypeScript -> Python
+
 - `src/engines/python-bridge.ts` launches Python bridge subprocesses and calls them over HTTP
 - `src/engines/browser-use/engine.ts` and `src/engines/skyvern/engine.ts` configure the bridge
 
 ### Python -> browser-use calls
+
 - Python bridge server modules expose browser actions and task execution
 - browser-use emits callback events back to TypeScript via the callback URL
 
 ### UI/server -> workflow engine state reads
+
 - `/api/status` reads `workflowEngine.currentState`
 - screenshot polling uses current state if present
 - websocket payloads mirror state and bridge events
 
 ### HITL coordinator -> UI/status/event connections
+
 - HITL methods emit phase changes that the UI broadcasts
 - UI endpoints call HITL resolution methods
 - engine writes state, HITL owns waits
 
 ### workflow engine -> memory/story/SIC
+
 - preflight memory lookup
 - short-term memory begin/clear
 - wrap-up story creation
@@ -200,14 +219,17 @@ graph TD
 - long-term persistence and metadata indexing
 
 ### YAML workflow -> schema -> runtime execution path
+
 - YAML file → loader → `WorkflowDefinitionSchema` → direct engine or orchestrator loop
 
 ### direct path vs agentic path
+
 - direct path runs `src/workflow/engine.ts`
 - agentic path runs `src/orchestrator/loop.ts`
 - the split exists only for YAML workflows with `mode: agentic`
 
 ### browser-use telemetry -> TypeScript status/UI path
+
 - browser-use callback events arrive through the TS bridge
 - TS bridge emits browser action events to UI websocket
 - UI displays them alongside workflow state and screenshots
@@ -237,6 +259,7 @@ graph TD
 ## F. State Ownership Map
 
 ### 1. `workflowEngine.currentState`
+
 - **Writer:** `src/workflow/engine.ts`, occasionally UI endpoints that enrich the current state after final confirmation or QA acknowledge
 - **Readers:** `src/ui/server.ts`, `/api/status`, websocket screenshot publisher, MCP `session_status`
 - **Canonical or derived:** canonical runtime projection for the human operator
@@ -244,6 +267,7 @@ graph TD
 - **HITL / side-effect safety:** yes, this is the public state surface humans see
 
 ### 2. `hitlCoordinator` internal wait state
+
 - **Writer:** `src/session/hitl.ts`
 - **Readers:** `src/workflow/engine.ts`, `src/ui/server.ts`, UI actions through HITL endpoints
 - **Canonical or derived:** canonical for blocking wait resolution
@@ -251,6 +275,7 @@ graph TD
 - **HITL / side-effect safety:** yes, it gates takeover, secure input, and approval waits
 
 ### 3. UI `/api/status` projection
+
 - **Writer:** derived from `workflowEngine.currentState`
 - **Readers:** browser UI client, operator polling, integration tests
 - **Canonical or derived:** derived
@@ -258,6 +283,7 @@ graph TD
 - **HITL / side-effect safety:** yes, because it drives operator decisions
 
 ### 4. Websocket broadcast state
+
 - **Writer:** `src/ui/server.ts`
 - **Readers:** browser UI client
 - **Canonical or derived:** derived event projection
@@ -265,6 +291,7 @@ graph TD
 - **HITL / side-effect safety:** yes, it is the live operator channel
 
 ### 5. Browser-use telemetry state
+
 - **Writer:** Python bridge callback server and TS bridge event handlers
 - **Readers:** UI websocket, telemetry manager, logs
 - **Canonical or derived:** derived execution telemetry
@@ -272,6 +299,7 @@ graph TD
 - **HITL / side-effect safety:** partially; it informs humans but is not itself the approval authority
 
 ### 6. Memory/story/SIC persisted state
+
 - **Writer:** `src/workflow/wrap-up.ts`, memory modules, MCP memory write paths
 - **Readers:** wrap-up correlation logic, MCP `read_memory`, future improvement flows
 - **Canonical or derived:** canonical persistence for learning artifacts
@@ -279,6 +307,7 @@ graph TD
 - **HITL / side-effect safety:** yes, it records failures, notes, and improvement records
 
 ### 7. Workflow runtime outputs
+
 - **Writer:** `src/workflow/engine.ts`
 - **Readers:** later workflow steps, output substitution, wrap-up, content generation, tests
 - **Canonical or derived:** canonical within a run
@@ -286,6 +315,7 @@ graph TD
 - **HITL / side-effect safety:** yes, because outputs can drive downstream side effects
 
 ### 8. YAML params/defaults
+
 - **Writer:** YAML author, loader resolution
 - **Readers:** workflow engine, orchestrator loop, step executors
 - **Canonical or derived:** canonical input definition
@@ -293,6 +323,7 @@ graph TD
 - **HITL / side-effect safety:** indirectly yes, because they shape execution intent
 
 ### 9. Python-side task/session state
+
 - **Writer:** Python bridge servers
 - **Readers:** bridge HTTP client, browser actions, callback emitter
 - **Canonical or derived:** canonical within the Python worker boundary
@@ -302,41 +333,49 @@ graph TD
 ## G. Intelligence Ownership Map
 
 ### 1. Python LLM calls
+
 - **Location:** Python bridge servers and browser-use/Skyvern task execution
 - **Classification:** bounded worker, browser actor
 - **Notes:** not the global planner; executes task-level intelligence behind the TS adapter
 
 ### 2. Gemini writer/content generation
+
 - **Location:** `generate_content` direct step via writer service
 - **Classification:** content generator
 - **Notes:** used for editorial drafts and generated post content; direct path can skip if outputs already exist
 
 ### 3. Claude orchestrator loop
+
 - **Location:** `src/orchestrator/loop.ts`
 - **Classification:** global planner, recovery advisor, policy/gate evaluator
 - **Notes:** this is the hidden outer reasoning path that creates split semantics
 
 ### 4. browser-use agent
+
 - **Location:** Python bridge + browser-use server
 - **Classification:** browser actor, bounded worker
 - **Notes:** performs browser tasks and emits step telemetry
 
 ### 5. `agent_task` routing
+
 - **Location:** `routeAgentTask(...)` in `src/workflow/engine.ts`
 - **Classification:** policy/gate evaluator, engine selector
 - **Notes:** heuristically decides browser-use vs Skyvern unless explicit override exists
 
 ### 6. Outcome classifier
+
 - **Location:** `classifySocialOutcome(...)` and related wrap-up logic
 - **Classification:** classifier
 - **Notes:** classifies run outcomes for social workflows and wrap-up recording
 
 ### 7. Story/SIC generation
+
 - **Location:** `src/workflow/wrap-up.ts`, memory modules
 - **Classification:** recovery advisor, classifier, persistence writer
 - **Notes:** turns run evidence into stories and SIC triggers
 
 ### 8. Heuristic gates in TypeScript
+
 - **Location:** `isAuthVerificationSatisfied(...)`, generate-content preflight skip, secure-input detection, final-confirmation guard
 - **Classification:** policy/gate evaluators
 - **Notes:** deterministic gates already exist, but are not yet generalized
@@ -397,31 +436,38 @@ flowchart TD
 - **Completion/failure path:** loop returns result; engine finalization handles wrap-up
 
 ### 3. Reddit post workflow
+
 - **Observed direct path:** `post_to_reddit`, `write_and_post_to_reddit`
 - **Path shape:** generate editorial draft -> pause for approval -> post or continue
 - **Important note:** these workflows are the clearest example of the direct path already supporting explicit human approval gates
 
 ### 4. Authenticated task workflow
+
 - **Observed direct path:** `authenticated_task.yaml`
 - **Path shape:** agent_task plus `human_takeover` auth verification
 - **Important note:** this workflow still uses `mode: agentic` in YAML, but the direct engine already contains the deterministic auth-verification primitive needed to replace the outer split
 
 ### 5. Generic browser task
+
 - **Entry point:** CLI `run`, MCP `browser_run_task`, workflow `agent_task`
 - **Path shape:** routeAgentTask -> browser-use/Skyvern bridge -> browser actions -> optional HITL if sensitive or blocked
 
 ### 6. Failed workflow with QA pause
+
 - **Path shape:** engine catches failure -> publishes error state -> optional QA pause -> user notes/rejection -> wrap-up -> SIC trigger
 
 ### 7. Workflow requiring secure input
+
 - **Path shape:** deterministic field sensitivity check -> `pii_wait` -> HITL secure input -> resume -> browser action continues
 
 ### 8. Workflow requiring final confirmation
+
 - **Path shape:** `confirm_completion` mode -> `hitl_qa` -> human confirms or rejects -> engine records outcome -> wrap-up
 
 ## I. TypeScript/Python Boundary Map
 
 ### Boundary 1: engine subprocess launch
+
 - **Location:** `src/engines/python-bridge.ts`
 - **Mechanism:** TypeScript starts a Python subprocess for the bridge server
 - **Contract type:** process invocation + environment contract
@@ -430,6 +476,7 @@ flowchart TD
 - **Risk:** bridge startup failures, port contention, environment drift
 
 ### Boundary 2: HTTP action bridge
+
 - **Location:** Python bridge server endpoints and TS bridge client
 - **Mechanism:** JSON over HTTP
 - **Contract type:** request/response API
@@ -438,6 +485,7 @@ flowchart TD
 - **Risk:** prompt-dependent side effects inside Python task execution
 
 ### Boundary 3: telemetry callback bridge
+
 - **Location:** browser-use callback server path
 - **Mechanism:** Python emits callback events to TS HTTP listener
 - **Contract type:** event contract
@@ -446,6 +494,7 @@ flowchart TD
 - **Risk:** event loss or stale session objects if the Python task resets its internal event bus
 
 ### Boundary 4: error propagation
+
 - **Location:** `PythonBridgeEngine` and workflow engine catch/finalize logic
 - **Mechanism:** thrown bridge errors are converted into workflow failure states and telemetry
 - **Contract type:** exception/error translation
@@ -453,6 +502,7 @@ flowchart TD
 - **Risk:** Python can fail after side effects without a full semantic explanation to TypeScript
 
 ### Boundary 5: retry/failover behavior
+
 - **Location:** bridge recovery and engine selection logic
 - **Mechanism:** the TS side can restart or reconnect bridge processes
 - **Contract type:** runtime recovery policy
@@ -460,6 +510,7 @@ flowchart TD
 - **Risk:** stale browser session objects, false recovery assumptions
 
 ### Boundary 6: schema validation
+
 - **Location:** `src/workflow/types.ts`, loader parse paths, engine route inputs
 - **Mechanism:** Zod/schema validation before runtime execution
 - **Contract type:** static validation boundary
@@ -467,6 +518,7 @@ flowchart TD
 - **Risk:** Python internals still depend on runtime contract correctness after the boundary
 
 ### Boundary classification
+
 - **Stable:** workflow schema, direct engine dispatch contracts, UI projections, HITL coordinator API shape
 - **Under-specified:** bridge retry semantics, live callback reliability, bridge session recovery semantics
 - **Prompt-dependent:** browser-use task execution, content generation prompts, agentic orchestrator loops
@@ -657,27 +709,33 @@ flowchart TD
 ## L. Risk Register
 
 ### 1. Duplicated semantics
+
 - The direct engine and agentic orchestrator both know how to navigate, click, take input, generate content, and pause for humans.
 - The same step intents therefore have two different semantics depending on `mode`.
 
 ### 2. Hidden planners
+
 - `mode: agentic` introduces an outer planner that can override the rhythm of the direct workflow kernel.
 - This makes runtime behavior less predictable than the direct engine alone.
 
 ### 3. Unclear state ownership
+
 - `workflowEngine.currentState` and `hitlCoordinator` are related but not identical owners.
 - The UI is a projection, not a canonical state owner.
 - Browser-use has its own task/session state that can diverge from TypeScript state.
 
 ### 4. Weak schema boundaries
+
 - Workflow step types are well defined, but the runtime gate logic is still partly distributed across engine and orchestrator.
 - `permissions.require_human_approval_before` is agentic-only in practice.
 
 ### 5. Prompt-dependent side effects
+
 - `agent_task` and content generation rely on prompt semantics and Python-side execution.
 - Any browser mutation executed there is less deterministic than explicit TypeScript gates.
 
 ### 6. Missing tests
+
 - Current tests cover some substitution and orchestrator behavior, but the atlas pass found no strong direct-path tests for:
   - auth-verification skip
   - approval publication timing
@@ -685,13 +743,16 @@ flowchart TD
   - direct-path gate skip/validation semantics
 
 ### 7. Missing observability
+
 - The current UI and telemetry are good for live use, but the architecture still needs clearer “why did we skip/run/fail/hitl” gate-level traces if agentic is to be reduced.
 
 ### 8. Python override risk
+
 - Python browser tasks can execute side effects after the TypeScript engine has already decided a step path.
 - TypeScript must not assume Python/browser-use success without validation or state reconciliation.
 
 ### 9. TS assumptions about browser-use
+
 - The bridge can reset its session state between sequential tasks.
 - Live browser-use telemetry can disappear if the callback path breaks.
 
@@ -700,6 +761,7 @@ flowchart TD
 These are discovery points only, not implementation directives.
 
 ### 1. Before `executeStep(...)`
+
 - **Required inputs:** workflow definition, current outputs, current state, session context, step metadata
 - **Deterministic checks available:** step type, skip conditions, auth verification hints, existing outputs, current phase
 - **Python intelligence needed?** not always
@@ -708,6 +770,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** gate decision coverage, skipped-step state publication
 
 ### 2. Inside each `executeStep` branch
+
 - **Required inputs:** step-specific params, runtime outputs, browser/session state
 - **Deterministic checks available:** required selectors, URL predicates, output preconditions, sensitivity flags
 - **Python intelligence needed?** only for `agent_task` and some content generation
@@ -716,6 +779,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** branch-specific validation tests
 
 ### 3. After `executeStep`
+
 - **Required inputs:** step result, outputs, browser state
 - **Deterministic checks available:** expected URL, expected content, required output fields
 - **Python intelligence needed?** no for validation, yes only if a retry delegates to a worker
@@ -724,6 +788,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** postcondition validation tests
 
 ### 4. Before browser side effects
+
 - **Required inputs:** step intent, current state, auth info, approval state
 - **Deterministic checks available:** approval requirements, auth verification, draft state
 - **Python intelligence needed?** no
@@ -732,6 +797,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** no-side-effect-before-approval tests
 
 ### 5. After browser side effects
+
 - **Required inputs:** browser result, URL, DOM evidence, screenshots
 - **Deterministic checks available:** page state, visible fields, output confirmation
 - **Python intelligence needed?** no for validation, maybe for classification
@@ -740,6 +806,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** outcome validation and screenshot/state tests
 
 ### 6. Before HITL wait
+
 - **Required inputs:** gate reason, step type, instructions, current state
 - **Deterministic checks available:** auth verification, secure input need, approval need
 - **Python intelligence needed?** no
@@ -748,6 +815,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** all waits must be visible in status/UI
 
 ### 7. After HITL resume
+
 - **Required inputs:** operator response, confirmation payload, sensitive input
 - **Deterministic checks available:** response presence, rejection reason, completion confirmation
 - **Python intelligence needed?** no
@@ -756,6 +824,7 @@ These are discovery points only, not implementation directives.
 - **Tests required:** resume state reconciliation tests
 
 ### 8. Before story/SIC write
+
 - **Required inputs:** final state, operator notes, rejection reason, outcome classification
 - **Deterministic checks available:** terminal result, note presence, failure type
 - **Python intelligence needed?** only for higher-level classification if required
@@ -766,6 +835,7 @@ These are discovery points only, not implementation directives.
 ## N. Recommended Architecture Direction
 
 ### What should stay TypeScript
+
 - Workflow schema ownership
 - Direct workflow engine and step dispatcher
 - HITL state publication and UI control plane
@@ -774,15 +844,18 @@ These are discovery points only, not implementation directives.
 - Engine routing policy and gate evaluation
 
 ### What should stay Python
+
 - Browser automation engines and browser-use/Skyvern workers
 - Browser-side action execution and event emission
 - Any model-facing worker that needs to stay close to browser automation libraries
 
 ### What might later move to Rust
+
 - Only the highest-volume, lowest-level adapter pieces if bridge/process overhead or concurrency pressure becomes a real bottleneck
 - Not a priority in the current as-built topology
 
 ### What should become explicit gates
+
 - Auth verification skip logic
 - Final approval / confirmation logic
 - Secure input gating
@@ -791,10 +864,12 @@ These are discovery points only, not implementation directives.
 - Side-effect commit checkpoints before irreversible actions
 
 ### What should be deleted or quarantined
+
 - The hidden outer planner semantics should be quarantined, not promoted as the primary execution model
 - Any agentic-only approval semantics should be migrated or replaced by direct-path gates before agentic is removed
 
 ### What needs tests before removing `mode: agentic`
+
 - Authenticated skip path
 - Unauthenticated HITL request path
 - Status publication for every wait state
@@ -806,6 +881,7 @@ These are discovery points only, not implementation directives.
 - `agent_task` side-effect boundary safety
 
 ### Does the application currently have a coherent workflow kernel?
+
 - **Yes, partially.**
 - The direct engine, HITL coordinator, UI projection, memory wrap-up, and Python bridge already form a coherent kernel.
 - **No, not fully.**
@@ -814,22 +890,27 @@ These are discovery points only, not implementation directives.
 ## O. GO / NO-GO Recommendation
 
 ### Removing `mode: agentic`
+
 - **NO-GO** at this stage.
 - Reason: the direct kernel still needs generalized gate coverage to absorb the flexibility currently provided by the outer planner.
 
 ### Adding direct-path gates
+
 - **GO**
 - Reason: this is the correct replacement strategy for the useful flexibility that agentic mode was originally trying to provide.
 
 ### Introducing Rust later
+
 - **NO-GO for now**
 - Reason: there is no current evidence that the architecture bottleneck is low-level runtime throughput rather than semantic gate coverage and contract clarity.
 
 ### Keeping Python as intelligence layer
+
 - **GO**
 - Reason: Python is already the bounded browser-automation worker layer and is well placed to remain the task executor boundary.
 
 ### Keeping TypeScript as UI/orchestration layer
+
 - **GO**
 - Reason: TypeScript already owns the workflow kernel, state projection, HITL coordination, and persistence orchestration.
 

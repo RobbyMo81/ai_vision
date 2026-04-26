@@ -14,6 +14,8 @@
     "build": "tsc && pnpm run copy-assets",
     "copy-assets": "cp -r src/engines/browser-use/server dist/engines/browser-use/ && cp -r src/engines/skyvern/server dist/engines/skyvern/ && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "forge": "bash scripts/forge/forge.sh",
+    "forge:gates": "bash forge.gates.sh",
+    "lint": "node scripts/lint.mjs",
     "serve": "node dist/cli/index.js serve",
     "serve:headed": "node dist/cli/index.js serve --headed",
     "vault:up": "docker compose -f docker-compose.vault.yml up -d",
