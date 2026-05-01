@@ -1,0 +1,64 @@
+id: US-033
+tracker_id: RF-015
+title: Direct Workflow Gate Layer - Phase 11 Live Workflow Prompt Contract Regression Suite
+date: 2026-04-30
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-028: Reddit duplicate-check deterministic evidence gate
+    - US-031: agent_task side-effect safety gate
+    - US-032: agent_task dominant intent classification fix
+  source_artifacts:
+    - docs/debriefs/2026-04-28-us031-agent-task-dominant-intent-drift.md
+    - docs/artifacts/2026-04-28-us031-rf013-agent-task-side-effect-safety-implementation-handoff.md
+    - docs/artifacts/2026-04-28-us032-rf014-agent-task-dominant-intent-implementation-handoff.md
+  current_gap: >
+    The live check_duplicate_reddit_post prompt is evidence-producing read-only
+    work, but its wording includes /submit and posting language. The agent_task
+    safety gate can classify it as protected submit intent and require duplicate
+    evidence before the step can create that evidence.
+
+mission: >
+  Add exact-live-prompt contract regressions and a deterministic safe path for
+  evidence-producing read-only duplicate-check steps while keeping submit
+  protection strict.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - workflows/post_to_reddit.yaml
+
+implementation_requirements:
+  - Load exact live agent_task prompts from workflows/post_to_reddit.yaml in tests.
+  - Add coverage for check_duplicate_reddit_post as evidence-producing read-only work.
+  - Add coverage for submit_reddit_post as protected submit work.
+  - Permit the duplicate-check evidence producer to run before duplicate evidence exists.
+  - Keep submit_reddit_post blocked when duplicate evidence is missing.
+  - Keep submit_reddit_post allowed only when valid duplicate evidence exists.
+  - Preserve US-031 approval, content, duplicate-evidence, and browser postcondition safety.
+  - Preserve US-032 dominant-intent selection.
+  - Preserve mode: agentic.
+  - Do not patch workflow YAML as a workaround.
+
+acceptance_tests:
+  - exact live check_duplicate_reddit_post prompt does not trigger pre-existing duplicate-evidence requirement.
+  - exact live check_duplicate_reddit_post prompt records evidence-producing read-only classification details.
+  - exact live submit_reddit_post prompt remains selected as submit.
+  - submit_reddit_post without duplicate evidence remains blocked.
+  - submit_reddit_post with valid duplicate evidence can reach worker dispatch.
+  - duplicate-check output parsing still stores reddit_duplicate_check_evidence and reddit_duplicate_check_result.
+  - classifier telemetry includes selected intent and matched signals for live prompts.
+  - existing US-028 through US-032 tests still pass.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-033 is complete when exact live workflow prompts are contract-tested,
+  duplicate-check evidence production is not circularly blocked, submit remains
+  protected by valid duplicate evidence, governance is updated, and quality gates pass.

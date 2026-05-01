@@ -147,6 +147,8 @@ Risk:
 
 ### `agent_task` Dispatch Layer
 
+Historical US-031 state before US-032:
+
 Shape: dispatcher plus safety boundary
 
 Responsibilities:
@@ -159,8 +161,8 @@ Responsibilities:
 
 Risk:
 
-- current classifier returns on first matching protected intent
-- no dominant-intent resolution exists
+- classifier returned on first matching protected intent
+- no dominant-intent resolution existed yet
 - fallback instructions can override the true step purpose
 
 ### Python/browser-use Layer
@@ -200,9 +202,11 @@ Responsibilities:
 
 Risk:
 
-- telemetry records the mistaken classification, but current tests do not assert the expected `intentKind` for live prompts
+- telemetry records mistaken classification, but US-033 must assert expected `intentKind` for exact live prompts that can trigger circular evidence blocking
 
 ## E. Connection Graph
+
+Historical pre-US-032 submit-drift graph:
 
 ```mermaid
 flowchart TD
@@ -225,6 +229,8 @@ flowchart TD
 
 ## F. Exact Failure Mechanism
 
+Historical pre-US-032 failure mechanism:
+
 Classifier source:
 
 - `classifyAgentTaskSideEffect(...)` starts at `src/workflow/engine.ts` line 432.
@@ -242,7 +248,7 @@ Safety enforcement:
 - `login` and `fill` require `approvalGrantedForStep === true` at lines 1401-1404.
 - if missing, the step returns failure before worker dispatch at lines 1405-1416.
 
-Therefore:
+Therefore, before US-032:
 
 ```text
 submit_reddit_post prompt
@@ -257,10 +263,20 @@ submit_reddit_post prompt
 
 ### High-confidence affected path
 
+Current open path:
+
+- `workflows/post_to_reddit.yaml`
+- step `check_duplicate_reddit_post`
+- direct mode
+- evidence-producing read-only duplicate check
+- external Reddit post production run blocked before submit is reachable
+
+Historical pre-US-032 path:
+
 - `workflows/post_to_reddit.yaml`
 - step `submit_reddit_post`
 - direct mode
-- external Reddit post production run
+- dominant-submit classification drift resolved by US-032 / RF-014
 
 ### Adjacent Reddit paths
 
@@ -314,7 +330,9 @@ Examples:
 
 ## H. Test Coverage Gap
 
-US-031 tests verify individual simplified intent shapes:
+Historical pre-US-032 test coverage gap:
+
+US-031 tests verified individual simplified intent shapes:
 
 - login blocked without approval: `src/workflow/engine.test.ts` lines 2048-2076
 - login allowed after approval: lines 2078-2108
@@ -324,39 +342,43 @@ US-031 tests verify individual simplified intent shapes:
 - read-only allowed: lines 2223-2249
 - postcondition still runs after protected task: lines 2251-2290
 
-The missing test:
+The missing pre-US-032 test:
 
 ```text
 Use the exact live workflows/post_to_reddit.yaml submit_reddit_post prompt.
 Assert classification/effective gate behavior treats it as dominant submit intent.
 ```
 
-The existing submit-style test uses a simplified prompt:
+The existing submit-style test at that time used a simplified prompt:
 
 ```text
 Submit this post to the reddit subreddit by clicking the submit button
 ```
 
-That fixture does not include the live prompt's fallback fill wording.
+That fixture did not include the live prompt's fallback fill wording.
 
 ## I. Why Existing Green Tests Did Not Catch It
 
-The test suite proves that:
+Historical pre-US-032 explanation:
+
+The test suite proved that:
 
 - `fill` can be protected
 - `submit` can be protected
 - Reddit submit can require duplicate evidence
 - browser postcondition can still run
 
-It does not prove that:
+It did not prove that:
 
 - mixed-intent prompts resolve to the intended dominant action
 - live workflow prompts are part of gate regression coverage
 - classifier output is correct for actual production YAML
 
-The tests asserted safety-gate presence, not semantic alignment between production prompt shape and classifier decision.
+The tests asserted safety-gate presence, not semantic alignment between production prompt shape and classifier decision. US-032 closed this for the live `submit_reddit_post` prompt; US-033 must extend the live-prompt contract to the current `check_duplicate_reddit_post` drift.
 
 ## J. State And Telemetry Impact
+
+Historical pre-US-032 expected telemetry and state:
 
 Expected telemetry during the drift:
 
@@ -377,6 +399,8 @@ Expected state:
 This is safer than accidental posting, but it blocks the intended production path for the wrong reason.
 
 ## K. Root Cause
+
+Historical root cause for the original dominant-submit drift:
 
 Primary root cause:
 
@@ -480,7 +504,7 @@ Next action:
 
 | Decision | Recommendation | Reason |
 |---|---|---|
-| Run full production Reddit test now | NO-GO | Known classifier drift can block submit for the wrong reason |
+| Run full production Reddit test now | NO-GO | Known live-prompt drift can block the duplicate-check evidence step before submit is reachable |
 | Run unchanged failure reproduction | only if explicitly requested | It would reproduce the current open drift but would not prove production readiness |
 | Create US-033 | GO | The current open drift is well-scoped and should become a governed live-prompt contract story |
 | Patch temporary workflow for the run | NO-GO | It hides the drift and tests the wrong system |
@@ -496,15 +520,17 @@ This report should now seed US-033 directly while preserving the historical US-0
 
 ## P. Independent Investigation and Verification
 
+Historical pre-US-032 verification record:
+
 Date: `2026-04-28`
 
 Investigator: GitHub Copilot (independent verification pass)
 
 Scope:
 
-- verify whether the report's dominant-intent drift claim is valid in current code
+- verify whether the report's dominant-intent drift claim was valid before US-032
 - verify whether the live Reddit submit prompt can resolve to `fill` before `submit`
-- verify whether current tests cover the exact live prompt shape
+- verify whether the then-current tests covered the exact live prompt shape
 
 Method:
 
@@ -516,7 +542,7 @@ Method:
 Verification results:
 
 1. Dominant-intent drift finding: **VALID**
-  - The classifier is first-match ordered and checks `fill` before `submit`.
+  - The classifier was first-match ordered and checked `fill` before `submit`.
   - The live `submit_reddit_post` prompt contains both fallback fill and submit language.
   - Regex replay using the exact YAML prompt produced:
     - `login=false`
@@ -530,8 +556,8 @@ Verification results:
   - This creates a plausible block path before worker dispatch for the wrong reason (approval-for-fill vs dominant submit intent).
 
 3. Test coverage gap finding: **VALID**
-  - Current US-031 tests assert safety behavior with simplified submit prompts.
-  - Current tests do not use the exact live mixed-intent `submit_reddit_post` prompt from `workflows/post_to_reddit.yaml`.
+  - US-031 tests asserted safety behavior with simplified submit prompts.
+  - The tests did not use the exact live mixed-intent `submit_reddit_post` prompt from `workflows/post_to_reddit.yaml`.
 
 4. Blast-radius expansion beyond Reddit: **PARTIALLY VERIFIED**
   - The same mixed fallback-fill plus submit wording pattern exists in built-in workflow definitions.
@@ -540,8 +566,8 @@ Verification results:
 Conclusion of independent verification:
 
 - The report is materially accurate and actionable.
-- The core drift claim remains valid in current repository state.
-- Recommendation stands: implement dominant-intent resolution and add live-prompt regression fixtures before a clean production Reddit run.
+- The core drift claim was valid in the pre-US-032 repository state.
+- The historical recommendation was to implement dominant-intent resolution and add live-prompt regression fixtures before a clean production Reddit run.
 
 ## Q. Independent Investigation and Verification (Second Live-Prompt Drift)
 

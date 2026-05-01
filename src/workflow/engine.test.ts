@@ -1415,6 +1415,7 @@ function loadLiveWorkflowPrompt(stepId: string): string {
   return step.prompt;
 }
 
+const LIVE_CHECK_DUPLICATE_REDDIT_PROMPT = loadLiveWorkflowPrompt('check_duplicate_reddit_post');
 const LIVE_SUBMIT_REDDIT_PROMPT = loadLiveWorkflowPrompt('submit_reddit_post');
 
 describe('workflowEngine US-028 Reddit duplicate-check evidence gate', () => {
@@ -2230,6 +2231,100 @@ describe('workflowEngine US-031 agent_task side-effect safety gate', () => {
         }),
       }),
     );
+  });
+
+  it('loads the exact live duplicate-check prompt from workflow YAML and allows it before evidence exists', async () => {
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: VALID_DUPLICATE_EVIDENCE,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us033-live-duplicate-check',
+      name: 'US-033 live duplicate-check prompt',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'check_duplicate_reddit_post',
+          engine: 'browser-use' as const,
+          rawPrompt: true as const,
+          prompt: LIVE_CHECK_DUPLICATE_REDDIT_PROMPT,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {
+      subreddit: 'test',
+      post_title: 'ai-vision workflow update',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
+    expect(result.outputs['reddit_duplicate_check_evidence']).toContain('EXTRACTED_TITLES');
+console.log("TELEMETRY_CALLS:", JSON.stringify(mockTelemetry.emit.mock.calls, null, 2));
+    expect(result.outputs['reddit_duplicate_check_result']).toBe('NO_DUPLICATE_FOUND');
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        stepId: 'check_duplicate_reddit_post',
+      }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.evaluated',
+        stepId: 'check_duplicate_reddit_post',
+        details: expect.objectContaining({
+          intentKind: 'read_only',
+          dominantIntentSource: 'evidence_producing_duplicate_check',
+          selectedIntent: 'read_only',
+          evidenceProducingReadOnly: true,
+          evidenceContract: 'reddit_duplicate_check',
+          matchedSignals: expect.arrayContaining(['read_only', 'submit']),
+          suppressedProtectedSignals: expect.arrayContaining(['submit']),
+        }),
+      }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.allowed',
+        stepId: 'check_duplicate_reddit_post',
+        details: expect.objectContaining({
+          intentKind: 'read_only',
+          decision: 'allowed_evidence_producing_read_only',
+        }),
+      }),
+    );
+  });
+
+  it('blocks the exact live submit prompt when duplicate-check evidence is missing', async () => {
+    const definition = {
+      id: 'us033-live-submit-no-evidence',
+      name: 'US-033 live submit prompt without evidence',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'submit_reddit_post',
+          engine: 'browser-use' as const,
+          prompt: LIVE_SUBMIT_REDDIT_PROMPT,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {
+      subreddit: 'test',
+      post_title: 'ai-vision workflow update',
+      post_text: 'body',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('duplicate-check evidence');
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
   });
 
   it('blocks a posting-style agent_task before worker dispatch when content output is empty', async () => {

@@ -20,10 +20,10 @@ Completed:
 - `US-029` / `RF-011` — Phase 7 browser side-effect/postcondition gate
 - `US-030` / `RF-012` — Phase 8 generalized precondition/skip gate
 - `US-031` / `RF-013` — Phase 9 `agent_task` side-effect safety gate
+- `US-032` / `RF-014` — Phase 10 `agent_task` dominant intent classification fix
 
 Not yet complete:
 
-- `US-032` / `RF-014` dominant intent classification fix is created but not implemented yet.
 - `mode: agentic` must remain present until direct-path gates and tests cover the atlas retirement matrix.
 
 ## Created Stories
@@ -40,7 +40,8 @@ Not yet complete:
 | `US-029` / `RF-011` | Complete | Validate browser side-effect outcomes before downstream confirmation. | Done. Browser postconditions validate expected URL and required output evidence after side-effect execution. | False-success Reddit submit and draft mismatch paths are blocked; telemetry and tests pass. |
 | `US-030` / `RF-012` | Complete | Lift scattered skip logic into one traceable direct precondition gate. | Done. Direct precondition gate runs before approval and `executeStep(...)`. | Direct precondition gate skips authenticated login, existing generated output, and already-matching navigation while tracing run/skip/fail/HITL decisions; tests pass. |
 | `US-031` / `RF-013` | Complete | Prevent prompt-driven `agent_task` execution from bypassing the direct gate stack. | Done. Safety gate classifies `agent_task` prompts before worker dispatch. | `agent_task` side-effect intent is classified before worker dispatch; protected prompts cannot bypass approval, content, duplicate-evidence, precondition, and browser postcondition gates; tests pass. |
-| `US-032` / `RF-014` | Created | Fix dominant-intent drift found during US-031 production-run pre-flight. | Not implemented. Four-part Forge package exists. | Live `post_to_reddit.yaml` `submit_reddit_post` prompt classifies as `submit`, fallback fill text does not override submit, standalone fill/login/read-only behavior remains correct, and tests pass. |
+| `US-032` / `RF-014` | Complete | Fix dominant-intent drift found during US-031 production-run pre-flight. | Done. Classifier collects matched signals and selects dominant workflow intent. | Live `post_to_reddit.yaml` `submit_reddit_post` prompt classifies as `submit`, fallback fill text does not override submit, standalone fill/login/read-only behavior remains correct, and tests pass. |
+| `US-033` / `RF-015` | Complete | Fix the second live-prompt drift where `check_duplicate_reddit_post` can be blocked before it creates duplicate evidence. | Done. Exact live prompt fixtures cover duplicate-check and submit behavior, and the duplicate-check evidence producer is allowed through a narrow deterministic read-only contract. | Exact live duplicate-check and submit prompts are regression fixtures; duplicate-check can produce evidence before submit gating requires it; submit remains blocked until valid no-duplicate evidence exists; tests pass. |
 
 ## Created But Not Complete Backlog Stories
 
@@ -54,11 +55,7 @@ These exist in `prd.json` with `passes: false`, but they are not the active HITL
 
 ## Atlas-Aligned Stories Still Needed
 
-These are not fully implemented yet and should become future Forge stories.
-
-| Proposed Story | Status | Why Not Complete | Required Definition Of Done |
-|---|---|---|---|
-| `US-032` / `RF-014` — `agent_task` dominant intent classification fix | Created | US-031 first-match classification can treat the live Reddit submit prompt as `fill` because fallback fill text appears before submit text. | Classifier collects matched signals and selects dominant intent; live Reddit submit prompt selects `submit`; tests cover the actual workflow prompt. |
+No additional atlas-aligned story is currently seeded in this reference after `US-033`.
 
 ## Approved Implementation Sequence
 
@@ -98,13 +95,13 @@ For a HITL story to be considered done:
 
 ## Current Recommendation
 
-Implement the next Forge story as:
+Current gate-track recommendation:
 
 ```text
-US-032 / RF-014 — agent_task Dominant Intent Classification Fix
+Keep `mode: agentic` in place and treat exact live workflow prompts as first-class safety contracts for future direct-path gate stories.
 ```
 
-Reason: US-031 is implemented, but production-run pre-flight found a classifier drift against the actual direct Reddit submit prompt.
+Reason: `US-033` is now implemented. The remaining governance constraint in this reference is the broader retirement matrix for `mode: agentic`, not the duplicate-check prompt contract gap.
 
 ## Backlog Relevance Investigation Storyline
 

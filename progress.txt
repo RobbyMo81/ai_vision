@@ -435,6 +435,12 @@
 - Marked US-032 as historical/completed, promoted US-033 as the current active story seed, added the distinct blast-radius class for evidence-producing read-only prompts mentioning future protected actions, and updated the GO / NO-GO table accordingly.
 - Validation: documentation-only cleanup; section Q preserved intact; no runtime code changes executed in this recording step.
 
+[2026-04-30] Drift-Chain Debrief Cleanup — Historical Wording Pass (Forge Recording)
+- Updated the same living debrief to mark legacy US-031 analysis as historical pre-US-032 evidence instead of current behavior.
+- Added explicit historical labels to the `agent_task` dispatch risk description, exact failure mechanism, state/telemetry expectations, root cause framing, and section P verification record.
+- Tightened the GO / NO-GO reason so the current production NO-GO is tied to the open duplicate-check evidence drift blocking `check_duplicate_reddit_post` before submit is reachable.
+- Validation: documentation-only cleanup; readback confirmed the revised historical wording and updated NO-GO reason; no runtime code changes executed in this recording step.
+
 [2026-04-27] US-028 / RF-010 — Forge Workflow Created — Reddit Duplicate-Check Deterministic Evidence Gate
 - Created the four-part Forge handoff package under `docs/artifacts/`:
   - `2026-04-27-us028-rf010-reddit-duplicate-evidence-storyline.md`
@@ -669,3 +675,31 @@ Acceptance criteria covered:
 Validation:
 - `pnpm run typecheck` -> exit 0
 - `pnpm test` -> 11/11 suites, 131/131 tests passed
+
+[2026-04-30] US-033 / RF-015 — Forge Workflow Seed Created — Live Workflow Prompt Contract Regression Suite
+- Final-reviewed `docs/debriefs/2026-04-28-us031-agent-task-dominant-intent-drift.md` and patched residual wording so historical pre-US-032 submit-drift evidence is clearly separated from the current US-033 duplicate-check evidence drift.
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-04-30-us033-rf015-live-prompt-contract-regression-storyline.md`
+  - `2026-04-30-us033-rf015-live-prompt-contract-regression-forge-story.yaml`
+  - `2026-04-30-us033-rf015-live-prompt-contract-regression-implementation-handoff.md`
+  - `2026-04-30-us033-rf015-live-prompt-contract-regression-definition-of-done.md`
+- Added `US-033` to `prd.json` with `passes: false`.
+- Added `RF-015` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Updated `docs/debriefs/2026-04-26-hitl-gate-story-reference.md` so US-032 is complete and US-033 is created but not implemented.
+- Scope: add exact live prompt contract regressions for `check_duplicate_reddit_post` and `submit_reddit_post`, fix the circular duplicate-evidence block for evidence-producing read-only duplicate checks, and keep Reddit submit protected by valid duplicate evidence.
+- Validation: documentation/governance only; no runtime code changes executed in this seeding step.
+
+[2026-05-01] Production Run — US-033 Reddit r/test Workflow Verification
+- Ran unchanged `workflows/post_to_reddit.yaml` in headed supervised mode on UI port `3012`.
+- Session: `c7f6fd19-fe8c-4b54-a88d-99a5c4b9bad5`.
+- Pre-flight: no `.workflow-run.lock`; no active ai-vision UI listener on target port; `pnpm run typecheck` exited `0`; focused `src/workflow/engine.test.ts` passed `66/66`.
+- Duplicate-check step executed instead of being circularly blocked; it collected 28 visible r/test titles, stored `reddit_duplicate_check_evidence`, and returned `DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND`.
+- Submit step posted successfully to `https://www.reddit.com/r/test/comments/1t1134k/aivision_update_live_prompt_contract_gate_is_ready/`.
+- Workflow completed with status `complete`, wrote story memory to `/home/spoq/.ai-vision/memory/stories/post_to_reddit-c7f6fd19-fe8c-4b54-a88d-99a5c4b9bad5.md`, and saved screenshot `sessions/workflow/reddit_post_screenshot-1777658872479.jpg`.
+- Observation: the run reached submit and final completion; if the operator did not intentionally approve the draft and final confirmation in the active UI tab, follow up with HITL attribution telemetry review for `/api/return-control` and `/api/confirm-final-step`.
+
+[2026-05-01] US-033 / RF-015 — Live Workflow Prompt Contract Regression Suite — PASS
+- What changed: implemented a narrow deterministic evidence-producing read-only contract for `check_duplicate_reddit_post` in `src/workflow/engine.ts`, preserved strict submit protection for `submit_reddit_post`, and added exact live workflow YAML prompt regression coverage in `src/workflow/engine.test.ts`.
+- Files touched: `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/debriefs/2026-04-26-hitl-gate-story-reference.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: live YAML prompt fixtures now cover both `check_duplicate_reddit_post` and `submit_reddit_post`; the duplicate-check evidence producer can execute before evidence exists; evaluated telemetry records matched signals and the evidence-producing read-only selection details; submit remains blocked without evidence and with duplicate-risk evidence; valid no-duplicate evidence still allows submit dispatch; `mode: agentic` remains unchanged.
+- Final validation result: `pnpm run typecheck` exit `0`; `pnpm test` exit `0` with 11/11 suites and 133/133 tests passing. Focused validation also passed: `npx jest src/workflow/engine.test.ts --runInBand` with 66/66 tests.

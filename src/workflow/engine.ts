@@ -432,7 +432,7 @@ function parseRedditDuplicateEvidence(output: string): RedditDuplicateEvidence {
  */
 function classifyAgentTaskSideEffect(
   prompt: string,
-  _stepId: string,
+  stepId: string,
 ): {
   protectedIntent: boolean;
   intentKind:
@@ -488,6 +488,35 @@ function classifyAgentTaskSideEffect(
       lower,
     ),
   );
+
+  const isEvidenceProducingDuplicateCheck =
+    stepId === 'check_duplicate_reddit_post' &&
+    lower.includes('duplicate check before posting to reddit') &&
+    lower.includes('extracted_titles:') &&
+    lower.includes('overlap_scores:') &&
+    lower.includes('duplicate_check_result:');
+
+  if (isEvidenceProducingDuplicateCheck) {
+    const suppressedProtectedSignals = matchedSignals.filter(
+      (signal): signal is 'submit' | 'post' | 'final_click' | 'fill' | 'login' | 'publish' | 'external_mutation' =>
+        signal !== 'read_only',
+    );
+
+    return {
+      protectedIntent: false,
+      intentKind: 'read_only',
+      reason: 'evidence-producing duplicate-check contract selected as read_only',
+      details: {
+        matchedSignals,
+        dominantIntentSource: 'evidence_producing_duplicate_check',
+        selectedIntent: 'read_only',
+        evidenceProducingReadOnly: true,
+        evidenceContract: 'reddit_duplicate_check',
+        stepContract: stepId,
+        suppressedProtectedSignals,
+      },
+    };
+  }
 
   const protectedRank: Array<
     'login' | 'submit' | 'publish' | 'post' | 'final_click' | 'fill' | 'external_mutation'
@@ -1561,7 +1590,12 @@ async function executeStep(
               name: 'workflow.agent_task_side_effect.allowed',
               details: {
                 intentKind: safety.intentKind,
-                decision: safety.intentKind === 'read_only' ? 'allowed_read_only' : 'allowed_unknown',
+                decision:
+                  safety.intentKind === 'read_only'
+                    ? safety.details['evidenceProducingReadOnly'] === true
+                      ? 'allowed_evidence_producing_read_only'
+                      : 'allowed_read_only'
+                    : 'allowed_unknown',
               },
             });
           }

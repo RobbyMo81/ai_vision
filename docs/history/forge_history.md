@@ -317,3 +317,37 @@ Regression tests now load the exact live `workflows/post_to_reddit.yaml` `submit
 - `pnpm test` → 11/11 suites, 131/131 tests passed
 
 ---
+
+## H-033 — US-033 / RF-015: Live Workflow Prompt Contract Regression Suite
+
+**Date:** 2026-05-01
+**Story:** US-033 / RF-015
+**Status:** PASS
+**Gate Layer Phase:** 11
+
+### Summary
+
+Implemented exact live workflow prompt contract coverage for the Reddit duplicate-check and submit `agent_task` steps.
+
+`classifyAgentTaskSideEffect(...)` now recognizes the canonical `check_duplicate_reddit_post` step contract as evidence-producing read-only work using a narrow deterministic condition: the exact step id plus the structured duplicate-check output markers. This keeps the step executable before `reddit_duplicate_check_evidence` exists while preserving matched lexical signals in telemetry and recording why protected submit-like wording was suppressed for this specific evidence-producing path.
+
+The live `submit_reddit_post` prompt remains protected as submit intent. Existing duplicate-evidence enforcement is unchanged: missing evidence still blocks submit, duplicate-risk evidence still blocks submit, and valid no-duplicate evidence still allows worker dispatch. Regression tests now load the exact live prompts from `workflows/post_to_reddit.yaml` instead of relying only on simplified fixtures.
+
+### Files Touched
+
+- `src/workflow/engine.ts`
+- `src/workflow/engine.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/debriefs/2026-04-26-hitl-gate-story-reference.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `npx jest src/workflow/engine.test.ts --runInBand` → 66/66 tests passed
+- `pnpm run typecheck` → exit 0
+- `pnpm test` → 11/11 suites, 133/133 tests passed
+
+---
