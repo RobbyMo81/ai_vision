@@ -23,6 +23,31 @@ Use this order of elimination:
 2. OS or cgroup kill path
 3. TypeScript checker graph density
 
+## Node 24 Runtime Warnings That Are Not Heap Lockouts
+
+Not every Node 24 warning belongs to the heap-lockout path.
+
+During the `US-025 / RF-007` production HITL test, Node 24 emitted:
+
+```text
+[DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead.
+```
+
+Classification:
+
+- This is a runtime API deprecation warning.
+- This is not a V8 heap abort.
+- This is not a `SIGABRT`.
+- This is not a kernel `SIGKILL`.
+- This does not indicate TypeScript checker graph expansion.
+
+Correct handling:
+
+- Track it as HTTP/server hardening work.
+- Inspect `src/ui/server.ts` and `src/webhooks/server.ts`.
+- Replace legacy `url.parse()` with WHATWG `URL` parsing in a dedicated hardening story.
+- Do not route this warning through the TypeScript heap-lockout remediation path.
+
 ### Node / V8 Path
 
 Treat this as a Node runtime failure when you see:

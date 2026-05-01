@@ -26,7 +26,13 @@ export interface FieldIntent {
   source?: FieldValueSource;
 }
 
-export interface NavigateStep {
+export interface BrowserPostconditionMetadata {
+  expectedUrlAfter?: string;
+  requiredOutputIncludes?: string[];
+  postconditionRequired?: boolean;
+}
+
+export interface NavigateStep extends BrowserPostconditionMetadata {
   type: 'navigate';
   id: string;
   description?: string;
@@ -34,14 +40,14 @@ export interface NavigateStep {
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
 }
 
-export interface ClickStep {
+export interface ClickStep extends BrowserPostconditionMetadata {
   type: 'click';
   id: string;
   description?: string;
   selector: string;
 }
 
-export interface TypeStep {
+export interface TypeStep extends BrowserPostconditionMetadata {
   type: 'type';
   id: string;
   description?: string;
@@ -58,7 +64,7 @@ export interface ScreenshotStep {
   outputKey?: string;
 }
 
-export interface FillStep {
+export interface FillStep extends BrowserPostconditionMetadata {
   type: 'fill';
   id: string;
   description?: string;
@@ -75,7 +81,7 @@ export interface ExtractStep {
   outputKey: string;
 }
 
-export interface AgentTaskStep {
+export interface AgentTaskStep extends BrowserPostconditionMetadata {
   type: 'agent_task';
   id: string;
   description?: string;
@@ -199,12 +205,22 @@ export const FieldIntentSchema = z.object({
   source: FieldValueSourceSchema.default('params'),
 });
 
+const BrowserPostconditionMetadataSchema = {
+  /** URL fragment or full URL expected after the side-effect step completes. */
+  expectedUrlAfter: z.string().optional(),
+  /** Required output markers that must be present in the step output. */
+  requiredOutputIncludes: z.array(z.string()).optional(),
+  /** When true, the postcondition gate is considered mandatory for this step. */
+  postconditionRequired: z.boolean().optional(),
+};
+
 export const NavigateStepSchema = z.object({
   type: z.literal('navigate'),
   id: z.string(),
   description: z.string().optional(),
   url: z.string(),
   waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+  ...BrowserPostconditionMetadataSchema,
 });
 
 export const ClickStepSchema = z.object({
@@ -212,6 +228,7 @@ export const ClickStepSchema = z.object({
   id: z.string(),
   description: z.string().optional(),
   selector: z.string(),
+  ...BrowserPostconditionMetadataSchema,
 });
 
 export const TypeStepSchema = z.object({
@@ -227,6 +244,7 @@ export const TypeStepSchema = z.object({
    * and prompt redaction (no regex over prompts/selectors).
    */
   field: FieldIntentSchema.optional(),
+  ...BrowserPostconditionMetadataSchema,
 });
 
 export const ScreenshotStepSchema = z.object({
@@ -260,6 +278,7 @@ export const FillStepSchema = z.object({
    * third-party sites with dynamic component-based UIs.
    */
   focused: z.boolean().optional(),
+  ...BrowserPostconditionMetadataSchema,
 });
 
 export const ExtractStepSchema = z.object({
@@ -311,6 +330,7 @@ export const AgentTaskStepSchema = z.object({
    *  Overrides the BROWSER_USE_MAX_STEPS env default. Set low (3–6) for
    *  focused single-action steps to avoid wasteful planning loops. */
   maxSteps: z.number().int().positive().optional(),
+  ...BrowserPostconditionMetadataSchema,
 });
 
 export const HumanTakeoverStepSchema = z.object({

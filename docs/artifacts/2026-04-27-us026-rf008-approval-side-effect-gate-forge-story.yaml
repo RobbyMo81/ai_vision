@@ -1,0 +1,74 @@
+id: US-026
+tracker_id: RF-008
+title: Direct Workflow Gate Layer - Phase 4 Approval Gate Before Browser Side Effects
+date: 2026-04-27
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-022: Direct workflow gate layer design
+    - US-023: Canonical direct HITL state publication
+    - US-024: Final-step confirmation pre-flight binding enforcement
+    - US-025: Return-control pre-flight binding enforcement
+  source_artifacts:
+    - docs/architecture/as-built_execution_atlas.md
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  current_gap: >
+    Direct workflows expose permissions.require_human_approval_before in schema,
+    but the direct engine does not enforce it before protected steps reach executeStep.
+
+mission: >
+  Implement a run-scoped direct approval gate before browser side-effect steps so
+  protected direct workflow steps cannot execute until a visible hitl_qa:approve_step
+  wait has been published and resumed through the bound return-control endpoint.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - src/ui/server.ts
+  - src/ui/server.test.ts
+  - src/session/types.ts
+
+implementation_requirements:
+  - Initialize approval state once per WorkflowEngine.run invocation.
+  - Read protected steps from permissions.require_human_approval_before.
+  - Evaluate the approval gate before executeStep.
+  - Publish hitl_qa with hitlAction approve_step before blocking.
+  - Resume through POST /api/return-control.
+  - Extend the return-control allowed wait pairs with hitl_qa:approve_step.
+  - Record approved step identity before protected execution.
+  - Clear consumed approval after protected execution.
+  - Emit structured approval gate telemetry.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Remove mode: agentic.
+  - Add a new approval endpoint.
+  - Add approval rejection semantics.
+  - Implement content output validation gates.
+  - Implement browser postcondition gates.
+  - Change Python browser worker internals.
+
+acceptance_tests:
+  - Protected direct step publishes hitl_qa:approve_step before execution.
+  - Protected side-effect step does not execute before approval.
+  - Active UI return-control approval resumes the protected step.
+  - Stale client approval remains rejected by websocket presence gate.
+  - Session mismatch approval remains rejected by session binding gate.
+  - Unprotected step executes without approval pause.
+  - Approval state is run-scoped and consumed after the protected step.
+  - agent_task cannot bypass the approval gate.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-026 is complete when direct workflow approval gating is enforced before
+  protected side-effect execution, the UI resume path accepts hitl_qa:approve_step
+  through the existing bound return-control endpoint, regression tests prove the
+  block/resume behavior, governance is updated, and quality gates pass.

@@ -1,0 +1,71 @@
+id: US-031
+tracker_id: RF-013
+title: Direct Workflow Gate Layer - Phase 9 Agent Task Side Effect Safety Gate
+date: 2026-04-28
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-026: Approval gate before browser side effects
+    - US-027: Content output validation gate
+    - US-028: Reddit duplicate-check deterministic evidence gate
+    - US-029: Browser side-effect postcondition gate
+    - US-030: Generalized precondition skip gate
+  source_artifacts:
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+    - docs/architecture/as-built_execution_atlas.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  current_gap: >
+    agent_task prompts can imply protected browser side effects before the
+    direct engine has classified the prompt intent and verified that the
+    direct gate stack has authorized the action.
+
+mission: >
+  Implement an agent_task side-effect safety boundary so prompt-driven worker
+  dispatch cannot bypass approval, content, duplicate-evidence, browser
+  postcondition, and precondition gates.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - src/workflow/types.ts
+
+implementation_requirements:
+  - Add deterministic protected-intent classification for agent_task prompts.
+  - Classify submit, publish, post, click final button, login, fill, and external mutation intent.
+  - Block protected agent_task dispatch unless approval evidence is present when approval is required.
+  - Block posting-style agent_task dispatch when required content outputs are missing or invalid.
+  - Block Reddit submit-style agent_task dispatch when duplicate-check evidence is missing or risky.
+  - Preserve post-execution browser postcondition validation for agent_task.
+  - Emit side-effect safety telemetry with workflow, session, step, decision, reason, and details.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Removing agent_task.
+  - Python/browser-use internals.
+  - Final HITL confirmation replacement.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - protected agent_task submit intent blocks before worker dispatch without required approval.
+  - protected agent_task submit intent runs after approval evidence is recorded.
+  - posting-style agent_task fails when required generated content is missing.
+  - Reddit submit-style agent_task fails when duplicate-check evidence is missing.
+  - Reddit submit-style agent_task fails when duplicate risk is present.
+  - unprotected read-only agent_task still routes normally.
+  - protected agent_task still receives browser postcondition validation after execution.
+  - safety telemetry emits blocked and allowed decisions.
+  - existing US-026 through US-030 tests still pass.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-031 is complete when agent_task prompt-driven side effects are classified
+  before worker dispatch, protected actions cannot bypass direct-path gates,
+  telemetry records allowed and blocked decisions, governance is updated, and
+  quality gates pass.

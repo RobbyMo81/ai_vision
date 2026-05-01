@@ -66,7 +66,7 @@ It must not:
 ## Source Evidence
 
 - [as-built_execution_atlas.md](/home/spoq/ai-vision/docs/architecture/as-built_execution_atlas.md)
-- [Discovery_mode-agentic.md](/home/spoq/ai-vision/docs/artifacts/Discovery_mode-agentic.md)
+- [Discovery_mode-agentic.md](/home/spoq/ai-vision/docs/debriefs/Discovery_mode-agentic.md)
 - [engine.ts](/home/spoq/ai-vision/src/workflow/engine.ts)
 - [hitl.ts](/home/spoq/ai-vision/src/session/hitl.ts)
 - [server.ts](/home/spoq/ai-vision/src/ui/server.ts)

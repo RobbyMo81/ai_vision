@@ -1,0 +1,75 @@
+id: US-028
+tracker_id: RF-010
+title: Direct Workflow Gate Layer - Phase 6 Reddit Duplicate Check Deterministic Evidence Gate
+date: 2026-04-27
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-022: Direct workflow gate layer design
+    - US-023: Canonical direct HITL state publication
+    - US-024: Final-step confirmation pre-flight binding enforcement
+    - US-025: Return-control pre-flight binding enforcement
+    - US-026: Approval gate before browser side effects
+    - US-027: Content/output validation gate
+  source_evidence:
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+    - docs/debriefs/AI_VISION_V2_BLUEPRINT.md
+    - workflows/post_to_reddit.yaml
+    - workflows/write_and_post_to_reddit.yaml
+  live_run:
+    workflow: post_to_reddit
+    session_id: f378ab06-8636-4171-a32e-8a772af23e1e
+    post_url: https://www.reddit.com/r/test/comments/1sxm1nu/aivision_workflow_update_hitl_approval_gates_are/
+    finding: browser-use judge flagged duplicate-check evidence as process-weak
+
+mission: >
+  Implement a deterministic Reddit duplicate-check evidence gate so Reddit submit
+  steps cannot execute unless the workflow has extracted visible titles, computed
+  overlap scores, and produced a pass/fail duplicate decision.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - workflows/post_to_reddit.yaml
+  - workflows/write_and_post_to_reddit.yaml
+
+implementation_requirements:
+  - Define a structured Reddit duplicate evidence text contract.
+  - Update Reddit duplicate-check prompts to request the evidence contract.
+  - Parse duplicate-check output into evidence.
+  - Store evidence in workflow outputs.
+  - Validate evidence before submit_reddit_post.
+  - Fail fast on duplicate risk.
+  - Fail fast on missing extracted titles.
+  - Fail fast on missing overlap scores.
+  - Emit structured duplicate-check telemetry.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Generic browser postcondition gates.
+  - Generalized precondition skip gates.
+  - Full agent_task side-effect policy.
+  - Reddit cleanup automation.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - duplicate-check output with NO_DUPLICATE_FOUND and scored titles allows submit path.
+  - duplicate-check output with DUPLICATE_RISK blocks submit path.
+  - duplicate-check output missing extracted titles blocks submit path.
+  - duplicate-check output missing overlap scores blocks submit path.
+  - submit_reddit_post cannot run without duplicate evidence.
+  - workflows include the structured evidence contract.
+  - existing approval/content validation tests still pass.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-028 is complete when Reddit submit steps require deterministic duplicate-check
+  evidence with extracted titles and overlap scores, missing/duplicate evidence blocks
+  submit, valid evidence allows submit, governance is updated, and quality gates pass.

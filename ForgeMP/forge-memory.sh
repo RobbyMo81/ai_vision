@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS context_store (
 );
 
 -- ── DISCOVERIES ───────────────────────────────────────────
--- Structured findings that feed into AGENTS.md auto-generation
+-- Structured findings that feed into docs/history archiving workflows
+-- (forge_history.md full entries + history_index.md library cards)
 CREATE TABLE IF NOT EXISTS discoveries (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   story_id      TEXT NOT NULL,

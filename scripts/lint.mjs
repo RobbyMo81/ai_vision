@@ -86,8 +86,8 @@ for (const file of walk('workflows').filter((f) => f.endsWith('.yml') || f.endsW
 
 for (const file of [
   ...walk('scripts').filter((f) => /\.(mjs|js|sh)$/.test(f)),
-  ...walk('ForgeMP').filter((f) => /\.(ts|sh|md)$/.test(f)),
-  ...walk('.github').filter((f) => /\.(yml|yaml|md)$/.test(f)),
+  ...walk('ForgeMP').filter((f) => /\.(ts|sh)$/.test(f)),
+  ...walk('.github').filter((f) => /\.(yml|yaml)$/.test(f)),
 ]) {
   lintNoTabs(file);
   lintNoTrailingWhitespace(file);

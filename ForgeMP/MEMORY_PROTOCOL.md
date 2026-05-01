@@ -25,7 +25,7 @@ The FORGE Memory Protocol solves this. It mandates that all agents **read before
 **Initialized by:** `forge.sh` on every startup  
 **Accessible via:** `forge-memory-client.ts` (TypeScript), `sqlite3` CLI (bash)
 
-This database is the **single source of truth** for agent-to-agent communication during a build session. It is more authoritative than `progress.txt`, more structured than `AGENTS.md`, and faster to query than git history.
+This database is the **single source of truth** for agent-to-agent communication during a build session. It is more authoritative than `progress.txt`, more structured than ad hoc notes, and faster to query than git history.
 
 ---
 
@@ -59,7 +59,7 @@ Persistent key/value memory that survives context window boundaries. Use for:
 - Any fact an agent needed to go find that the next agent will also need
 
 ### `discoveries`
-Structured findings that are automatically compiled into `AGENTS.md` at the end of a session. Each discovery has a `type`: PATTERN, GOTCHA, BLOCKER, DECISION, DEPENDENCY, CONVENTION.
+Structured findings that are promoted into `/home/spoq/ai-vision/docs/history/forge_history.md` (full entries) and `/home/spoq/ai-vision/docs/history/history_index.md` (library cards) at story closeout. Each discovery has a `type`: PATTERN, GOTCHA, BLOCKER, DECISION, DEPENDENCY, CONVENTION.
 
 ### `story_state`
 Extended state per story beyond the `passes` boolean in `prd.json`. Tracks:
@@ -157,7 +157,7 @@ Do not write critical facts as code comments for future agents. Write them to `c
 `forge-memory.db` is a working file, not a secrets vault. Never write API keys, tokens, passwords, or credentials to any table. Use `context_store` only for structural facts (paths, URLs, config keys — not config values).
 
 ### Rule 7 — The DB is Gitignored
-`forge-memory.db` is not committed. It is a **runtime working directory**, not source of record. The permanent record is `AGENTS.md` (compiled from `discoveries`) and git history. Archive copies live in `archive/`.
+`forge-memory.db` is not committed. It is a **runtime working directory**, not source of record. The permanent record is `/home/spoq/ai-vision/docs/history/forge_history.md`, `/home/spoq/ai-vision/docs/history/history_index.md`, and git history. Archive copies live in `archive/`.
 
 ---
 
@@ -172,10 +172,11 @@ Do not write critical facts as code comments for future agents. Write them to `c
 - Read startup report and unread messages (Function 0)
 - Write discoveries, messages, context entries (on exit)
 - Update story state with notes and blockers
+- Archive story history using `/home/spoq/ai-vision/docs/history/forge_history.md` and `/home/spoq/ai-vision/docs/history/history_index.md`
 
 ### Kirk (engineer)
 - Query audit_log after anomalies
-- Review discoveries before writing AGENTS.md manually
+- Review discoveries before updating `/home/spoq/ai-vision/docs/history/forge_history.md` and `/home/spoq/ai-vision/docs/history/history_index.md`
 - Check story_state.attempt_count for stuck stories
 
 ---

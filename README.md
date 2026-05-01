@@ -315,9 +315,10 @@ Notes:
 - SIC / Refactor / Enhancement tracker: [docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md](docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md)
 - FORGE governance baseline: [FORGE.md](FORGE.md)
 
-## Artifact Convention
+## Artifact And Debrief Convention
 
-- Save all agent-generated explainers/reports in `docs/artifacts/`.
+- Save Forge story package files and governed story deliverables in `docs/artifacts/`.
+- Save non-story explainers, debriefs, investigations, traces, reports, quick references, and architecture notes in `docs/debriefs/`.
 - Use date-prefixed filenames: `YYYY-MM-DD-topic.md`.
 - Do not add new explainer/report artifacts to repo root.
 

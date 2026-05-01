@@ -1,0 +1,74 @@
+id: US-030
+tracker_id: RF-012
+title: Direct Workflow Gate Layer - Phase 8 Generalized Precondition Skip Gate
+date: 2026-04-27
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-026: Approval gate before browser side effects
+    - US-027: Content output validation gate
+    - US-028: Reddit duplicate-check deterministic evidence gate
+    - US-029: Browser side-effect postcondition gate
+  source_artifacts:
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+    - docs/architecture/as-built_execution_atlas.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  current_gap: >
+    Useful direct-path skip behavior exists in scattered step branches instead
+    of one pre-execution gate, so the direct engine still lacks a traceable
+    deterministic replacement for the flexibility originally provided by
+    mode: agentic.
+
+mission: >
+  Implement a generalized direct-path precondition gate before executeStep so
+  the engine can deterministically run, skip, fail, and request HITL before
+  side effects begin.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - src/workflow/types.ts
+
+implementation_requirements:
+  - Add a precondition gate in the direct run loop before approval gating and executeStep.
+  - Lift authenticated human_takeover skip into the precondition gate.
+  - Lift generate_content output-present skip into the precondition gate.
+  - Add navigate target URL match skip before sessionManager.navigate runs.
+  - Preserve downstream unresolved-placeholder failure before browser side effects.
+  - Emit precondition telemetry with workflow, session, step, decision, reason, and details.
+  - Record skipped steps as successful skip results.
+  - Preserve approval, content validation, duplicate evidence, and browser postcondition gates.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Full agent_task side-effect safety boundary.
+  - Python/browser-use internals.
+  - HITL final confirmation replacement.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - human_takeover auth verification skips when authenticated signals are satisfied.
+  - human_takeover auth verification runs when authenticated signals are not satisfied.
+  - generate_content skips when valid outputKey already exists.
+  - generate_content fails instead of skipping when preflight output is invalid.
+  - navigate skips when current URL already matches the target URL.
+  - navigate runs when current URL does not match the target URL.
+  - skipped steps are recorded as successful skip results.
+  - precondition skip telemetry is emitted.
+  - precondition fail telemetry is emitted.
+  - approval gate still runs after precondition run decisions.
+  - content validation, duplicate evidence, and browser postcondition tests still pass.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-030 is complete when the direct run loop has one deterministic
+  precondition gate that traces run, skip, fail, and HITL decisions before
+  executeStep, existing skip behavior is lifted into that gate, redundant
+  navigation is skipped, governance is updated, and quality gates pass.

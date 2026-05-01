@@ -1,0 +1,70 @@
+id: US-029
+tracker_id: RF-011
+title: Direct Workflow Gate Layer - Phase 7 Browser Side Effect Postcondition Gate
+date: 2026-04-27
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-026: Approval gate before browser side effects
+    - US-027: Content output validation gate
+    - US-028: Reddit duplicate-check deterministic evidence gate
+  source_artifacts:
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+    - docs/architecture/as-built_execution_atlas.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  current_gap: >
+    Browser-use can return success after a side-effect task while TypeScript has
+    not validated expected URL, page, fields, draft content, and submit evidence.
+
+mission: >
+  Implement direct-path browser postcondition validation after side-effect steps
+  so prompt-dependent browser success cannot advance the workflow without
+  deterministic evidence.
+
+required_code_surfaces:
+  - src/workflow/types.ts
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - workflows/post_to_reddit.yaml
+  - workflows/write_and_post_to_reddit.yaml
+
+implementation_requirements:
+  - Add optional postcondition metadata to side-effect step types.
+  - Validate expected URL after side-effect execution.
+  - Validate required output evidence after side-effect execution.
+  - Validate Reddit submit reaches a comments URL.
+  - Validate draft steps remain on the expected composer URL.
+  - Emit postcondition pass/fail telemetry.
+  - Fail fast on required postcondition failure.
+  - Preserve final HITL confirmation.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Generalized precondition skip gates.
+  - Full agent_task side-effect policy.
+  - Python/browser-use internals.
+  - HITL final confirmation replacement.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - submit_reddit_post passes when current URL contains /comments/.
+  - submit_reddit_post fails when current URL remains /submit.
+  - draft_reddit_post passes when current URL remains subreddit submit page.
+  - draft_reddit_post fails when current URL leaves expected subreddit submit page.
+  - required output evidence missing fails postcondition.
+  - postcondition failure prevents downstream confirmation step.
+  - postcondition telemetry emits passed and failed events.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-029 is complete when side-effect steps declare and enforce deterministic
+  browser postconditions, Reddit submit cannot falsely succeed without comments
+  URL evidence, telemetry records pass/fail decisions, governance is updated,
+  and quality gates pass.

@@ -1,0 +1,139 @@
+id: US-025
+title: Return-control pre-flight binding enforcement
+storyType: forge-refactor
+status: proposed
+trackerRow: RF-007
+sourceArtifacts:
+  - docs/artifacts/2026-04-26-us025-rf007-return-control-binding-storyline.md
+  - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  - docs/debriefs/2026-04-25-confirm-final-step-trace-and-preflight-requirements.md
+  - docs/debriefs/2026-04-26-live-confirmation-attribution-test.md
+  - src/ui/server.ts
+  - src/session/hitl.ts
+  - src/session/types.ts
+  - src/workflow/engine.ts
+
+objective: >
+  Enforce active-run and active-client binding on POST /api/return-control
+  before hitlCoordinator.returnControl() can resume a blocking HITL wait.
+
+layers:
+  - id: ui-client-request-binding
+    name: UI return-control request binding
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - update browser returnControl() fetch to send JSON with sessionId, requestId, and clientId
+      - send X-AiVision-Client-Id with the page-local client id
+      - preserve existing button disable and logging behavior
+
+  - id: return-control-action-gate
+    name: Return-control action pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - compute currentPhase and currentHitlAction from workflowEngine.currentState
+      - allow only awaiting_human:return_control, awaiting_human:verify_authentication, hitl_qa:approve_draft, and hitl_qa:capture_notes
+      - reject HTTP 409 before hitlCoordinator.returnControl() when the active state is not one of the allowed pairs
+      - emit ui.hitl.return_control.rejected with gate=return_control_action_gate
+
+  - id: session-binding-gate
+    name: Session binding pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - compare requestSessionId from body against workflowEngine.currentState.id
+      - reject HTTP 400 before hitlCoordinator.returnControl() when requestSessionId is present and mismatches the active session
+      - emit ui.hitl.return_control.rejected with gate=session_binding_gate
+
+  - id: websocket-presence-gate
+    name: WebSocket presence pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - reuse socketsForPage(resolvedClientId)
+      - reject HTTP 403 before hitlCoordinator.returnControl() when resolvedClientId is non-empty and matchingWsClientCount is 0
+      - emit ui.hitl.return_control.rejected with gate=websocket_presence_gate
+
+  - id: telemetry-contract
+    name: Return-control rejection and completion telemetry
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - keep ui.hitl.return_control.received
+      - add ui.hitl.return_control.rejected for every gate failure
+      - add ui.hitl.return_control.completed after successful hitlCoordinator.returnControl()
+      - include request/session/client/socket/caller attribution fields matching US-024 confirmation telemetry
+
+shapes:
+  implementationSummary:
+    required:
+      - UI returnControl() sends sessionId, requestId, clientId, and X-AiVision-Client-Id
+      - three sequential pre-flight gate blocks in POST /api/return-control
+      - one handler-scoped named const emitReturnControlRejection shared across all gate paths
+      - completed telemetry after successful coordinator resume
+      - regression tests for every rejection path and every allowed wait-pair happy path
+  storyReportShape:
+    requiredSections:
+      - ui_request_binding
+      - gate_implementation
+      - rejection_telemetry_contract
+      - completed_telemetry_contract
+      - test_coverage
+      - non_goals
+
+graphData:
+  mermaid: |
+    flowchart TD
+        REQ["POST /api/return-control"]
+        ATTR["parse body/header and compute attribution"]
+        RECEIVED["emit ui.hitl.return_control.received"]
+        G1{"allowed return-control wait pair?"}
+        G2{"requestSessionId matches active session?"}
+        G3{"resolvedClientId has live websocket?"}
+        REJ["emit ui.hitl.return_control.rejected"]
+        RESUME["hitlCoordinator.returnControl()"]
+        DONE["emit ui.hitl.return_control.completed"]
+        HTTP409["HTTP 409"]
+        HTTP400["HTTP 400"]
+        HTTP403["HTTP 403"]
+
+        REQ --> ATTR
+        ATTR --> RECEIVED
+        RECEIVED --> G1
+        G1 -- no --> HTTP409 --> REJ
+        G1 -- yes --> G2
+        G2 -- mismatch --> HTTP400 --> REJ
+        G2 -- ok --> G3
+        G3 -- stale client --> HTTP403 --> REJ
+        G3 -- active client --> RESUME --> DONE
+
+validationPlan:
+  - UI returnControl() sends sessionId, requestId, clientId, and X-AiVision-Client-Id
+  - invalid phase/action rejects with HTTP 409 and return_control_action_gate telemetry
+  - session mismatch rejects with HTTP 400 and session_binding_gate telemetry
+  - stale client rejects with HTTP 403 and websocket_presence_gate telemetry
+  - awaiting_human:return_control happy path resumes
+  - awaiting_human:verify_authentication happy path resumes
+  - hitl_qa:approve_draft happy path resumes
+  - hitl_qa:capture_notes happy path resumes
+  - non-UI empty resolvedClientId path remains unchanged in this story
+  - pnpm run typecheck passes
+  - pnpm test passes
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - all three return-control pre-flight gates are implemented and tested
+    - ui.hitl.return_control.rejected telemetry fires for each rejection path
+    - ui.hitl.return_control.completed telemetry fires for successful resume
+    - UI request binding sends the same page/session attribution fields used by the endpoint
+    - pnpm run typecheck passes
+    - pnpm test passes
+
+definitionOfDone:
+  resultType: phase-3-return-control-gate-enforcement
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-26-us025-rf007-return-control-binding-storyline.md
+    - docs/artifacts/2026-04-26-us025-rf007-return-control-binding-forge-story.yaml
+    - docs/artifacts/2026-04-26-us025-rf007-return-control-binding-implementation-handoff.md
+    - docs/artifacts/2026-04-26-us025-rf007-return-control-binding-definition-of-done.md
+  doneStatement: >
+    Done means return-control cannot resume a HITL wait from an invalid
+    phase/action, mismatched session, and stale page client, while valid active
+    tab resume actions still work and all tests pass.

@@ -396,7 +396,8 @@ flowchart TD
   H --> I[complete or fail]
 ```
 
-**Path details**
+### **Path details**
+
 - **Entry point:** `src/cli/index.ts` `workflow` command, or webhook/MCP run
 - **Schema parse:** `src/orchestrator/loader.ts` → `src/workflow/types.ts`
 - **Runtime branch:** direct path unless YAML `mode: agentic`
@@ -424,7 +425,8 @@ flowchart TD
   G --> K[complete_workflow]
 ```
 
-**Path details**
+### **Path details**
+
 - **Entry point:** YAML workflow with `mode: agentic`
 - **Schema parse:** same loader/schema boundary
 - **Runtime branch:** orchestrator loop instead of direct engine
@@ -917,4 +919,3 @@ These are discovery points only, not implementation directives.
 ---
 
 **Discovery conclusion:** the application has a real kernel, but it is split between a deterministic direct engine and a separate agentic planner. The correct next move is to strengthen the direct kernel with explicit gates and validation, then quarantine or retire the agentic outer planner only after those gates are proven by tests and live traces.
-

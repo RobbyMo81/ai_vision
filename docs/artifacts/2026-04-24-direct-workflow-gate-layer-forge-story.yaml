@@ -5,7 +5,7 @@ status: proposed
 trackerRow: RF-004
 sourceArtifacts:
   - docs/architecture/as-built_execution_atlas.md
-  - docs/artifacts/Discovery_mode-agentic.md
+  - docs/debriefs/Discovery_mode-agentic.md
   - src/workflow/engine.ts
   - src/session/hitl.ts
   - src/ui/server.ts

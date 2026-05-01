@@ -1,3 +1,7 @@
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
+
 let workflowEngine: import('./engine').WorkflowEngine;
 
 const mockWriter = {
@@ -23,10 +27,30 @@ const mockSessionManager = {
   currentUrl: jest.fn(),
   getPage: jest.fn(),
   navigate: jest.fn(),
+  click: jest.fn(),
   type: jest.fn(),
+  extractCookies: jest.fn(),
+  syncActivePage: jest.fn(),
   startScreenshotTimer: jest.fn(),
   stopScreenshotTimer: jest.fn(),
   close: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockAutomationEngine = {
+  id: 'browser-use',
+  ready: true,
+  initialize: jest.fn(),
+  close: jest.fn(),
+  runTask: jest.fn(),
+  navigate: jest.fn(),
+  click: jest.fn(),
+  type: jest.fn(),
+  screenshot: jest.fn(),
+};
+
+const mockRegistry = {
+  get: jest.fn(() => ({ available: jest.fn().mockResolvedValue(true) })),
+  getReady: jest.fn(async () => mockAutomationEngine),
 };
 
 const mockTelemetry = {
@@ -67,6 +91,10 @@ jest.mock('../session/manager', () => ({
 
 jest.mock('../session/hitl', () => ({
   hitlCoordinator: mockHitlCoordinator,
+}));
+
+jest.mock('../engines/registry', () => ({
+  registry: mockRegistry,
 }));
 
 jest.mock('../content/gemini-writer', () => ({
@@ -117,6 +145,9 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
     mockSessionManager.navigate.mockRejectedValue(new Error('unexpected fallback step executed'));
     mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
     mockSessionManager.close.mockResolvedValue(undefined);
     mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
     mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
@@ -125,6 +156,12 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
       text: 'Generated post body',
       platform: 'x',
       model: 'gemini-test',
+    });
+    mockAutomationEngine.runTask.mockResolvedValue({
+      success: true,
+      output: 'ok',
+      screenshots: [],
+      durationMs: 5,
     });
   });
 
@@ -523,6 +560,1926 @@ describe('workflowEngine US-023 HITL state publication', () => {
       expect.objectContaining({
         phase: 'error',
         error: 'Gemini failed',
+      }),
+    );
+  });
+});
+
+describe('workflowEngine US-026 approval gate before side effects', () => {
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockAutomationEngine.runTask.mockResolvedValue({
+      success: true,
+      output: 'agent ok',
+      screenshots: [],
+      durationMs: 7,
+    });
+  });
+
+  it('publishes hitl_qa approve_step and blocks a protected click until approval', async () => {
+    const callOrder: string[] = [];
+    mockHitlCoordinator.requestQaPause.mockImplementation(async () => {
+      callOrder.push('approval_wait');
+      expect(mockSessionManager.click).not.toHaveBeenCalled();
+    });
+    mockSessionManager.click.mockImplementation(async () => {
+      callOrder.push('click');
+    });
+
+    const definition = {
+      id: 'us026-click',
+      name: 'US-026 protected click',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['submit_step'],
+      },
+      params: {},
+      steps: [
+        {
+          type: 'click' as const,
+          id: 'submit_step',
+          description: 'Submit Draft',
+          selector: '#submit',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-approval-1');
+
+    expect(result.success).toBe(true);
+    expect(callOrder).toEqual(['approval_wait', 'click']);
+    expect(mockHitlCoordinator.emit).toHaveBeenCalledWith(
+      'phase_changed',
+      expect.objectContaining({
+        phase: 'hitl_qa',
+        hitlAction: 'approve_step',
+        currentStep: 'submit_step',
+        hitlReason: 'Approval required before protected step: Submit Draft',
+      }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.gate.approval.required', stepId: 'submit_step' }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.gate.approval.waiting', stepId: 'submit_step' }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.gate.approval.approved', stepId: 'submit_step' }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.gate.approval.consumed', stepId: 'submit_step' }),
+    );
+  });
+
+  it('executes an unprotected click without an approval pause', async () => {
+    const definition = {
+      id: 'us026-unprotected',
+      name: 'US-026 unprotected click',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['agent_task'],
+      },
+      params: {},
+      steps: [
+        {
+          type: 'click' as const,
+          id: 'plain_click',
+          selector: '#continue',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-approval-2');
+
+    expect(result.success).toBe(true);
+    expect(mockHitlCoordinator.requestQaPause).not.toHaveBeenCalled();
+    expect(mockSessionManager.click).toHaveBeenCalledWith('#continue');
+  });
+
+  it('consumes approval after a protected step and requires a new approval for the next protected step', async () => {
+    const definition = {
+      id: 'us026-consume',
+      name: 'US-026 consumed approval',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['click'],
+      },
+      params: {},
+      steps: [
+        { type: 'click' as const, id: 'first_click', selector: '#first' },
+        { type: 'click' as const, id: 'second_click', selector: '#second' },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-approval-3');
+
+    expect(result.success).toBe(true);
+    expect(mockHitlCoordinator.requestQaPause).toHaveBeenCalledTimes(2);
+    const consumedEvents = mockTelemetry.emit.mock.calls.filter(
+      ([event]) => event.name === 'workflow.gate.approval.consumed',
+    );
+    expect(consumedEvents).toHaveLength(2);
+  });
+
+  it('scopes approval to one run and requires approval again on the next run', async () => {
+    const definition = {
+      id: 'us026-run-scope',
+      name: 'US-026 approval scope',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['protected_click'],
+      },
+      params: {},
+      steps: [
+        { type: 'click' as const, id: 'protected_click', selector: '#submit' },
+      ],
+    };
+
+    await workflowEngine.run(definition, {}, 'sess-approval-4a');
+    await workflowEngine.run(definition, {}, 'sess-approval-4b');
+
+    expect(mockHitlCoordinator.requestQaPause).toHaveBeenCalledTimes(2);
+  });
+
+  it('prevents protected agent_task steps from reaching the worker before approval', async () => {
+    const callOrder: string[] = [];
+    mockHitlCoordinator.requestQaPause.mockImplementation(async () => {
+      callOrder.push('approval_wait');
+      expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+    });
+    mockAutomationEngine.runTask.mockImplementation(async () => {
+      callOrder.push('agent_task');
+      return {
+        success: true,
+        output: 'agent ok',
+        screenshots: [],
+        durationMs: 7,
+      };
+    });
+
+    const definition = {
+      id: 'us026-agent-task',
+      name: 'US-026 protected agent task',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['agent_task'],
+      },
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'publish_agent_step',
+          prompt: 'Navigate and submit the draft',
+          engine: 'browser-use' as const,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-approval-5');
+
+    expect(result.success).toBe(true);
+    expect(callOrder).toEqual(['approval_wait', 'agent_task']);
+    expect(mockRegistry.getReady).toHaveBeenCalledWith('browser-use');
+  });
+});
+
+describe('workflowEngine US-027 content output validation gate', () => {
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
+    mockAutomationEngine.runTask.mockResolvedValue({
+      success: true,
+      output: 'agent ok',
+      screenshots: [],
+      durationMs: 7,
+    });
+  });
+
+  it('generate_content empty body fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: '',
+      platform: 'x',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-empty-body',
+      name: 'US-027 empty body validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(result.error).toContain('post_body');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content whitespace-only body fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: '   \n\t  ',
+      platform: 'x',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-whitespace-body',
+      name: 'US-027 whitespace body validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content body with unresolved placeholder fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'Post about {{unresolved_topic}} here.',
+      platform: 'x',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-placeholder-body',
+      name: 'US-027 placeholder body validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(result.error).toContain('post_body');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content body containing TODO fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'TODO: write something here',
+      platform: 'x',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-todo-body',
+      name: 'US-027 TODO body validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content missing required title fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'Valid body content here about ai-vision workflow gates.',
+      // title is absent — writer did not generate one
+      platform: 'reddit',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-missing-title',
+      name: 'US-027 missing title validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'reddit' as const,
+          outputKey: 'post_body',
+          outputTitleKey: 'post_title',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(result.error).toContain('post_title');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content invalid required title fails fast', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'Valid body content here about ai-vision workflow gates.',
+      title: '[Generated Title Here]',
+      platform: 'reddit',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-invalid-title',
+      name: 'US-027 invalid title validation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'reddit' as const,
+          outputKey: 'post_body',
+          outputTitleKey: 'post_title',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Content validation failed');
+    expect(result.error).toContain('post_title');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('preflight-provided invalid output fails before generation skip', async () => {
+    process.env.AI_VISION_UI_PORT = '3010';
+    // Bootstrap writes invalid content into outputs
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'TODO',
+      platform: 'reddit',
+      model: 'gemini-test',
+    });
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+
+    const definition = {
+      id: 'post_to_reddit',
+      name: 'Preflight invalid content test',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_reddit_body',
+          topic: 'Test topic',
+          platform: 'reddit' as const,
+          outputKey: 'reddit_post_text',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { topic: 'Test topic' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Preflight content validation failed');
+    expect(result.error).toContain('reddit_post_text');
+    // Bootstrap ran the writer once; generate_content step must NOT call it again
+    expect(mockWriter.writePost).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed' }),
+    );
+  });
+
+  it('downstream unresolved placeholder in agent_task fails before registry.getReady', async () => {
+    const definition = {
+      id: 'us027-downstream-agent',
+      name: 'US-027 downstream placeholder agent_task',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'post_content',
+          prompt: 'Post this content: {{unresolved_output_key}}',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unresolved placeholders');
+    expect(result.error).toContain('post_content');
+    expect(mockRegistry.getReady).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.output_validation.failed',
+        stepId: 'post_content',
+      }),
+    );
+  });
+
+  it('downstream unresolved placeholder in fill fails before browser interaction', async () => {
+    const definition = {
+      id: 'us027-downstream-fill',
+      name: 'US-027 downstream placeholder fill',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'fill' as const,
+          id: 'fill_content',
+          selector: '#textarea',
+          text: 'Content: {{missing_body_output}}',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('unresolved placeholders');
+    expect(result.error).toContain('fill_content');
+    expect(mockSessionManager.getPage).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.output_validation.failed',
+        stepId: 'fill_content',
+      }),
+    );
+  });
+
+  it('valid ai-vision body and title pass validation and complete successfully', async () => {
+    mockWriter.writePost.mockResolvedValueOnce({
+      text: 'ai-vision HITL workflow gates are active and protecting all browser side effects from unverified actions.',
+      title: 'ai-vision Workflow Update: HITL Approval Gates Active',
+      platform: 'reddit',
+      model: 'gemini-test',
+    });
+
+    const definition = {
+      id: 'us027-valid-content',
+      name: 'US-027 valid content passes',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'ai-vision workflow update',
+          platform: 'reddit' as const,
+          outputKey: 'post_body',
+          outputTitleKey: 'post_title',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(true);
+    expect(result.outputs.post_body).toBe(
+      'ai-vision HITL workflow gates are active and protecting all browser side effects from unverified actions.',
+    );
+    expect(result.outputs.post_title).toBe('ai-vision Workflow Update: HITL Approval Gates Active');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.output_validation.passed',
+        stepId: 'write_post',
+      }),
+    );
+    expect(mockTelemetry.emit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.output_validation.failed' }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-030 / RF-012 — Generalized precondition/skip gate
+// ---------------------------------------------------------------------------
+
+describe('workflowEngine US-030 precondition skip gate', () => {
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
+    mockSessionManager.navigate.mockResolvedValue(undefined);
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockHitlCoordinator.requestTakeover.mockResolvedValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
+    (mockPage as { waitForTimeout?: jest.Mock }).waitForTimeout = jest.fn().mockResolvedValue(undefined);
+    mockWriter.writePost.mockResolvedValue({
+      text: 'Generated content body',
+      platform: 'x',
+      model: 'gemini-test',
+    });
+  });
+
+  it('authenticated human_takeover with authVerification skips before HITL wait publication', async () => {
+    mockSessionManager.currentUrl.mockResolvedValue('https://www.reddit.com/r/test/submit');
+
+    const definition = {
+      id: 'us030-auth-skip',
+      name: 'US-030 auth skip',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'human_takeover' as const,
+          id: 'reddit_login',
+          reason: 'Verify Reddit login',
+          authVerification: {
+            urlIncludes: ['reddit.com/r/test/submit'],
+          },
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(mockHitlCoordinator.requestTakeover).not.toHaveBeenCalled();
+    expect(result.stepResults[0].success).toBe(true);
+    expect(result.stepResults[0].output).toContain('auth_verification_satisfied');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.precondition.skipped', stepId: 'reddit_login' }),
+    );
+    expect(mockHitlCoordinator.emit).not.toHaveBeenCalledWith(
+      'phase_changed',
+      expect.objectContaining({ hitlAction: 'verify_authentication' }),
+    );
+  });
+
+  it('unauthenticated human_takeover with authVerification still publishes HITL wait', async () => {
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/login');
+
+    const definition = {
+      id: 'us030-auth-run',
+      name: 'US-030 auth run',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'human_takeover' as const,
+          id: 'reddit_login',
+          reason: 'Verify Reddit login',
+          authVerification: {
+            urlIncludes: ['reddit.com/r/test/submit'],
+          },
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(mockHitlCoordinator.requestTakeover).toHaveBeenCalled();
+    expect(mockHitlCoordinator.emit).toHaveBeenCalledWith(
+      'phase_changed',
+      expect.objectContaining({ phase: 'awaiting_human', hitlAction: 'verify_authentication' }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.precondition.evaluated', stepId: 'reddit_login' }),
+    );
+  });
+
+  it('generate_content skips writer invocation when valid output already exists', async () => {
+    mockPage.evaluate.mockResolvedValue('ai-vision valid seeded content');
+
+    const definition = {
+      id: 'us030-generate-skip',
+      name: 'US-030 generate skip',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'extract' as const,
+          id: 'seed_output',
+          instruction: 'seed output',
+          outputKey: 'post_body',
+        },
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(mockWriter.writePost).not.toHaveBeenCalled();
+    expect(result.stepResults[1].success).toBe(true);
+    expect(result.stepResults[1].output).toContain('preflight_output_present');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.precondition.skipped', stepId: 'write_post' }),
+    );
+  });
+
+  it('generate_content fails when preflight output exists but is invalid', async () => {
+    mockPage.evaluate.mockResolvedValue('TODO');
+
+    const definition = {
+      id: 'us030-generate-fail',
+      name: 'US-030 generate invalid preflight',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'extract' as const,
+          id: 'seed_invalid_output',
+          instruction: 'seed invalid output',
+          outputKey: 'post_body',
+        },
+        {
+          type: 'generate_content' as const,
+          id: 'write_post',
+          topic: 'Test topic',
+          platform: 'x' as const,
+          outputKey: 'post_body',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Preflight content validation failed');
+    expect(mockWriter.writePost).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.precondition.failed', stepId: 'write_post' }),
+    );
+  });
+
+  it('navigate skips when current URL already matches the target URL', async () => {
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
+
+    const definition = {
+      id: 'us030-navigate-skip',
+      name: 'US-030 navigate skip',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'navigate' as const,
+          id: 'already_on_page',
+          url: 'https://example.test/page',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(mockSessionManager.navigate).not.toHaveBeenCalled();
+    expect(result.stepResults[0].success).toBe(true);
+    expect(result.stepResults[0].output).toContain('already_at_target_url');
+  });
+
+  it('navigate runs when current URL does not match the target URL', async () => {
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/landing');
+
+    const definition = {
+      id: 'us030-navigate-run',
+      name: 'US-030 navigate run',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'navigate' as const,
+          id: 'go_to_page',
+          url: 'https://example.test/page',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(true);
+    expect(mockSessionManager.navigate).toHaveBeenCalledWith('https://example.test/page', 'load');
+  });
+
+  it('precondition failure telemetry is emitted for unresolved downstream placeholders', async () => {
+    const definition = {
+      id: 'us030-unresolved-placeholder',
+      name: 'US-030 unresolved placeholder telemetry',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'click' as const,
+          id: 'click_missing',
+          selector: '#{{missing_selector}}',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition);
+
+    expect(result.success).toBe(false);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.precondition.failed', stepId: 'click_missing' }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-028 / RF-010 — Reddit duplicate-check deterministic evidence gate
+// ---------------------------------------------------------------------------
+
+const VALID_DUPLICATE_EVIDENCE = [
+  'EXTRACTED_TITLES: ["Old Post One","Another Post Title"]',
+  'OVERLAP_SCORES: [{"title":"Old Post One","score":0.05},{"title":"Another Post Title","score":0.10}]',
+  'DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND',
+].join('\n');
+
+const DUPLICATE_RISK_EVIDENCE = [
+  'EXTRACTED_TITLES: ["ai-vision Workflow Update: HITL Approval Gates Active"]',
+  'OVERLAP_SCORES: [{"title":"ai-vision Workflow Update: HITL Approval Gates Active","score":0.85}]',
+  'DUPLICATE_CHECK_RESULT: DUPLICATE_RISK',
+  'MATCHING_TITLE: ai-vision Workflow Update: HITL Approval Gates Active',
+].join('\n');
+
+const DUPLICATE_CHECK_THEN_SUBMIT_STEPS = [
+  {
+    type: 'agent_task' as const,
+    id: 'check_duplicate_reddit_post',
+    engine: 'browser-use' as const,
+    rawPrompt: true as const,
+    prompt: 'Duplicate check for {{post_title}} on r/{{subreddit}}',
+  },
+  {
+    type: 'agent_task' as const,
+    id: 'submit_reddit_post',
+    engine: 'browser-use' as const,
+    prompt: 'Click Post and confirm publish',
+  },
+];
+
+function loadLiveWorkflowPrompt(stepId: string): string {
+  const workflowPath = path.resolve(__dirname, '../../workflows/post_to_reddit.yaml');
+  const doc = yaml.load(fs.readFileSync(workflowPath, 'utf8')) as {
+    steps?: Array<{ id?: string; prompt?: string }>;
+  };
+  const step = doc.steps?.find(s => s.id === stepId);
+  if (!step || typeof step.prompt !== 'string') {
+    throw new Error(`Missing prompt for step '${stepId}' in workflows/post_to_reddit.yaml`);
+  }
+  return step.prompt;
+}
+
+const LIVE_SUBMIT_REDDIT_PROMPT = loadLiveWorkflowPrompt('submit_reddit_post');
+
+describe('workflowEngine US-028 Reddit duplicate-check evidence gate', () => {
+  let currentUrl = 'https://www.reddit.com/r/test/submit';
+
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    currentUrl = 'https://www.reddit.com/r/test/submit';
+    mockSessionManager.currentUrl.mockImplementation(async () => currentUrl);
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
+    mockAutomationEngine.runTask.mockResolvedValue({
+      success: true,
+      output: 'agent ok',
+      screenshots: [],
+      durationMs: 7,
+    });
+  });
+
+  it('valid NO_DUPLICATE_FOUND evidence with extracted titles and overlap scores allows submit path', async () => {
+    // check step returns valid evidence; submit step succeeds
+    mockAutomationEngine.runTask
+      .mockResolvedValueOnce({ success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 })
+      .mockImplementationOnce(async () => {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/new-ai-vision-post/';
+        return {
+          success: true,
+          output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/new-ai-vision-post/',
+          screenshots: [],
+          durationMs: 10,
+        };
+      });
+
+    const definition = {
+      id: 'us028-valid-no-duplicate',
+      name: 'US-028 valid no-duplicate allows submit',
+      mode: 'direct' as const,
+      params: { post_title: { type: 'string' as const }, subreddit: { type: 'string' as const } },
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'New ai-vision Post', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(2);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_parsed' }),
+    );
+    expect(mockTelemetry.emit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+    expect(mockTelemetry.emit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.duplicate_risk' }),
+    );
+  });
+
+  it('parsed evidence is written to workflow outputs', async () => {
+    mockAutomationEngine.runTask
+      .mockResolvedValueOnce({ success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 })
+      .mockImplementationOnce(async () => {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/new-post/';
+        return {
+          success: true,
+          output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/new-post/',
+          screenshots: [],
+          durationMs: 10,
+        };
+      });
+
+    const definition = {
+      id: 'us028-outputs',
+      name: 'US-028 evidence stored in outputs',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'New Post', subreddit: 'test' });
+
+    expect(result.outputs['reddit_duplicate_check_result']).toBe('NO_DUPLICATE_FOUND');
+    expect(result.outputs['reddit_duplicate_check_evidence']).toContain('EXTRACTED_TITLES');
+    expect(result.outputs['reddit_duplicate_matching_title']).toBeUndefined();
+  });
+
+  it('DUPLICATE_RISK evidence blocks submit_reddit_post', async () => {
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: DUPLICATE_RISK_EVIDENCE,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us028-duplicate-risk',
+      name: 'US-028 duplicate risk blocks submit',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'ai-vision Workflow Update: HITL Approval Gates Active', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('duplicate risk');
+    // submit step must not have been called
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.duplicate_risk' }),
+    );
+  });
+
+  it('duplicate risk evidence stores matching title in outputs', async () => {
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: DUPLICATE_RISK_EVIDENCE,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    // Only the check step — no submit step — so DUPLICATE_RISK is stored but doesn't fail yet
+    const definition = {
+      id: 'us028-matching-title-stored',
+      name: 'US-028 matching title stored in outputs',
+      mode: 'direct' as const,
+      params: {},
+      steps: [DUPLICATE_CHECK_THEN_SUBMIT_STEPS[0]],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'ai-vision Workflow Update: HITL Approval Gates Active', subreddit: 'test' });
+
+    // Check step succeeds — DUPLICATE_RISK is only rejected at the submit gate
+    expect(result.success).toBe(true);
+    expect(result.outputs['reddit_duplicate_check_result']).toBe('DUPLICATE_RISK');
+    expect(result.outputs['reddit_duplicate_matching_title']).toBe(
+      'ai-vision Workflow Update: HITL Approval Gates Active',
+    );
+  });
+
+  it('missing duplicate evidence blocks submit_reddit_post', async () => {
+    const definition = {
+      id: 'us028-missing-evidence',
+      name: 'US-028 missing evidence blocks submit',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'submit_reddit_post',
+          engine: 'browser-use' as const,
+          prompt: 'Click Post and confirm publish',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('no duplicate-check evidence');
+    expect(mockRegistry.getReady).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+  });
+
+  it('missing extracted titles blocks submit_reddit_post', async () => {
+    const badEvidence = [
+      'OVERLAP_SCORES: [{"title":"Old Post","score":0.05}]',
+      'DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND',
+    ].join('\n');
+
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: badEvidence,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us028-missing-titles',
+      name: 'US-028 missing extracted titles',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1); // check step ran, submit did not
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+  });
+
+  it('missing overlap scores blocks submit_reddit_post', async () => {
+    const badEvidence = [
+      'EXTRACTED_TITLES: ["Old Post One"]',
+      'DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND',
+    ].join('\n');
+
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: badEvidence,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us028-missing-scores',
+      name: 'US-028 missing overlap scores',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+  });
+
+  it('score >= 0.70 with NO_DUPLICATE_FOUND blocks submit_reddit_post', async () => {
+    const highScoreEvidence = [
+      'EXTRACTED_TITLES: ["ai-vision Workflow Update: HITL Approval Gates Active"]',
+      'OVERLAP_SCORES: [{"title":"ai-vision Workflow Update: HITL Approval Gates Active","score":0.72}]',
+      'DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND',
+    ].join('\n');
+
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: highScoreEvidence,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us028-high-score-no-duplicate',
+      name: 'US-028 high score contradicts NO_DUPLICATE_FOUND',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'ai-vision Workflow Update: HITL Approval Gates Active', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('0.70');
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+  });
+
+  it('invalid score outside 0..1 blocks submit_reddit_post', async () => {
+    const invalidScoreEvidence = [
+      'EXTRACTED_TITLES: ["Some Post Title"]',
+      'OVERLAP_SCORES: [{"title":"Some Post Title","score":1.5}]',
+      'DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND',
+    ].join('\n');
+
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: true,
+      output: invalidScoreEvidence,
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us028-invalid-score',
+      name: 'US-028 invalid score range',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('range');
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.reddit_duplicate_check.evidence_failed' }),
+    );
+  });
+
+  it('duplicate-check telemetry emits evidence_parsed for valid output', async () => {
+    mockAutomationEngine.runTask
+      .mockResolvedValueOnce({ success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 })
+      .mockImplementationOnce(async () => {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/new-post/';
+        return {
+          success: true,
+          output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/new-post/',
+          screenshots: [],
+          durationMs: 5,
+        };
+      });
+
+    const definition = {
+      id: 'us028-telemetry-parsed',
+      name: 'US-028 telemetry evidence_parsed',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    await workflowEngine.run(definition, { post_title: 'New Post', subreddit: 'test' });
+
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.reddit_duplicate_check.evidence_parsed',
+        stepId: 'check_duplicate_reddit_post',
+      }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-029 / RF-011 — Browser side-effect/postcondition gate
+// ---------------------------------------------------------------------------
+
+describe('workflowEngine US-029 browser postcondition gate', () => {
+  let currentUrl = 'https://www.reddit.com/r/test/submit';
+
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    currentUrl = 'https://www.reddit.com/r/test/submit';
+    mockSessionManager.currentUrl.mockImplementation(async () => currentUrl);
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
+
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'prepare_and_focus_body' || options?.stepId === 'draft_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return {
+          success: true,
+          output: 'DRAFT_TITLE_TYPED: Test Title\nDRAFT_BODY_FOCUSED: YES',
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/test-title/';
+        return {
+          success: true,
+          output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/test-title/',
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+  });
+
+  it('submit_reddit_post passes when current URL and output both show a comments URL', async () => {
+    const definition = {
+      id: 'us029-submit-pass',
+      name: 'US-029 submit postcondition pass',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.browser_postcondition.passed', stepId: 'submit_reddit_post' }),
+    );
+  });
+
+  it('submit_reddit_post fails when current URL remains on /submit', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        return { success: true, output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/test-title/', screenshots: [], durationMs: 5 };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-submit-url-fail',
+      name: 'US-029 submit URL fail',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('expected_url_missing');
+  });
+
+  it('submit_reddit_post fails when output lacks comments URL evidence', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/test-title/';
+        return { success: true, output: 'Post submitted successfully', screenshots: [], durationMs: 5 };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-submit-output-fail',
+      name: 'US-029 submit output evidence fail',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('comments_url_output_missing');
+  });
+
+  it('prepare_and_focus_body passes when current URL stays on the subreddit submit page', async () => {
+    const definition = {
+      id: 'us029-draft-pass',
+      name: 'US-029 draft postcondition pass',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'prepare_and_focus_body',
+          engine: 'browser-use' as const,
+          prompt: 'Draft the reddit post',
+          expectedUrlAfter: '/r/{{subreddit}}/submit',
+          requiredOutputIncludes: ['DRAFT_TITLE_TYPED: {{post_title}}', 'DRAFT_BODY_FOCUSED: YES'],
+          postconditionRequired: true,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.browser_postcondition.passed', stepId: 'prepare_and_focus_body' }),
+    );
+  });
+
+  it('prepare_and_focus_body fails when current URL leaves the subreddit submit page', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'prepare_and_focus_body') {
+        mockSessionManager.currentUrl.mockImplementation(async () => 'https://www.reddit.com/r/test/comments/abc123/test-title/');
+        return {
+          success: true,
+          output: 'DRAFT_TITLE_TYPED: Test Title\nDRAFT_BODY_FOCUSED: YES',
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-draft-url-fail',
+      name: 'US-029 draft URL fail',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'prepare_and_focus_body',
+          engine: 'browser-use' as const,
+          prompt: 'Draft the reddit post',
+          expectedUrlAfter: '/r/{{subreddit}}/submit',
+          requiredOutputIncludes: ['DRAFT_TITLE_TYPED: {{post_title}}', 'DRAFT_BODY_FOCUSED: YES'],
+          postconditionRequired: true,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('expected_url_missing');
+  });
+
+  it('requiredOutputIncludes missing marker fails postcondition', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'prepare_and_focus_body') {
+        return {
+          success: true,
+          output: 'DRAFT_TITLE_TYPED: Test Title',
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-required-output-fail',
+      name: 'US-029 required output missing',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'prepare_and_focus_body',
+          engine: 'browser-use' as const,
+          prompt: 'Draft the reddit post',
+          expectedUrlAfter: '/r/{{subreddit}}/submit',
+          requiredOutputIncludes: ['DRAFT_TITLE_TYPED: {{post_title}}', 'DRAFT_BODY_FOCUSED: YES'],
+          postconditionRequired: true,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('required_output_missing');
+  });
+
+  it('postcondition failure prevents confirm_reddit_post_visible from running', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        return { success: true, output: 'Post submitted successfully', screenshots: [], durationMs: 5 };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-confirmation-blocked',
+      name: 'US-029 postcondition blocks downstream confirmation',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        ...DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+        {
+          type: 'human_takeover' as const,
+          id: 'confirm_reddit_post_visible',
+          mode: 'confirm_completion' as const,
+          reason: 'Confirm published reddit post',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(mockHitlCoordinator.requestCompletionConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('postcondition failure telemetry is emitted', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        return { success: true, output: 'Post submitted successfully', screenshots: [], durationMs: 5 };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us029-telemetry-fail',
+      name: 'US-029 telemetry fail',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.browser_postcondition.failed', stepId: 'submit_reddit_post' }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-031 / RF-013 — agent_task side-effect safety boundary
+// ---------------------------------------------------------------------------
+
+describe('workflowEngine US-031 agent_task side-effect safety gate', () => {
+  beforeAll(() => {
+    workflowEngine = require('./engine').workflowEngine;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.AI_VISION_UI_PORT;
+    mockSessionManager.start.mockResolvedValue(undefined);
+    mockSessionManager.currentUrl.mockResolvedValue('https://example.test/page');
+    mockSessionManager.getPage.mockResolvedValue(mockPage);
+    mockSessionManager.click.mockResolvedValue(undefined);
+    mockSessionManager.extractCookies.mockResolvedValue([]);
+    mockSessionManager.syncActivePage.mockResolvedValue(undefined);
+    mockSessionManager.close.mockResolvedValue(undefined);
+    mockSessionManager.startScreenshotTimer.mockReturnValue(undefined);
+    mockSessionManager.stopScreenshotTimer.mockReturnValue(undefined);
+    mockHitlCoordinator.requestQaPause.mockResolvedValue(undefined);
+    mockPage.evaluate.mockResolvedValue('Rendered page body');
+    mockAutomationEngine.runTask.mockResolvedValue({
+      success: true,
+      output: 'agent ok',
+      screenshots: [],
+      durationMs: 5,
+    });
+  });
+
+  it('blocks a login-intent agent_task before worker dispatch when no approval evidence is present', async () => {
+    const definition = {
+      id: 'us031-login-no-approval',
+      name: 'US-031 login no approval',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'login_step',
+          engine: 'browser-use' as const,
+          prompt: 'Login to the site using the saved credentials',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("blocked");
+    expect(result.error).toContain("login");
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.blocked',
+        stepId: 'login_step',
+      }),
+    );
+  });
+
+  it('allows a login-intent agent_task after approval evidence is recorded', async () => {
+    const definition = {
+      id: 'us031-login-with-approval',
+      name: 'US-031 login with approval',
+      mode: 'direct' as const,
+      permissions: {
+        require_human_approval_before: ['login_step'],
+      },
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'login_step',
+          engine: 'browser-use' as const,
+          prompt: 'Login to the site using the saved credentials',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(true);
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
+    expect(mockHitlCoordinator.requestQaPause).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.allowed',
+        stepId: 'login_step',
+      }),
+    );
+  });
+
+  it('classifies the exact live submit_reddit_post prompt as dominant submit intent with matched fill+submit signals', async () => {
+    const definition = {
+      id: 'us032-live-submit-dominance',
+      name: 'US-032 live prompt dominant intent',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'live_submit_prompt_step',
+          engine: 'browser-use' as const,
+          prompt: LIVE_SUBMIT_REDDIT_PROMPT,
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {
+      subreddit: 'test',
+      post_title: 'Test Title',
+      post_text: 'Body',
+      reddit_duplicate_check_evidence: VALID_DUPLICATE_EVIDENCE,
+      reddit_duplicate_check_result: 'NO_DUPLICATE_FOUND',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.evaluated',
+        stepId: 'live_submit_prompt_step',
+        details: expect.objectContaining({
+          intentKind: 'submit',
+          dominantIntentSource: 'ranked_signals',
+          selectedIntent: 'submit',
+          matchedSignals: expect.arrayContaining(['fill', 'submit']),
+        }),
+      }),
+    );
+  });
+
+  it('classifies submit plus fallback fill wording as submit', async () => {
+    const definition = {
+      id: 'us032-submit-over-fill',
+      name: 'US-032 submit over fill',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'submit_mixed_prompt',
+          engine: 'browser-use' as const,
+          prompt:
+            'If the title or body fields are empty, fill them first, then submit the post once and stop.',
+        },
+      ],
+    };
+
+    await workflowEngine.run(definition, {
+      reddit_duplicate_check_evidence: VALID_DUPLICATE_EVIDENCE,
+      reddit_duplicate_check_result: 'NO_DUPLICATE_FOUND',
+    });
+
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.evaluated',
+        stepId: 'submit_mixed_prompt',
+        details: expect.objectContaining({
+          intentKind: 'submit',
+          matchedSignals: expect.arrayContaining(['fill', 'submit']),
+        }),
+      }),
+    );
+  });
+
+  it('classifies duplicate-check read-only prompt as read_only', async () => {
+    const definition = {
+      id: 'us032-read-only-duplicate-check',
+      name: 'US-032 read-only duplicate check',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'duplicate_check_step',
+          engine: 'browser-use' as const,
+          prompt: 'Duplicate check before posting to reddit r/test. Read visible titles and summarize overlap scores.',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(true);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.evaluated',
+        stepId: 'duplicate_check_step',
+        details: expect.objectContaining({
+          intentKind: 'read_only',
+          dominantIntentSource: 'read_only_fallback',
+          selectedIntent: 'read_only',
+          matchedSignals: expect.arrayContaining(['read_only']),
+        }),
+      }),
+    );
+  });
+
+  it('blocks a posting-style agent_task before worker dispatch when content output is empty', async () => {
+    const definition = {
+      id: 'us031-post-empty-content',
+      name: 'US-031 post empty content',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'post_content_step',
+          engine: 'browser-use' as const,
+          prompt: 'Publish the article to the blog',
+        },
+      ],
+    };
+
+    // pre-generated content output is present but empty
+    const result = await workflowEngine.run(definition, { reddit_post_text: '' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blocked');
+    expect(result.error).toContain('reddit_post_text');
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.blocked',
+        stepId: 'post_content_step',
+      }),
+    );
+  });
+
+  it('blocks a posting-style agent_task before worker dispatch when content output is invalid', async () => {
+    const definition = {
+      id: 'us031-post-invalid-content',
+      name: 'US-031 post invalid content',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'publish_step',
+          engine: 'browser-use' as const,
+          prompt: 'Publish the generated content to reddit',
+        },
+      ],
+    };
+
+    // pre-generated content is a TODO placeholder
+    const result = await workflowEngine.run(definition, { reddit_post_text: 'TODO: write something meaningful' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blocked');
+    expect(result.error).toContain('reddit_post_text');
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+  });
+
+  it('blocks a Reddit submit-style agent_task when duplicate-check evidence is missing', async () => {
+    const definition = {
+      id: 'us031-reddit-no-evidence',
+      name: 'US-031 reddit no evidence',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'post_to_reddit',
+          engine: 'browser-use' as const,
+          prompt: 'Submit this post to the reddit subreddit by clicking the submit button',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blocked');
+    expect(result.error).toContain('duplicate-check evidence');
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.blocked',
+        stepId: 'post_to_reddit',
+      }),
+    );
+  });
+
+  it('blocks a Reddit submit-style agent_task when duplicate risk is present', async () => {
+    const definition = {
+      id: 'us031-reddit-duplicate-risk',
+      name: 'US-031 reddit duplicate risk',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'post_to_reddit',
+          engine: 'browser-use' as const,
+          prompt: 'Submit this post to the reddit subreddit by clicking the submit button',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {
+      reddit_duplicate_check_evidence: DUPLICATE_RISK_EVIDENCE,
+      reddit_duplicate_check_result: 'DUPLICATE_RISK',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('blocked');
+    expect(result.error).toContain('duplicate risk');
+    expect(mockAutomationEngine.runTask).not.toHaveBeenCalled();
+  });
+
+  it('routes a read-only agent_task normally without blocking', async () => {
+    const definition = {
+      id: 'us031-read-only',
+      name: 'US-031 read-only routes normally',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'check_page_step',
+          engine: 'browser-use' as const,
+          prompt: 'Check the current page status and summarize the results',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {});
+
+    expect(result.success).toBe(true);
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.allowed',
+        stepId: 'check_page_step',
+      }),
+    );
+  });
+
+  it('still applies browser postcondition validation after a protected agent_task executes', async () => {
+    let currentUrl = 'https://www.reddit.com/r/test/submit';
+    mockSessionManager.currentUrl.mockImplementation(async () => currentUrl);
+
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/comments/abc123/test-title/';
+        return {
+          success: true,
+          output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/test-title/',
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us031-postcondition',
+      name: 'US-031 postcondition still runs',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    // postcondition gate ran after submit
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.browser_postcondition.passed', stepId: 'submit_reddit_post' }),
+    );
+    // safety gate also ran
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.agent_task_side_effect.evaluated', stepId: 'submit_reddit_post' }),
+    );
+  });
+
+  it('emits blocked telemetry with intent details when safety gate blocks dispatch', async () => {
+    const definition = {
+      id: 'us031-blocked-telemetry',
+      name: 'US-031 blocked telemetry',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'auth_step',
+          engine: 'browser-use' as const,
+          prompt: 'Sign in to the portal with stored credentials',
+        },
+      ],
+    };
+
+    await workflowEngine.run(definition, {});
+
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.blocked',
+        stepId: 'auth_step',
+        details: expect.objectContaining({
+          intentKind: 'login',
+          check: 'approval',
+        }),
+      }),
+    );
+  });
+
+  it('emits allowed telemetry with intent details when safety gate permits dispatch', async () => {
+    const definition = {
+      id: 'us031-allowed-telemetry',
+      name: 'US-031 allowed telemetry',
+      mode: 'direct' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'scan_step',
+          engine: 'browser-use' as const,
+          prompt: 'Scan and extract all available data from the page',
+        },
+      ],
+    };
+
+    await workflowEngine.run(definition, {});
+
+    expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.allowed',
+        stepId: 'scan_step',
+        details: expect.objectContaining({
+          intentKind: 'read_only',
+        }),
+      }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task_side_effect.evaluated',
+        stepId: 'scan_step',
+        details: expect.objectContaining({
+          intentKind: 'read_only',
+          matchedSignals: expect.arrayContaining(['read_only']),
+        }),
       }),
     );
   });

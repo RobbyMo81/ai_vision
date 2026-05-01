@@ -2,7 +2,7 @@ id: US-020
 title: TSC crash diagnostic classification baseline
 storyType: forge-enhancement
 status: proposed
-sourceArtifact: docs/artifacts/tsc_crash_error_investigation.md
+sourceArtifact: docs/debriefs/tsc_crash_error_investigation.md
 objective: >
   Classify `tsc --noEmit` crash ownership across OS/kernel, Node/V8 runtime,
   and TypeScript checker layers, then emit a bug report with explicit
@@ -105,7 +105,7 @@ definitionOfDone:
   resultType: error-bug-report
   mandatoryArtifacts:
     - docs/artifacts/tsc-crash-forge-story.yaml
-    - docs/artifacts/tsc-crash-bug-report.md
+    - docs/debriefs/tsc-crash-bug-report.md
   doneStatement: >
     Done means the investigation ends with an explicit bug report that states the
     crash signature, records runtime and checker metrics, identifies the ruled-in
@@ -134,7 +134,7 @@ refactoringProcedures:
       output: code-level refactoring path
 
 bugReportTemplate:
-  path: docs/artifacts/tsc-crash-bug-report.md
+  path: docs/debriefs/tsc-crash-bug-report.md
   sections:
     - name: Observed crash signature
     - name: Environment baseline

@@ -1,0 +1,68 @@
+id: US-032
+tracker_id: RF-014
+title: Direct Workflow Gate Layer - Phase 10 agent_task Dominant Intent Classification Fix
+date: 2026-04-28
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-031: agent_task side-effect safety gate
+  source_artifacts:
+    - docs/debriefs/2026-04-28-us031-agent-task-dominant-intent-drift.md
+    - docs/artifacts/2026-04-28-us031-rf013-agent-task-side-effect-safety-implementation-handoff.md
+  current_gap: >
+    The live direct Reddit submit prompt mixes fallback fill wording with
+    dominant submit wording. The current classifier checks fill before submit,
+    so production pre-flight can classify the step as fill instead of submit.
+
+mission: >
+  Fix agent_task intent classification so dominant protected workflow intent
+  wins over lower-level fallback action text while preserving conservative
+  safety gates.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+  - workflows/post_to_reddit.yaml
+
+implementation_requirements:
+  - Update classifyAgentTaskSideEffect to collect all matched intent signals.
+  - Select dominant submit, publish, post, and final-click intent over fallback fill when both are present.
+  - Keep standalone fill prompts classified as fill.
+  - Keep standalone login prompts classified as login.
+  - Keep read-only prompts classified as read_only when no protected action is present.
+  - Keep Reddit duplicate evidence checks active for submit-style prompts.
+  - Keep content evidence checks active for posting-style prompts.
+  - Keep browser postcondition checks active after protected agent_task execution.
+  - Add regression coverage using the exact live submit_reddit_post prompt.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Temporary workflow patching.
+  - Python/browser-use internals.
+  - agent_task removal.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - live workflows/post_to_reddit.yaml submit_reddit_post prompt classifies as submit.
+  - submit plus fallback fill prompt classifies as submit.
+  - standalone fill prompt classifies as fill.
+  - standalone login prompt classifies as login.
+  - duplicate-check read-only prompt classifies as read_only.
+  - Reddit submit-style prompt still requires duplicate evidence.
+  - protected submit prompt still reaches browser postcondition validation after dispatch.
+  - classifier telemetry includes matched intent signals and selected dominant intent.
+  - existing US-026 through US-031 tests still pass.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-032 is complete when the production Reddit submit prompt classifies as
+  dominant submit intent, fallback fill wording no longer causes a fill-intent
+  block, safety gates remain conservative, governance is updated, and quality
+  gates pass.

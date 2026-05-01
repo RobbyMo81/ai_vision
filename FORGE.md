@@ -83,10 +83,17 @@ For every change in the categories above, contributors MUST:
 1. Link the change to a tracker row in `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`.
 2. Record implementation evidence (tests/typecheck/run artifacts).
 3. Write FORGE memory context/messages/discoveries for handoff continuity.
-4. Update `progress.txt` and `AGENTS.md` when behavior changes.
-5. Save all agent-generated explainers/reports under `docs/artifacts/` using date-prefixed filenames.
+4. Update `progress.txt` and the FORGE history archive when behavior changes.
+: Append full history entry to `/home/spoq/ai-vision/docs/history/forge_history.md` and append a library card row to `/home/spoq/ai-vision/docs/history/history_index.md`.
+5. Save Forge story package files and governed story deliverables under `docs/artifacts/` using date-prefixed filenames. Save non-story explainers, debriefs, investigations, traces, reports, quick references, and architecture notes under `docs/debriefs/`.
 6. For every engineering build handoff, provide the complete four-part package documented in `AGENTS.md`: a first-class Forge storyline, a compact YAML tracing story card when tracing is involved, an AI agent prompt that explicitly follows the Forge system and Forge build loop, and an explicit definition of done.
 7. **Deliver a Summary of Work** at the end of every completed story or task. The summary must state: what changed, which files were touched, what the acceptance criteria were, and the final validation result (typecheck exit code + test counts). This summary must appear in the agent's closing response and be recorded in `progress.txt`.
+
+## FORGE History Archiving SOP (Mandatory)
+
+Use `/home/spoq/ai-vision/docs/history/forge_history.md` for full story narratives.
+Use `/home/spoq/ai-vision/docs/history/history_index.md` for quick-reference library cards.
+Do not append long-form story history to `AGENTS.md`.
 
 Changes that bypass these obligations are out of policy.
 

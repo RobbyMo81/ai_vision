@@ -3,9 +3,9 @@ title: TSC crash layered remediation protocol
 storyType: forge-enhancement
 status: proposed
 sourceArtifacts:
-  - docs/artifacts/ts-memory-troubleshooting.md
-  - docs/artifacts/tsc_crash_error_investigation.md
-  - docs/artifacts/tsc-crash-bug-report.md
+  - docs/debriefs/ts-memory-troubleshooting.md
+  - docs/debriefs/tsc_crash_error_investigation.md
+  - docs/debriefs/tsc-crash-bug-report.md
   - docs/artifacts/tsc-crash-forge-story.yaml
 objective: >
   Turn the classified tsc crash diagnosis into an explicit remediation workflow

@@ -53,7 +53,9 @@ Review `ctx.contextStore` for any relevant entries:
 
 ### Step 0.6 — Read Supporting Files
 ```bash
-cat AGENTS.md            # institutional memory
+cat AGENTS.md            # active governance + operating rules
+cat /home/spoq/ai-vision/docs/history/forge_history.md
+cat /home/spoq/ai-vision/docs/history/history_index.md
 cat FORGE.md             # project conventions  
 cat ForgeMP/MEMORY_PROTOCOL.md  # DB governance rules
 ```
@@ -115,7 +117,8 @@ Rules:
 3. If the story has safety gates, implement and verify them.
 4. If blocked, document the blocker to the DB and stop cleanly.
 5. After implementation, run the quality gates.
-6. Update `AGENTS.md` with any patterns and gotchas discovered.
+6. Update FORGE history archive using the history SOP.
+: Append full narrative entry to `/home/spoq/ai-vision/docs/history/forge_history.md` and append a library card row to `/home/spoq/ai-vision/docs/history/history_index.md`.
 7. Complete the exit protocol (Section 5) before stopping.
 
 ---
@@ -185,16 +188,18 @@ await mem.exit({
 });
 ```
 
-Also update `AGENTS.md`:
+Also update FORGE history archive files:
 ```markdown
-## [US-XXX] — [Date]
-### Pattern
-[what you found]
-### Gotcha
-[what not to forget]
-### Files Modified
-[list]
+### [US-XXX] — [Story Title] — [Date]
+
+**Status:** PASS|FAIL|BLOCKED
+**Pattern:** [what you found]
+**Gotcha:** [what not to forget]
+**Files:** [list]
 ```
+
+Then append one quick-reference card row to:
+`/home/spoq/ai-vision/docs/history/history_index.md`
 
 Artifact policy (mandatory):
 - Save all agent-generated explainers/reports under `docs/artifacts/`.
@@ -242,22 +247,25 @@ Then stop cleanly. Do not force a partial implementation through quality gates.
 
 ---
 
-## SECTION 8 — AGENTS.md DISCIPLINE
+## SECTION 8 — HISTORY ARCHIVING DISCIPLINE
 
-After every story, append to the nearest `AGENTS.md`. If none exists, create it at repo root.
+After every story, follow the history archiving SOP:
+
+1. Append full story narrative to `/home/spoq/ai-vision/docs/history/forge_history.md`.
+2. Append one library-card row to `/home/spoq/ai-vision/docs/history/history_index.md`.
+3. Do not append long-form story history to `AGENTS.md`.
 
 Template:
 ```markdown
-## [Story ID] — [Date]
-### Pattern Discovered
-[convention or pattern this codebase uses]
-### Gotcha
-[what the next agent must NOT forget]
-### Files Modified
-[key files changed]
+### [Story ID] — [Story Title] — [Date]
+
+**Status:** PASS|FAIL|BLOCKED
+**Pattern:** [convention this codebase uses]
+**Gotcha:** [what the next agent must NOT forget]
+**Files:** [key files changed]
 ```
 
-This is your institutional memory. It is the permanent record. The DB is the working memory.
-Both must be written. One is for machines. One is for humans.
+`forge_history.md` is the long-form human record. `history_index.md` is the fast lookup catalog.
+The DB is the working memory.
 
 ---

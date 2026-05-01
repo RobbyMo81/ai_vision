@@ -3,7 +3,7 @@
 Story: `EN-008`
 Tracker Row: `EN-008`
 Source Story Card: `docs/artifacts/2026-04-23-startup-blind-spot-forge-story.yaml`
-Source Audit: `docs/artifacts/telemetry-audit-2026-04-22.md`
+Source Audit: `docs/debriefs/telemetry-audit-2026-04-22.md`
 
 ## Forge System Instructions
 

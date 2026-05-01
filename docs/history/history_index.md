@@ -1,0 +1,58 @@
+# FORGE History Index — Library Card Catalog
+
+This file is the quick-reference catalog for FORGE story history.
+
+Primary archive path: `/home/spoq/ai-vision/docs/history/forge_history.md`
+Index path: `/home/spoq/ai-vision/docs/history/history_index.md`
+
+## History Archiving SOP (Mandatory)
+
+Use this SOP after any completed story (`US-*`, `RF-*`, `EN-*`) with final validation evidence:
+1. Append the full story narrative to `/home/spoq/ai-vision/docs/history/forge_history.md`.
+2. Append one new library card row to this file.
+3. Keep cards append-only by completion date.
+4. Keep `AGENTS.md` free of long-form story payloads.
+5. If the story changes behavior, also record Summary of Work in `progress.txt`.
+
+## Card Template
+
+| Card | Story | Date | Status | Domain | Pattern (Quick Ref) | Primary Files |
+|---|---|---|---|---|---|---|
+| H-### | US-000 / RF-000 / EN-000 | YYYY-MM-DD | PASS/FAIL/BLOCKED | Area | One-line reusable pattern | `path/a`, `path/b` |
+
+## Library Cards
+
+| Card | Story | Date | Status | Domain | Pattern (Quick Ref) | Primary Files |
+|---|---|---|---|---|---|---|
+| H-001 | US-005 | 2026-04-18 | PASS | HITL + Memory | Centralize teardown in wrap-up and gate sensitive fields via schema metadata | `src/workflow/wrap-up.ts`, `src/session/hitl.ts` |
+| H-002 | US-006 | 2026-04-18 | PASS | Telemetry | Emit typed telemetry at boundaries and escalate via detector layer | `src/telemetry/manager.ts`, `src/workflow/wrap-up.ts` |
+| H-003 | US-007 | 2026-04-19 | PASS | HITL UX | Treat complete/error as terminal UI states with shutdown grace | `src/ui/server.ts`, `src/cli/index.ts` |
+| H-004 | US-008 | 2026-04-19 | PASS | HITL Confirmation | Use `confirm_completion` mode for irreversible final-step verification | `src/workflow/engine.ts`, `src/session/hitl.ts` |
+| H-005 | US-009 | 2026-04-19 | PASS | SIC | Capture structured rejection reason and trigger SIC on final-step reject | `src/session/hitl.ts`, `src/workflow/wrap-up.ts` |
+| H-006 | US-010 | 2026-04-19 | PASS | Auth + HITL | Add QA pause and explicit authVerification contract for login gates | `src/workflow/engine.ts`, `src/ui/server.ts` |
+| H-007 | US-011 | 2026-04-19 | PASS | Browser Bridge | Recreate browser-use session objects after reset boundaries | `src/engines/browser-use/server/main.py` |
+| H-008 | US-012 | 2026-04-19 | PASS | Telemetry + Bridge | Classify business outcomes separately and recover orphan bridge ports | `src/engines/python-bridge.ts`, `src/telemetry/manager.ts` |
+| H-009 | US-013 | 2026-04-19 | PASS | Workflow Runtime | Resolve placeholders immediately before step execution from live outputs | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-010 | US-014 | 2026-04-19 | PASS | SIC Persistence | Use FORGE DB as primary SIC storage with deterministic fallback behavior | `src/memory/forge-sic.ts`, `src/workflow/wrap-up.ts` |
+| H-011 | US-015 | 2026-04-19 | PASS | Governance | Enforce single SIC writer path to FORGE context_store | `src/memory/long-term.ts`, `src/workflow/wrap-up.ts` |
+| H-012 | US-016 | 2026-04-19 | PASS | MCP + UI Signals | Route bridge exits through one lifecycle and fan out parity signals | `src/engines/python-bridge.ts`, `src/mcp/server.ts` |
+| H-013 | US-017 | 2026-04-19 | PASS | Secrets | Keep runtime secrets in local Vault flow, not `.env` payload | `scripts/secrets/vault-init.sh`, `README.md` |
+| H-014 | US-018 | 2026-04-19 | PASS | CI | Run lockfile-faithful typecheck/test/build on push + PR | `.github/workflows/ci.yml` |
+| H-015 | US-019 | 2026-04-21 | PASS | Workflow Determinism | Capture step arrays before spreads to avoid getter source drift | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-016 | US-020 | 2026-04-23 | PASS | TypeScript Stability | Keep schema expansion local and contain generic-heavy seams | `src/workflow/types.ts`, `src/mcp/server.ts` |
+| H-017 | US-021 | 2026-04-22 | PASS | Handoff Governance | Require 4-part Forge handoff package for engineering build tasks | `AGENTS.md`, `FORGE.md` |
+| H-018 | EN-008 | 2026-04-22 | PASS | Startup Boundaries | Replace startup casts/inference seams with named typed boundaries | `src/workflow/types.ts`, `src/ui/server.ts` |
+| H-019 | EN-009 | 2026-04-24 | PASS | Forge Tooling | Keep `ForgeMP/` canonical with `scripts/forge` compatibility shims | `package.json`, `scripts/forge/forge.sh` |
+| H-020 | US-022 | 2026-04-24 | PASS | Gate Layer Design | Define direct gate contracts and insertion map before retirement work | `docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md` |
+| H-021 | EN-010 | 2026-04-25 | PASS | Supervision | Use daemon+cron wake cycle and log active storyline from FORGE DB | `scripts/chief-engineer/chief-engineer-daemon.sh` |
+| H-022 | US-023 | 2026-04-25 | PASS | HITL Publication | Publish wait/terminal state through one canonical engine state path | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-023 | EN-011 | 2026-04-25 | PASS | Quality Gates | Make local and CI both run committed `forge:gates` command path | `forge.gates.sh`, `.github/workflows/forge.yml` |
+| H-024 | US-024 | 2026-04-26 | PASS | HITL Pre-flight | Gate final confirmation by phase/session/websocket presence pre-flight | `src/ui/server.ts`, `src/ui/server.test.ts` |
+| H-025 | US-025 | 2026-04-26 | PASS | HITL Resume Gate | Gate return-control by allowed action state plus session/client binding with rejection/completed telemetry parity | `src/ui/server.ts`, `src/ui/server.test.ts` |
+| H-026 | US-026 | 2026-04-27 | PASS | Workflow Approval Gate | Enforce run-scoped approval before protected direct steps and consume approval after execution | `src/workflow/engine.ts`, `src/ui/server.ts` |
+| H-027 | US-027 | 2026-04-27 | PASS | Content Validation Gate | Validate generated and preflight output before downstream side effects; reject empty/placeholder/unresolved values and downstream `{{key}}` tokens in side-effect steps | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-028 | US-028 | 2026-04-27 | PASS | Duplicate Evidence Gate | Parse Reddit duplicate-check structured evidence after check step; gate submit_reddit_post on valid no-duplicate evidence before executeStep | `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `workflows/post_to_reddit.yaml`, `workflows/write_and_post_to_reddit.yaml` |
+| H-029 | US-029 | 2026-04-27 | PASS | Browser Postcondition Gate | Validate direct-path browser side effects after execution using expected URL and output evidence; block false-success Reddit submit before downstream confirmation | `src/workflow/types.ts`, `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `workflows/post_to_reddit.yaml`, `workflows/write_and_post_to_reddit.yaml` |
+| H-030 | US-030 | 2026-04-27 | PASS | Precondition Skip Gate | Evaluate direct-path preconditions before approval/executeStep and deterministically skip/fail auth, preflight generation, and redundant navigation paths | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-031 | US-031 | 2026-04-28 | PASS | agent_task Side-Effect Safety Gate | Classify agent_task prompt intent before worker dispatch; block login/fill without approval, post/publish with invalid content, reddit submit without duplicate evidence | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-032 | US-032 | 2026-04-28 | PASS | agent_task Dominant Intent Fix | Collect matched intent signals and select dominant workflow intent so submit/publish/post/final-click override fallback fill wording while preserving safety gates | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |

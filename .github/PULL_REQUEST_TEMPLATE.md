@@ -63,7 +63,7 @@ Provide proof that the change works.
 - [ ] I linked at least one tracker item (`RF-*`, `EN-*`, or `SIC-*`).
 - [ ] I updated [docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md](../docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md) status/evidence where applicable.
 - [ ] I updated [progress.txt](../progress.txt) if behavior changed.
-- [ ] I updated [AGENTS.md](../AGENTS.md) if pattern-level behavior changed.
+- [ ] I updated [docs/history/forge_history.md](../docs/history/forge_history.md) and [docs/history/history_index.md](../docs/history/history_index.md) when story/pattern history changed.
 - [ ] I complied with FORGE Governance requirements for this PR category.
 - [ ] I placed any new agent explainer/report artifact under [docs/artifacts](../docs/artifacts/) with a date-prefixed filename.
 - [ ] I avoided committing secrets.

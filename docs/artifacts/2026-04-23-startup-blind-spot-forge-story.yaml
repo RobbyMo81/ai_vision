@@ -3,7 +3,7 @@ title: Startup blind-spot seam closure
 storyType: forge-enhancement
 status: proposed
 sourceArtifacts:
-  - docs/artifacts/telemetry-audit-2026-04-22.md
+  - docs/debriefs/telemetry-audit-2026-04-22.md
   - src/workflow/engine.ts
   - src/mcp/server.ts
   - src/webhooks/server.ts

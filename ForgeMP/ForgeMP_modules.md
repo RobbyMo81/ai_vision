@@ -17,7 +17,9 @@
 | **MEMORY_PROTOCOL.md** | `ForgeMP/MEMORY_PROTOCOL.md` | Governance law — DB schema rationale, mandatory obligations |
 | **prompt.md** | `ForgeMP/prompt.md` | Universal Agent Preamble injected into every Claude invocation |
 | **FORGE.md** | `FORGE.md` | Project conventions, governance law, DB protocol link |
-| **AGENTS.md** | `AGENTS.md` | Institutional memory — patterns, gotchas, story history |
+| **AGENTS.md** | `AGENTS.md` | Active governance + operating rules (no long-form story payloads) |
+| **forge_history.md** | `docs/history/forge_history.md` | Canonical long-form FORGE story archive |
+| **history_index.md** | `docs/history/history_index.md` | Library-card quick reference index for archived stories |
 | **forge.gates.sh** | `forge.gates.sh` | Quality gate runner (`tsc --noEmit`, `npm test`) |
 | **forge.gates.example.sh** | `ForgeMP/forge.gates.example.sh` | Gate template/reference |
 | **prd.json** | `prd.json` | Story task list; `passes` booleans; branch name |
@@ -38,7 +40,7 @@
 | `agent_iterations` | One row per Claude Code instance; execution ledger with gate results |
 | `agent_messages` | Inter-agent message bus (DISCOVERY, BLOCKER, HANDOFF, WARNING, STATUS, DECISION) |
 | `context_store` | Persistent KV store — survives context windows; also stores SIC improvements from runtime |
-| `discoveries` | Structured findings (PATTERN, GOTCHA, BLOCKER, DECISION, DEPENDENCY, CONVENTION) → feeds AGENTS.md |
+| `discoveries` | Structured findings (PATTERN, GOTCHA, BLOCKER, DECISION, DEPENDENCY, CONVENTION) → feed `docs/history/forge_history.md` + `docs/history/history_index.md` |
 | `story_state` | Extended story state: attempt count, last error, active blockers, context notes |
 | `audit_log` | Immutable append-only record of every significant FORGE action |
 
@@ -83,7 +85,7 @@ flowchart TD
         T2["agent_iterations\n(one per Claude instance)"]
         T3["agent_messages\n(inter-agent message bus)"]
         T4["context_store\n(persistent KV for agents\nAND SIC store for runtime)"]
-        T5["discoveries\n(structured findings → AGENTS.md)"]
+        T5["discoveries\n(structured findings → docs/history)"]
         T6["story_state\n(attempt counts, blockers, notes)"]
         T7["audit_log\n(append-only action trail)"]
         DB --- T1 & T2 & T3 & T4 & T5 & T6 & T7
@@ -94,13 +96,17 @@ flowchart TD
         PROMPT["ForgeMP/prompt.md\n(Universal Agent Preamble\nFunction 0 protocol)"]
         MEM_CLIENT["forge-memory-client.ts\n(ForgeMemory class\nentry() / exit())"]
         PROTOCOL["MEMORY_PROTOCOL.md\n(governance / schema spec)"]
-        AGENTS_MD["AGENTS.md\n(institutional memory\nstory history)"]
+        AGENTS_MD["AGENTS.md\n(active governance)"]
+        HISTORY_MD["docs/history/forge_history.md\n(long-form story archive)"]
+        HISTORY_INDEX["docs/history/history_index.md\n(library-card index)"]
         FORGE_MD["FORGE.md\n(conventions + governance law)"]
 
         FORGE_SH -->|"injects context via stdin"| PROMPT
         PROMPT -->|"instructs agent to call"| MEM_CLIENT
         PROMPT -->|"instructs agent to read"| PROTOCOL
         PROMPT -->|"instructs agent to read"| AGENTS_MD
+        PROMPT -->|"instructs agent to read/update"| HISTORY_MD
+        PROMPT -->|"instructs agent to read/update"| HISTORY_INDEX
         PROMPT -->|"instructs agent to read"| FORGE_MD
         MEM_CLIENT -->|"reads/writes"| DB
         PROTOCOL -->|"governs"| DB
@@ -167,4 +173,4 @@ Compatibility note:
 - All inter-agent communication flows through `agent_messages`; no out-of-band state
 - Runtime SIC writes target `context_store` in FORGE DB — not flat files or the app SQLite DB
 - `AI_VISION_SIC_FORGE_STRICT=true` (default) causes `ForgeSicMemoryStore` to throw if the DB or `context_store` table is absent
-- `forge-memory.db` is gitignored; `progress.txt` and `AGENTS.md` are the human-readable audit surfaces
+- `forge-memory.db` is gitignored; `progress.txt`, `docs/history/forge_history.md`, and `docs/history/history_index.md` are the human-readable audit surfaces

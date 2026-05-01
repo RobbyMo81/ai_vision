@@ -57,20 +57,40 @@ steps:
   - type: agent_task
     id: check_duplicate_reddit_post
     engine: browser-use
+    rawPrompt: true
+    maxSteps: 5
     prompt: >
       Duplicate check before posting to Reddit r/{{subreddit}}.
       Title to check: {{reddit_post_title}}.
-      Scan visible posts for any title with >70% overlap.
-      Respond with exactly one line: DUPLICATE_RISK: <title> or NO_DUPLICATE_FOUND.
+      1. Navigate to reddit.com/r/{{subreddit}}/new
+      2. Collect every visible post title on the page into a JSON array.
+      3. For each title compute an overlap score between 0.0 and 1.0 against the candidate title
+         (1.0 = identical, 0.0 = no overlap). Use word-level Jaccard similarity.
+      Output ONLY the following four lines in exactly this order, nothing else:
+      EXTRACTED_TITLES: <json array of all visible post title strings>
+      OVERLAP_SCORES: <json array of objects, each with title and score fields, e.g. [{"title":"...","score":0.12}]>
+      DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND
+      (Replace NO_DUPLICATE_FOUND with DUPLICATE_RISK when any score is >= 0.70)
+      MATCHING_TITLE: <matching post title>  (include this line only when DUPLICATE_CHECK_RESULT is DUPLICATE_RISK)
 
   - type: agent_task
     id: draft_reddit_post
     engine: browser-use
+    rawPrompt: true
+    maxSteps: 6
+    expectedUrlAfter: "/r/{{subreddit}}/submit"
+    requiredOutputIncludes:
+      - "DRAFT_TITLE_TYPED: {{reddit_post_title}}"
+      - "DRAFT_BODY_TYPED: {{reddit_post_text}}"
+    postconditionRequired: true
     prompt: >
       Fill the Reddit post composer at reddit.com/r/{{subreddit}}/submit.
       Title: {{reddit_post_title}}
       Body: {{reddit_post_text}}
       Ensure Text tab is selected, type the exact title and body. STOP — do NOT click Submit.
+      Output ONLY these two lines, nothing else:
+      DRAFT_TITLE_TYPED: {{reddit_post_title}}
+      DRAFT_BODY_TYPED: {{reddit_post_text}}
 
   - type: human_takeover
     id: submit_reddit_post

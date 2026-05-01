@@ -219,7 +219,7 @@ memory/
     reddit.md          # subreddit rules, timing, format knowledge
     x.md               # character limits, thread patterns
 
-docs/artifacts/
+docs/debriefs/
   AI_VISION_V2_BLUEPRINT.md   # THIS FILE — single source of truth
 ```
 

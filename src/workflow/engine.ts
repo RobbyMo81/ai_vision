@@ -125,6 +125,414 @@ function toWorkflowStep(obj: Record<string, unknown>): WorkflowStep {
   return obj as unknown as WorkflowStep;
 }
 
+// ---------------------------------------------------------------------------
+// Content/output validation (US-027 / RF-009)
+// ---------------------------------------------------------------------------
+
+interface OutputValidationResult {
+  valid: boolean;
+  reason: string;
+  details: string;
+}
+
+/**
+ * Deterministic content gate applied to generated and preflight output values
+ * before they reach downstream browser side effects.
+ *
+ * Rejects values that are empty, whitespace-only, unresolved template
+ * placeholders, known generic fillers (TODO/TBD/Lorem ipsum), or structural
+ * markup placeholders beginning with '<' or '[Generated'.
+ */
+function validateWorkflowOutput(
+  outputKey: string,
+  value: string,
+): OutputValidationResult {
+  if (value.length === 0) {
+    return { valid: false, reason: 'empty_output', details: `Output '${outputKey}' is empty.` };
+  }
+  if (value.trim().length === 0) {
+    return { valid: false, reason: 'whitespace_only', details: `Output '${outputKey}' is whitespace only.` };
+  }
+  const placeholders = value.match(/\{\{\w+\}\}/g);
+  if (placeholders) {
+    return {
+      valid: false,
+      reason: 'unresolved_placeholder',
+      details: `Output '${outputKey}' contains unresolved placeholder(s): ${placeholders.join(', ')}.`,
+    };
+  }
+  if (value.includes('TODO')) {
+    return { valid: false, reason: 'placeholder_content', details: `Output '${outputKey}' contains 'TODO'.` };
+  }
+  if (value.includes('TBD')) {
+    return { valid: false, reason: 'placeholder_content', details: `Output '${outputKey}' contains 'TBD'.` };
+  }
+  if (/lorem ipsum/i.test(value)) {
+    return { valid: false, reason: 'placeholder_content', details: `Output '${outputKey}' contains 'Lorem ipsum'.` };
+  }
+  if (value.startsWith('[Generated')) {
+    return { valid: false, reason: 'generic_content', details: `Output '${outputKey}' begins with '[Generated'.` };
+  }
+  if (value.startsWith('<')) {
+    return { valid: false, reason: 'generic_content', details: `Output '${outputKey}' begins with '<'.` };
+  }
+  return { valid: true, reason: 'ok', details: '' };
+}
+
+/**
+ * Shallow scan of a substituted step object for any remaining {{key}} tokens.
+ * Returns the matched placeholder strings (e.g. ['{{missing_key}}']).
+ * Only inspects top-level string values — deep nesting is not needed for the
+ * deterministic side-effect step types this gate covers.
+ */
+function findUnresolvedPlaceholders(obj: Record<string, unknown>): string[] {
+  const found: string[] = [];
+  for (const val of Object.values(obj)) {
+    if (typeof val === 'string') {
+      const matches = val.match(/\{\{\w+\}\}/g);
+      if (matches) found.push(...matches);
+    }
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Reddit duplicate-check evidence contract parser (US-028 / RF-010)
+// ---------------------------------------------------------------------------
+
+interface RedditDuplicateEvidence {
+  result: 'NO_DUPLICATE_FOUND' | 'DUPLICATE_RISK' | null;
+  extractedTitles: string[] | null;
+  overlapScores: Array<{ title: string; score: number }> | null;
+  matchingTitle: string | null;
+  errors: string[];
+}
+
+interface BrowserPostconditionValidationResult {
+  valid: boolean;
+  reason: string;
+  details: Record<string, unknown>;
+}
+
+type BrowserPostconditionStep = Extract<
+  WorkflowStep,
+  { type: 'agent_task' | 'navigate' | 'click' | 'fill' | 'type' }
+>;
+
+function isBrowserPostconditionStep(step: WorkflowStep): step is BrowserPostconditionStep {
+  return ['agent_task', 'navigate', 'click', 'fill', 'type'].includes(step.type);
+}
+
+function validateBrowserPostcondition(
+  step: BrowserPostconditionStep,
+  stepResult: StepResult,
+  currentUrl: string,
+  workflowOutputs: Record<string, string>,
+  runtimeParams: Record<string, unknown>,
+  workflowId: string,
+  sessionId: string,
+): BrowserPostconditionValidationResult {
+  const metadata = step as BrowserPostconditionStep & {
+    expectedUrlAfter?: string;
+    requiredOutputIncludes?: string[];
+    postconditionRequired?: boolean;
+  };
+  const substitutionContext = {
+    ...workflowOutputs,
+    ...runtimeParams,
+  };
+  const expectedUrl = metadata.expectedUrlAfter
+    ? substitute(metadata.expectedUrlAfter, substitutionContext)
+    : undefined;
+  const requiredOutputIncludes = (metadata.requiredOutputIncludes ?? []).map((marker) =>
+    substitute(marker, substitutionContext),
+  );
+  const output = stepResult.output ?? '';
+  const isSubmitRedditPost = step.id === 'submit_reddit_post';
+  const applies =
+    isSubmitRedditPost ||
+    Boolean(expectedUrl) ||
+    requiredOutputIncludes.length > 0 ||
+    metadata.postconditionRequired === true;
+
+  if (!applies) {
+    return {
+      valid: true,
+      reason: 'not_applicable',
+      details: {
+        workflowId,
+        sessionId,
+        applied: false,
+      },
+    };
+  }
+
+  const effectiveExpectedUrl = isSubmitRedditPost && !expectedUrl
+    ? '/comments/'
+    : expectedUrl;
+
+  if (effectiveExpectedUrl && !currentUrl.includes(effectiveExpectedUrl)) {
+    return {
+      valid: false,
+      reason: 'expected_url_missing',
+      details: {
+        workflowId,
+        sessionId,
+        expectedUrl: effectiveExpectedUrl,
+        currentUrl,
+      },
+    };
+  }
+
+  if (requiredOutputIncludes.length > 0) {
+    const missingMarkers = requiredOutputIncludes.filter((marker) => !output.includes(marker));
+    if (missingMarkers.length > 0) {
+      return {
+        valid: false,
+        reason: 'required_output_missing',
+        details: {
+          workflowId,
+          sessionId,
+          expectedUrl: effectiveExpectedUrl,
+          currentUrl,
+          missingMarkers,
+          outputPreview: output.slice(0, 400),
+        },
+      };
+    }
+  }
+
+  if (isSubmitRedditPost) {
+    const redditCommentsUrlPattern = /(https?:\/\/)?(www\.)?reddit\.com\/r\/[^/\s]+\/comments\/[^\s)]+/i;
+    if (!redditCommentsUrlPattern.test(output)) {
+      return {
+        valid: false,
+        reason: 'comments_url_output_missing',
+        details: {
+          workflowId,
+          sessionId,
+          expectedUrl: effectiveExpectedUrl,
+          currentUrl,
+          outputPreview: output.slice(0, 400),
+        },
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    reason: 'ok',
+    details: {
+      workflowId,
+      sessionId,
+      applied: true,
+      expectedUrl: effectiveExpectedUrl,
+      currentUrl,
+      requiredOutputIncludes,
+    },
+  };
+}
+
+/**
+ * Deterministically parse the structured output produced by the
+ * check_duplicate_reddit_post agent_task step.
+ *
+ * Expected lines (each on its own line):
+ *   EXTRACTED_TITLES: <json array of strings>
+ *   OVERLAP_SCORES: <json array of {title, score}>
+ *   DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND | DUPLICATE_RISK
+ *   MATCHING_TITLE: <title>   (required when DUPLICATE_RISK)
+ */
+function parseRedditDuplicateEvidence(output: string): RedditDuplicateEvidence {
+  const errors: string[] = [];
+
+  // DUPLICATE_CHECK_RESULT
+  const resultMatch = output.match(/^DUPLICATE_CHECK_RESULT:\s*(.+)$/m);
+  let result: 'NO_DUPLICATE_FOUND' | 'DUPLICATE_RISK' | null = null;
+  if (resultMatch) {
+    const raw = resultMatch[1].trim();
+    if (raw === 'NO_DUPLICATE_FOUND') result = 'NO_DUPLICATE_FOUND';
+    else if (raw === 'DUPLICATE_RISK') result = 'DUPLICATE_RISK';
+    else errors.push(`Unrecognized DUPLICATE_CHECK_RESULT value: '${raw}'`);
+  } else {
+    errors.push('Missing required line: DUPLICATE_CHECK_RESULT');
+  }
+
+  // EXTRACTED_TITLES
+  let extractedTitles: string[] | null = null;
+  const titlesMatch = output.match(/^EXTRACTED_TITLES:\s*(.+)$/m);
+  if (titlesMatch) {
+    try {
+      const parsed: unknown = JSON.parse(titlesMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        extractedTitles = (parsed as unknown[]).map(String);
+      } else {
+        errors.push('EXTRACTED_TITLES must be a JSON array');
+      }
+    } catch {
+      errors.push('Failed to parse EXTRACTED_TITLES as JSON');
+    }
+  } else {
+    errors.push('Missing required line: EXTRACTED_TITLES');
+  }
+
+  // OVERLAP_SCORES
+  let overlapScores: Array<{ title: string; score: number }> | null = null;
+  const scoresMatch = output.match(/^OVERLAP_SCORES:\s*(.+)$/m);
+  if (scoresMatch) {
+    try {
+      const parsed: unknown = JSON.parse(scoresMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        const valid = (parsed as unknown[]).every(
+          item =>
+            typeof item === 'object' &&
+            item !== null &&
+            'title' in item &&
+            'score' in item &&
+            typeof (item as Record<string, unknown>)['score'] === 'number',
+        );
+        if (valid) {
+          overlapScores = parsed as Array<{ title: string; score: number }>;
+        } else {
+          errors.push('OVERLAP_SCORES items must each have a title string and a numeric score');
+        }
+      } else {
+        errors.push('OVERLAP_SCORES must be a JSON array');
+      }
+    } catch {
+      errors.push('Failed to parse OVERLAP_SCORES as JSON');
+    }
+  } else {
+    errors.push('Missing required line: OVERLAP_SCORES');
+  }
+
+  // MATCHING_TITLE (required only when DUPLICATE_RISK)
+  let matchingTitle: string | null = null;
+  const matchingMatch = output.match(/^MATCHING_TITLE:\s*(.+)$/m);
+  if (matchingMatch) {
+    matchingTitle = matchingMatch[1].trim();
+  } else if (result === 'DUPLICATE_RISK') {
+    errors.push('Missing required line: MATCHING_TITLE when DUPLICATE_CHECK_RESULT is DUPLICATE_RISK');
+  }
+
+  return { result, extractedTitles, overlapScores, matchingTitle, errors };
+}
+
+// ---------------------------------------------------------------------------
+// US-031 / RF-013 — agent_task side-effect intent classifier
+// ---------------------------------------------------------------------------
+
+/**
+ * Deterministic classifier for `agent_task` prompt side-effect intent.
+ * Returns a stable classification used by the safety gate inside executeStep
+ * to decide whether worker dispatch is safe to proceed.
+ *
+ * Dominant intent is selected from all matched signals using a deterministic
+ * ranking. This prevents fallback fill text from overriding submit/publish/post/final-click intent.
+ */
+function classifyAgentTaskSideEffect(
+  prompt: string,
+  _stepId: string,
+): {
+  protectedIntent: boolean;
+  intentKind:
+    | 'submit'
+    | 'publish'
+    | 'post'
+    | 'final_click'
+    | 'login'
+    | 'fill'
+    | 'external_mutation'
+    | 'read_only'
+    | 'unknown';
+  reason: string;
+  details: Record<string, unknown>;
+} {
+  const lower = prompt.toLowerCase();
+  const matchedSignals: Array<
+    'submit' | 'publish' | 'post' | 'final_click' | 'login' | 'fill' | 'external_mutation' | 'read_only'
+  > = [];
+
+  const addSignal = (
+    signal: 'submit' | 'publish' | 'post' | 'final_click' | 'login' | 'fill' | 'external_mutation' | 'read_only',
+    matched: boolean,
+  ): void => {
+    if (matched) {
+      matchedSignals.push(signal);
+    }
+  };
+
+  addSignal('login', /\b(log\s*in|login|sign\s+in|sign\s+into|authenticate)\b/.test(lower));
+  addSignal(
+    'fill',
+    /\bfill(?:\s+(?:in|out))?\b|\benter\s+(?:the|your|a)\s+\w+|\btype\s+(?:in|the|your)\b|\bpopulate(?:\s+the)?\s+form\b/.test(
+      lower,
+    ),
+  );
+  addSignal('submit', /\bsubmit\b/.test(lower));
+  addSignal('publish', /\bpublish\b/.test(lower));
+  addSignal('final_click', /\b(?:click|press|tap)\b.{0,50}\b(?:post|confirm|send|done)\b/.test(lower));
+  addSignal(
+    'post',
+    /\bpost\s+(?:to|on|this|it|the\s+content|the\s+article)\b/.test(lower) || /^post\b/m.test(lower),
+  );
+  addSignal(
+    'external_mutation',
+    /\b(?:delete|remove|buy|purchase|pay|checkout|upload|vote|upvote|downvote|follow|subscribe|comment\s+on|send\s+message)\b/.test(
+      lower,
+    ),
+  );
+  addSignal(
+    'read_only',
+    /\b(?:browse|inspect|read|verify|check|summarize|analyze|review|view|list|find|search|extract|get|fetch|retrieve|report|identify|monitor|scan|duplicate)\b/.test(
+      lower,
+    ),
+  );
+
+  const protectedRank: Array<
+    'login' | 'submit' | 'publish' | 'post' | 'final_click' | 'fill' | 'external_mutation'
+  > = ['login', 'submit', 'publish', 'post', 'final_click', 'fill', 'external_mutation'];
+
+  const selectedProtected = protectedRank.find(kind => matchedSignals.includes(kind));
+
+  if (selectedProtected) {
+    return {
+      protectedIntent: true,
+      intentKind: selectedProtected,
+      reason: `dominant protected intent selected: ${selectedProtected}`,
+      details: {
+        matchedSignals,
+        dominantIntentSource: 'ranked_signals',
+        selectedIntent: selectedProtected,
+      },
+    };
+  }
+
+  if (matchedSignals.includes('read_only')) {
+    return {
+      protectedIntent: false,
+      intentKind: 'read_only',
+      reason: 'read-only intent selected: no protected signal matched',
+      details: {
+        matchedSignals,
+        dominantIntentSource: 'read_only_fallback',
+        selectedIntent: 'read_only',
+      },
+    };
+  }
+
+  return {
+    protectedIntent: false,
+    intentKind: 'unknown',
+    reason: 'no intent pattern matched',
+    details: {
+      matchedSignals,
+      dominantIntentSource: 'none',
+      selectedIntent: 'unknown',
+    },
+  };
+}
+
 function buildRuntimeParams(
   resolvedParams: Record<string, unknown>,
   outputs: Record<string, string>,
@@ -678,7 +1086,7 @@ async function executeStep(
   screenshots: WorkflowResult['screenshots'],
   outputs: Record<string, string>,
   onStateUpdate: (state: Partial<SessionState>) => void,
-  telemetryContext: { sessionId: string; workflowId: string },
+  telemetryContext: { sessionId: string; workflowId: string; approvalGrantedForStep?: boolean },
 ): Promise<StepResult> {
   const start = Date.now();
   const sub = substituteStep(step, params);
@@ -945,6 +1353,220 @@ async function executeStep(
           return { stepId: sub.id, success: false, error: lossMsg, durationMs: Date.now() - start };
         }
 
+        // US-031 / RF-013 — agent_task side-effect safety boundary.
+        // Classify the resolved prompt intent before worker dispatch.  Only
+        // runs after the unresolved-placeholder check to ensure the prompt is
+        // fully materialised before classification.
+        {
+          const safety = classifyAgentTaskSideEffect(sub.prompt ?? '', sub.id);
+          const safetyTelemetryBase = {
+            source: 'workflow' as const,
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+          };
+
+          telemetry.emit({
+            ...safetyTelemetryBase,
+            name: 'workflow.agent_task_side_effect.evaluated',
+            details: {
+              protectedIntent: safety.protectedIntent,
+              intentKind: safety.intentKind,
+              reason: safety.reason,
+              ...safety.details,
+            },
+          });
+
+          if (safety.protectedIntent) {
+            // (a) Approval enforcement for login and fill intents.
+            //     These action kinds require a prior human-approval gate.
+            //     approvalGrantedForStep is true only when the run-loop approval
+            //     gate completed for this exact step; undefined means no approval
+            //     was configured in the workflow.
+            if (
+              (safety.intentKind === 'login' || safety.intentKind === 'fill') &&
+              telemetryContext.approvalGrantedForStep !== true
+            ) {
+              const blockReason = `agent_task '${sub.id}' blocked: ${safety.intentKind} intent requires prior human approval evidence`;
+              telemetry.emit({
+                ...safetyTelemetryBase,
+                name: 'workflow.agent_task_side_effect.blocked',
+                details: { reason: blockReason, intentKind: safety.intentKind, check: 'approval' },
+              });
+              return {
+                stepId: sub.id,
+                success: false,
+                error: blockReason,
+                durationMs: Date.now() - start,
+              };
+            }
+
+            // (b) Content evidence enforcement for posting-style intents.
+            //     If pre-generated content outputs exist and are invalid, fail
+            //     before dispatch rather than posting bad content.
+            //     Checks merged runtime params (includes both workflow params and
+            //     prior step outputs) so evidence is found regardless of whether
+            //     it came from resolved params or a prior generate_content step.
+            if (safety.intentKind === 'post' || safety.intentKind === 'publish') {
+              const contentKeys = [
+                'reddit_post_text',
+                'post_text',
+                'post_body',
+                'x_post_text',
+                'content',
+                'article_text',
+              ];
+              for (const key of contentKeys) {
+                if (key in params) {
+                  const val = params[key];
+                  if (typeof val !== 'string' || val.trim().length === 0) {
+                    const blockReason = `agent_task '${sub.id}' blocked: posting-style intent has empty content output '${key}'`;
+                    telemetry.emit({
+                      ...safetyTelemetryBase,
+                      name: 'workflow.agent_task_side_effect.blocked',
+                      details: {
+                        reason: blockReason,
+                        intentKind: safety.intentKind,
+                        check: 'content',
+                        outputKey: key,
+                      },
+                    });
+                    return {
+                      stepId: sub.id,
+                      success: false,
+                      error: blockReason,
+                      durationMs: Date.now() - start,
+                    };
+                  }
+                  if (
+                    /\{\{[^}]+\}\}/.test(val) ||
+                    /^(TODO|PLACEHOLDER)/i.test(val.trim())
+                  ) {
+                    const blockReason = `agent_task '${sub.id}' blocked: posting-style intent has invalid content in output '${key}'`;
+                    telemetry.emit({
+                      ...safetyTelemetryBase,
+                      name: 'workflow.agent_task_side_effect.blocked',
+                      details: {
+                        reason: blockReason,
+                        intentKind: safety.intentKind,
+                        check: 'content',
+                        outputKey: key,
+                      },
+                    });
+                    return {
+                      stepId: sub.id,
+                      success: false,
+                      error: blockReason,
+                      durationMs: Date.now() - start,
+                    };
+                  }
+                }
+              }
+            }
+
+            // (c) Reddit duplicate evidence enforcement for reddit submit-style intents.
+            //     Belt-and-suspenders for agent_task steps not named
+            //     'submit_reddit_post' that still carry Reddit posting language.
+            //     The run-loop reddit duplicate gate only fires on the canonical
+            //     step id; this gate covers any agent_task with reddit intent.
+            const promptLower = (sub.prompt ?? '').toLowerCase();
+            const isRedditStyle =
+              /\b(reddit|subreddit)\b|\/r\//.test(promptLower) &&
+              (safety.intentKind === 'submit' ||
+                safety.intentKind === 'post' ||
+                safety.intentKind === 'final_click');
+
+            if (isRedditStyle) {
+              const storedEvidence =
+                typeof params['reddit_duplicate_check_evidence'] === 'string'
+                  ? params['reddit_duplicate_check_evidence']
+                  : undefined;
+              const storedResult =
+                typeof params['reddit_duplicate_check_result'] === 'string'
+                  ? params['reddit_duplicate_check_result']
+                  : undefined;
+
+              if (!storedEvidence || !storedResult) {
+                const blockReason = `agent_task '${sub.id}' blocked: Reddit submission intent missing duplicate-check evidence`;
+                telemetry.emit({
+                  ...safetyTelemetryBase,
+                  name: 'workflow.agent_task_side_effect.blocked',
+                  details: {
+                    reason: blockReason,
+                    intentKind: safety.intentKind,
+                    check: 'reddit_duplicate',
+                  },
+                });
+                return {
+                  stepId: sub.id,
+                  success: false,
+                  error: blockReason,
+                  durationMs: Date.now() - start,
+                };
+              }
+
+              const redditEvidence = parseRedditDuplicateEvidence(storedEvidence);
+
+              if (redditEvidence.result === 'DUPLICATE_RISK') {
+                const blockReason = `agent_task '${sub.id}' blocked: Reddit duplicate risk detected by safety gate`;
+                telemetry.emit({
+                  ...safetyTelemetryBase,
+                  name: 'workflow.agent_task_side_effect.blocked',
+                  details: {
+                    reason: blockReason,
+                    intentKind: safety.intentKind,
+                    check: 'reddit_duplicate',
+                    matchingTitle: redditEvidence.matchingTitle ?? '',
+                  },
+                });
+                return {
+                  stepId: sub.id,
+                  success: false,
+                  error: blockReason,
+                  durationMs: Date.now() - start,
+                };
+              }
+
+              if (redditEvidence.errors.length > 0) {
+                const blockReason = `agent_task '${sub.id}' blocked: Reddit duplicate evidence invalid: ${redditEvidence.errors.join('; ')}`;
+                telemetry.emit({
+                  ...safetyTelemetryBase,
+                  name: 'workflow.agent_task_side_effect.blocked',
+                  details: {
+                    reason: blockReason,
+                    intentKind: safety.intentKind,
+                    check: 'reddit_duplicate',
+                    errors: redditEvidence.errors,
+                  },
+                });
+                return {
+                  stepId: sub.id,
+                  success: false,
+                  error: blockReason,
+                  durationMs: Date.now() - start,
+                };
+              }
+            }
+
+            // All safety checks passed for a protected intent.
+            telemetry.emit({
+              ...safetyTelemetryBase,
+              name: 'workflow.agent_task_side_effect.allowed',
+              details: { intentKind: safety.intentKind, decision: 'allowed_protected' },
+            });
+          } else {
+            // Read-only or unknown — always allowed.
+            telemetry.emit({
+              ...safetyTelemetryBase,
+              name: 'workflow.agent_task_side_effect.allowed',
+              details: {
+                intentKind: safety.intentKind,
+                decision: safety.intentKind === 'read_only' ? 'allowed_read_only' : 'allowed_unknown',
+              },
+            });
+          }
+        }
+
         // Layer 3 — LLM layer trace: step resolution → browser-use boundary
         if (params['reddit_post_title'] || params['reddit_post_text']) {
           telemetry.emit({
@@ -1036,21 +1658,6 @@ async function executeStep(
       case 'human_takeover': {
         const mode = sub.mode ?? 'takeover';
         const isVerificationGate = mode === 'takeover' && Boolean(sub.authVerification);
-        if (mode === 'takeover' && await isAuthVerificationSatisfied(sub)) {
-          const skipReason = `Skipped ${sub.id} because auth verification signals were already satisfied.`;
-          shortTermMemory.addScratchNote(skipReason);
-          telemetry.emit({
-            source: 'workflow',
-            name: 'workflow.hitl_takeover.auth_verification_satisfied',
-            sessionId: telemetryContext.sessionId,
-            workflowId: telemetryContext.workflowId,
-            stepId: sub.id,
-            details: {
-              reason: skipReason,
-            },
-          });
-          return { stepId: sub.id, success: true, durationMs: Date.now() - start };
-        }
         const phase = mode === 'confirm_completion' ? 'hitl_qa' : 'awaiting_human';
         const hitlReason = isVerificationGate
           ? `Verify authenticated state: ${sub.reason}`
@@ -1137,30 +1744,6 @@ async function executeStep(
 
       // ----- generate_content -----------------------------------------------
       case 'generate_content': {
-        const preflightBody = outputs[sub.outputKey];
-        const preflightTitle = sub.outputTitleKey ? outputs[sub.outputTitleKey] : undefined;
-        if (preflightBody && (!sub.outputTitleKey || preflightTitle)) {
-          telemetry.emit({
-            source: 'workflow',
-            name: 'workflow.generate_content.skipped_preflight',
-            sessionId: telemetryContext.sessionId,
-            workflowId: telemetryContext.workflowId,
-            stepId: sub.id,
-            details: {
-              outputKey: sub.outputKey,
-              outputTitleKey: sub.outputTitleKey ?? '',
-            },
-          });
-          return {
-            stepId: sub.id,
-            success: true,
-            output: preflightTitle
-              ? `TITLE: ${preflightTitle}\nBODY: ${preflightBody}`
-              : preflightBody,
-            durationMs: Date.now() - start,
-          };
-        }
-
         const writer = getGeminiWriter();
         const generated = await writer.writePost({
           platform: sub.platform,
@@ -1173,6 +1756,69 @@ async function executeStep(
         if (sub.outputTitleKey && generated.title) {
           outputs[sub.outputTitleKey] = generated.title;
         }
+
+        // Validate generated body before any downstream step can consume it.
+        const bodyValidation = validateWorkflowOutput(sub.outputKey, generated.text);
+        if (!bodyValidation.valid) {
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.output_validation.failed',
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+            details: {
+              stepType: sub.type,
+              outputKey: sub.outputKey,
+              reason: bodyValidation.reason,
+              detail: bodyValidation.details,
+            },
+          });
+          return {
+            stepId: sub.id,
+            success: false,
+            error: `Content validation failed for '${sub.outputKey}': ${bodyValidation.details}`,
+            durationMs: Date.now() - start,
+          };
+        }
+
+        if (sub.outputTitleKey) {
+          const titleValue = generated.title ?? '';
+          const titleValidation = validateWorkflowOutput(sub.outputTitleKey, titleValue);
+          if (!titleValidation.valid) {
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.output_validation.failed',
+              sessionId: telemetryContext.sessionId,
+              workflowId: telemetryContext.workflowId,
+              stepId: sub.id,
+              details: {
+                stepType: sub.type,
+                outputKey: sub.outputTitleKey,
+                reason: titleValidation.reason,
+                detail: titleValidation.details,
+              },
+            });
+            return {
+              stepId: sub.id,
+              success: false,
+              error: `Content validation failed for '${sub.outputTitleKey}': ${titleValidation.details}`,
+              durationMs: Date.now() - start,
+            };
+          }
+        }
+
+        telemetry.emit({
+          source: 'workflow',
+          name: 'workflow.output_validation.passed',
+          sessionId: telemetryContext.sessionId,
+          workflowId: telemetryContext.workflowId,
+          stepId: sub.id,
+          details: {
+            stepType: sub.type,
+            outputKey: sub.outputKey,
+            outputTitleKey: sub.outputTitleKey ?? '',
+          },
+        });
 
         // Layer 1 — LLM layer trace: Gemini draft boundary
         {
@@ -1263,6 +1909,146 @@ async function executeStep(
   }
 }
 
+interface ApprovalGateState {
+  granted: boolean;
+  approvedStepId?: string;
+  approvedStepType?: WorkflowStep['type'];
+  consumed: boolean;
+}
+
+type PreconditionDecision = 'run' | 'skip' | 'fail' | 'hitl';
+
+interface PreconditionGateResult {
+  decision: PreconditionDecision;
+  reason: string;
+  details: Record<string, unknown>;
+}
+
+async function evaluatePreconditionGate(
+  step: WorkflowStep,
+  currentUrl: string,
+  outputs: Record<string, string>,
+): Promise<PreconditionGateResult> {
+  if (step.type === 'human_takeover' && step.authVerification && (step.mode ?? 'takeover') === 'takeover') {
+    const authSatisfied = await isAuthVerificationSatisfied(step);
+    if (authSatisfied) {
+      return {
+        decision: 'skip',
+        reason: 'auth_verification_satisfied',
+        details: {
+          currentUrl,
+          authVerification: step.authVerification,
+        },
+      };
+    }
+    return {
+      decision: 'run',
+      reason: 'auth_verification_not_satisfied',
+      details: {
+        currentUrl,
+        authVerification: step.authVerification,
+      },
+    };
+  }
+
+  if (step.type === 'generate_content') {
+    const preflightBody = outputs[step.outputKey];
+    const preflightTitle = step.outputTitleKey ? outputs[step.outputTitleKey] : undefined;
+    if (preflightBody && (!step.outputTitleKey || preflightTitle)) {
+      const preflightBodyValidation = validateWorkflowOutput(step.outputKey, preflightBody);
+      if (!preflightBodyValidation.valid) {
+        return {
+          decision: 'fail',
+          reason: 'invalid_preflight_output',
+          details: {
+            outputKey: step.outputKey,
+            validationReason: preflightBodyValidation.reason,
+            validationDetail: preflightBodyValidation.details,
+          },
+        };
+      }
+      if (step.outputTitleKey && preflightTitle) {
+        const preflightTitleValidation = validateWorkflowOutput(step.outputTitleKey, preflightTitle);
+        if (!preflightTitleValidation.valid) {
+          return {
+            decision: 'fail',
+            reason: 'invalid_preflight_output',
+            details: {
+              outputKey: step.outputTitleKey,
+              validationReason: preflightTitleValidation.reason,
+              validationDetail: preflightTitleValidation.details,
+            },
+          };
+        }
+      }
+      return {
+        decision: 'skip',
+        reason: 'preflight_output_present',
+        details: {
+          outputKey: step.outputKey,
+          outputTitleKey: step.outputTitleKey ?? '',
+        },
+      };
+    }
+    return {
+      decision: 'run',
+      reason: 'no_preflight_output',
+      details: {
+        outputKey: step.outputKey,
+        outputTitleKey: step.outputTitleKey ?? '',
+      },
+    };
+  }
+
+  if (step.type === 'navigate') {
+    const targetUrl = step.url;
+    const alreadyAtTarget =
+      currentUrl === targetUrl ||
+      currentUrl.startsWith(`${targetUrl}/`) ||
+      currentUrl.includes(targetUrl);
+    if (alreadyAtTarget) {
+      return {
+        decision: 'skip',
+        reason: 'already_at_target_url',
+        details: {
+          currentUrl,
+          targetUrl,
+        },
+      };
+    }
+    return {
+      decision: 'run',
+      reason: 'target_url_not_matched',
+      details: {
+        currentUrl,
+        targetUrl,
+      },
+    };
+  }
+
+  return {
+    decision: 'run',
+    reason: 'no_precondition_rule',
+    details: {
+      currentUrl,
+    },
+  };
+}
+
+function getApprovalSelector(
+  selectors: string[],
+  step: WorkflowStep,
+): string | undefined {
+  return selectors.find(selector => selector === step.id || selector === step.type);
+}
+
+function getStepName(step: WorkflowStep): string {
+  if ('description' in step && typeof step.description === 'string' && step.description.trim().length > 0) {
+    return step.description.trim();
+  }
+  return step.id;
+}
+
 // ---------------------------------------------------------------------------
 // WorkflowEngine
 // ---------------------------------------------------------------------------
@@ -1311,6 +2097,13 @@ export class WorkflowEngine {
       steps: sourceSteps.map(step => substituteStep(step, resolvedParams)),
     };
     const executionDefinition = resolvedDefinition;
+    const approvalSelectors = executionDefinition.permissions?.require_human_approval_before ?? [];
+    const approvalState: ApprovalGateState = {
+      granted: false,
+      approvedStepId: undefined,
+      approvedStepType: undefined,
+      consumed: false,
+    };
 
     // Ensure browser session is running before any work (including YAML loop)
     await sessionManager.start();
@@ -1466,6 +2259,12 @@ export class WorkflowEngine {
 
     onStateUpdate({ phase: 'running' });
 
+    // Step types that can reach browser side effects and must be checked for
+    // unresolved downstream placeholders before execution.
+    const DOWNSTREAM_SIDE_EFFECT_STEP_TYPES = new Set([
+      'agent_task', 'fill', 'type', 'click', 'navigate',
+    ]);
+
     let finalResult: WorkflowResult;
 
     try {
@@ -1507,25 +2306,93 @@ export class WorkflowEngine {
           });
         }
 
+        const currentUrlBeforeStep = await sessionManager.currentUrl().catch(() => '');
         onStateUpdate({
           currentStep: step.id,
           stepIndex: i + 1,
           completedSteps: i,
-          currentUrl: await sessionManager.currentUrl().catch(() => undefined),
+          currentUrl: currentUrlBeforeStep || undefined,
         });
 
-        const result = await executeStep(
-          step,
-          runtimeParams,
-          screenshots,
-          outputs,
-          onStateUpdate,
-          { sessionId: id, workflowId: definition.id },
-        );
-        stepResults.push(result);
+        const precondition = await evaluatePreconditionGate(step, currentUrlBeforeStep, outputs);
+        const preconditionTelemetryDetails = {
+          stepType: step.type,
+          decision: precondition.decision,
+          reason: precondition.reason,
+          details: precondition.details,
+          currentUrl: currentUrlBeforeStep,
+        };
 
-        if (!result.success) {
-          onStateUpdate({ phase: 'error', error: result.error });
+        telemetry.emit({
+          source: 'workflow',
+          name: 'workflow.precondition.evaluated',
+          sessionId: id,
+          workflowId: definition.id,
+          stepId: step.id,
+          details: preconditionTelemetryDetails,
+        });
+
+        if (precondition.decision === 'skip') {
+          shortTermMemory.addScratchNote(
+            `Precondition skipped ${step.id} (${step.type}): ${precondition.reason}`,
+          );
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.precondition.skipped',
+            sessionId: id,
+            workflowId: definition.id,
+            stepId: step.id,
+            details: preconditionTelemetryDetails,
+          });
+          stepResults.push({
+            stepId: step.id,
+            success: true,
+            durationMs: 0,
+            output: JSON.stringify({
+              stepId: step.id,
+              stepType: step.type,
+              decision: precondition.decision,
+              reason: precondition.reason,
+              details: precondition.details,
+            }),
+          });
+          continue;
+        }
+
+        if (precondition.decision === 'fail') {
+          const failMsg = precondition.reason === 'invalid_preflight_output'
+            ? `Preflight content validation failed for '${String(precondition.details['outputKey'] ?? '')}': ${String(precondition.details['validationDetail'] ?? 'Invalid preflight output')}`
+            : `Precondition failed for step '${step.id}' (${step.type}): ${precondition.reason}`;
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.precondition.failed',
+            sessionId: id,
+            workflowId: definition.id,
+            stepId: step.id,
+            details: preconditionTelemetryDetails,
+          });
+          if (precondition.reason === 'invalid_preflight_output') {
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.output_validation.failed',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                outputKey: String(precondition.details['outputKey'] ?? ''),
+                reason: String(precondition.details['validationReason'] ?? precondition.reason),
+                detail: String(precondition.details['validationDetail'] ?? failMsg),
+              },
+            });
+          }
+          stepResults.push({
+            stepId: step.id,
+            success: false,
+            error: failMsg,
+            durationMs: 0,
+          });
+          onStateUpdate({ phase: 'error', error: failMsg });
           finalResult = {
             workflowId: definition.id,
             success: false,
@@ -1533,7 +2400,444 @@ export class WorkflowEngine {
             outputs,
             screenshots,
             durationMs: Date.now() - workflowStart,
-            error: `Step '${step.id}' failed: ${result.error}`,
+            error: failMsg,
+          };
+          break;
+        }
+
+        // Downstream unresolved-placeholder gate (US-027 / RF-009).
+        // Fail fast when a side-effect step still carries {{key}} tokens after
+        // runtime substitution — this means a required upstream output was never
+        // produced and the step must not reach the browser.
+        if (DOWNSTREAM_SIDE_EFFECT_STEP_TYPES.has(step.type)) {
+          const unresolved = findUnresolvedPlaceholders(step as unknown as Record<string, unknown>);
+          if (unresolved.length > 0) {
+            const failMsg = `Step '${step.id}' (${step.type}) has unresolved placeholders before execution: ${unresolved.join(', ')}`;
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.output_validation.failed',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                outputKey: '',
+                reason: 'unresolved_downstream_placeholder',
+                detail: failMsg,
+              },
+            });
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.precondition.failed',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                decision: 'fail',
+                reason: 'unresolved_downstream_placeholder',
+                details: {
+                  unresolved,
+                },
+                currentUrl: currentUrlBeforeStep,
+              },
+            });
+            const placeholderFailResult: StepResult = {
+              stepId: step.id,
+              success: false,
+              error: failMsg,
+              durationMs: 0,
+            };
+            stepResults.push(placeholderFailResult);
+            onStateUpdate({ phase: 'error', error: failMsg });
+            finalResult = {
+              workflowId: definition.id,
+              success: false,
+              stepResults,
+              outputs,
+              screenshots,
+              durationMs: Date.now() - workflowStart,
+              error: `Step '${step.id}' failed: ${failMsg}`,
+            };
+            break;
+          }
+        }
+
+        // Pre-execute: Reddit duplicate-check evidence gate (US-028 / RF-010).
+        // submit_reddit_post cannot reach executeStep unless valid NO_DUPLICATE_FOUND
+        // evidence from this same run is stored in outputs.
+        if (step.id === 'submit_reddit_post') {
+          const storedEvidence = outputs['reddit_duplicate_check_evidence'];
+          const storedResult = outputs['reddit_duplicate_check_result'];
+          let submitBlockReason: string | null = null;
+
+          if (!storedEvidence || !storedResult) {
+            submitBlockReason = 'submit_reddit_post blocked: no duplicate-check evidence found in workflow outputs. Run check_duplicate_reddit_post first.';
+          } else {
+            // Re-parse to validate completeness — evidence may have been stored from a prior run
+            // or manually injected; we must validate it again at the gate boundary.
+            const evidence = parseRedditDuplicateEvidence(storedEvidence);
+            if (evidence.errors.length > 0) {
+              submitBlockReason = `submit_reddit_post blocked: duplicate-check evidence invalid: ${evidence.errors.join('; ')}`;
+            } else if (!evidence.extractedTitles || evidence.extractedTitles.length === 0) {
+              submitBlockReason = 'submit_reddit_post blocked: duplicate-check evidence missing extracted titles';
+            } else if (!evidence.overlapScores || evidence.overlapScores.length === 0) {
+              submitBlockReason = 'submit_reddit_post blocked: duplicate-check evidence missing overlap scores';
+            } else {
+              const allScores = evidence.overlapScores.map(s => s.score);
+              const outOfRange = allScores.filter(s => s < 0 || s > 1);
+              if (outOfRange.length > 0) {
+                submitBlockReason = `submit_reddit_post blocked: overlap scores out of 0..1 range: ${outOfRange.join(', ')}`;
+              } else if (evidence.result === 'DUPLICATE_RISK') {
+                submitBlockReason = `submit_reddit_post blocked: duplicate risk detected. Matching title: ${evidence.matchingTitle ?? 'unknown'}`;
+              } else if (allScores.some(s => s >= 0.70) && evidence.result === 'NO_DUPLICATE_FOUND') {
+                const maxScore = Math.max(...allScores);
+                submitBlockReason = `submit_reddit_post blocked: score ${maxScore.toFixed(2)} >= 0.70 threshold but result claims NO_DUPLICATE_FOUND`;
+              }
+            }
+          }
+
+          if (submitBlockReason) {
+            const isDuplicateRisk = submitBlockReason.includes('duplicate risk');
+            const eventName = isDuplicateRisk
+              ? 'workflow.reddit_duplicate_check.duplicate_risk'
+              : 'workflow.reddit_duplicate_check.evidence_failed';
+            const evidenceForTelemetry = storedEvidence
+              ? parseRedditDuplicateEvidence(storedEvidence)
+              : null;
+            const allScoresForTelemetry = evidenceForTelemetry?.overlapScores?.map(s => s.score) ?? [];
+            telemetry.emit({
+              source: 'workflow',
+              name: eventName,
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                subreddit: String(runtimeParams['subreddit'] ?? ''),
+                candidateTitle: String(runtimeParams['post_title'] ?? runtimeParams['reddit_post_title'] ?? ''),
+                extractedTitleCount: evidenceForTelemetry?.extractedTitles?.length ?? 0,
+                maxScore: allScoresForTelemetry.length > 0 ? Math.max(...allScoresForTelemetry) : 0,
+                matchingTitle: evidenceForTelemetry?.matchingTitle ?? undefined,
+                blockReason: submitBlockReason,
+              },
+            });
+            const dupGateResult: StepResult = {
+              stepId: step.id,
+              success: false,
+              error: submitBlockReason,
+              durationMs: 0,
+            };
+            stepResults.push(dupGateResult);
+            onStateUpdate({ phase: 'error', error: submitBlockReason });
+            finalResult = {
+              workflowId: definition.id,
+              success: false,
+              stepResults,
+              outputs,
+              screenshots,
+              durationMs: Date.now() - workflowStart,
+              error: submitBlockReason,
+            };
+            break;
+          }
+        }
+
+        const approvalSelector = getApprovalSelector(approvalSelectors, step);
+        if (approvalSelector) {
+          const stepName = getStepName(step);
+          const approvalReason = `Approval required before protected step: ${stepName}`;
+          const alreadyApprovedForStep =
+            approvalState.granted &&
+            approvalState.approvedStepId === step.id &&
+            approvalState.approvedStepType === step.type;
+
+          if (approvalState.granted && !alreadyApprovedForStep) {
+            throw new Error(
+              `Approval state mismatch before executing protected step '${step.id}' (${step.type}).`,
+            );
+          }
+
+          if (!alreadyApprovedForStep) {
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.gate.approval.required',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                stepName,
+                gateDecision: 'protected_step',
+                approvalSelector,
+                approvalReason,
+              },
+            });
+
+            onStateUpdate({
+              phase: 'hitl_qa',
+              hitlAction: 'approve_step',
+              currentStep: step.id,
+              hitlReason: approvalReason,
+              hitlInstructions: [
+                'Approve this protected step before execution can continue.',
+                `Step ID: ${step.id}`,
+                `Step Type: ${step.type}`,
+                `Step Name: ${stepName}`,
+                `Approval Selector: ${approvalSelector}`,
+              ].join('\n'),
+            });
+
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.gate.approval.waiting',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                stepName,
+                gateDecision: 'waiting_for_approval',
+                approvalSelector,
+                approvalReason,
+              },
+            });
+
+            await hitlCoordinator.requestQaPause(
+              approvalReason,
+              `Human approval required before protected step "${stepName}" can execute.`,
+            );
+
+            approvalState.granted = true;
+            approvalState.approvedStepId = step.id;
+            approvalState.approvedStepType = step.type;
+            approvalState.consumed = false;
+
+            if (
+              approvalState.approvedStepId !== step.id ||
+              approvalState.approvedStepType !== step.type
+            ) {
+              throw new Error(
+                `Approval recorded for the wrong step before executing '${step.id}' (${step.type}).`,
+              );
+            }
+
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.gate.approval.approved',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                stepType: step.type,
+                stepName,
+                gateDecision: 'approved_after_wait',
+                approvalSelector,
+                approvalReason,
+              },
+            });
+
+            onStateUpdate({
+              phase: 'running',
+              hitlAction: undefined,
+              hitlReason: undefined,
+              hitlInstructions: undefined,
+            });
+          }
+        }
+
+        const approvalGrantedForStep: boolean | undefined =
+          approvalSelector !== null
+            ? approvalState.granted &&
+              approvalState.approvedStepId === step.id &&
+              approvalState.approvedStepType === step.type
+              ? true
+              : false
+            : undefined;
+
+        const result = await executeStep(
+          step,
+          runtimeParams,
+          screenshots,
+          outputs,
+          onStateUpdate,
+          { sessionId: id, workflowId: definition.id, approvalGrantedForStep },
+        );
+
+        const currentUrlAfterStep = await sessionManager.currentUrl().catch(() => '');
+        onStateUpdate({ currentUrl: currentUrlAfterStep });
+
+        let effectiveResult = result;
+        if (result.success && isBrowserPostconditionStep(step)) {
+          const postcondition = validateBrowserPostcondition(
+            step,
+            result,
+            currentUrlAfterStep,
+            outputs,
+            runtimeParams,
+            definition.id,
+            id,
+          );
+
+          if (postcondition.reason !== 'not_applicable') {
+            const telemetryDetails = {
+              stepType: step.type,
+              currentUrl: currentUrlAfterStep,
+              expectedUrl: postcondition.details['expectedUrl'],
+              reason: postcondition.reason,
+              details: postcondition.details,
+            };
+
+            if (!postcondition.valid) {
+              const failureReason = `Browser postcondition failed for step '${step.id}': ${postcondition.reason}`;
+              telemetry.emit({
+                source: 'workflow',
+                name: 'workflow.browser_postcondition.failed',
+                sessionId: id,
+                workflowId: definition.id,
+                stepId: step.id,
+                details: telemetryDetails,
+              });
+              effectiveResult = {
+                ...result,
+                success: false,
+                error: failureReason,
+              };
+            } else {
+              telemetry.emit({
+                source: 'workflow',
+                name: 'workflow.browser_postcondition.passed',
+                sessionId: id,
+                workflowId: definition.id,
+                stepId: step.id,
+                details: telemetryDetails,
+              });
+            }
+          }
+        }
+
+        if (approvalSelector && approvalState.granted) {
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.gate.approval.consumed',
+            sessionId: id,
+            workflowId: definition.id,
+            stepId: step.id,
+            details: {
+              stepType: step.type,
+              stepName: getStepName(step),
+              gateDecision: 'approval_consumed',
+              approvalSelector,
+            },
+          });
+          approvalState.granted = false;
+          approvalState.approvedStepId = undefined;
+          approvalState.approvedStepType = undefined;
+          approvalState.consumed = true;
+        }
+
+        stepResults.push(effectiveResult);
+
+        // Post-execution: parse Reddit duplicate-check evidence (US-028 / RF-010).
+        // When the check_duplicate_reddit_post step succeeds, parse its structured
+        // output and store the evidence in workflow outputs before any downstream step runs.
+        if (step.id === 'check_duplicate_reddit_post' && effectiveResult.success) {
+          const rawOutput = effectiveResult.output ?? '';
+          const evidence = parseRedditDuplicateEvidence(rawOutput);
+
+          if (evidence.errors.length > 0) {
+            // Evidence is malformed — fail the run before any submit step can be reached.
+            const failMsg = `Duplicate-check evidence invalid: ${evidence.errors.join('; ')}`;
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.reddit_duplicate_check.evidence_failed',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                subreddit: String(runtimeParams['subreddit'] ?? ''),
+                candidateTitle: String(runtimeParams['post_title'] ?? runtimeParams['reddit_post_title'] ?? ''),
+                errors: evidence.errors,
+              },
+            });
+            onStateUpdate({ phase: 'error', error: failMsg });
+            finalResult = {
+              workflowId: definition.id,
+              success: false,
+              stepResults,
+              outputs,
+              screenshots,
+              durationMs: Date.now() - workflowStart,
+              error: failMsg,
+            };
+            break;
+          }
+
+          // Validate score range
+          const allScores = (evidence.overlapScores ?? []).map(s => s.score);
+          const outOfRange = allScores.filter(s => s < 0 || s > 1);
+          if (outOfRange.length > 0) {
+            const failMsg = `Duplicate-check evidence invalid: scores out of 0..1 range: ${outOfRange.join(', ')}`;
+            telemetry.emit({
+              source: 'workflow',
+              name: 'workflow.reddit_duplicate_check.evidence_failed',
+              sessionId: id,
+              workflowId: definition.id,
+              stepId: step.id,
+              details: {
+                subreddit: String(runtimeParams['subreddit'] ?? ''),
+                candidateTitle: String(runtimeParams['post_title'] ?? runtimeParams['reddit_post_title'] ?? ''),
+                errors: [failMsg],
+                outOfRange,
+              },
+            });
+            onStateUpdate({ phase: 'error', error: failMsg });
+            finalResult = {
+              workflowId: definition.id,
+              success: false,
+              stepResults,
+              outputs,
+              screenshots,
+              durationMs: Date.now() - workflowStart,
+              error: failMsg,
+            };
+            break;
+          }
+
+          // Store evidence in workflow outputs
+          outputs['reddit_duplicate_check_evidence'] = rawOutput;
+          outputs['reddit_duplicate_check_result'] = evidence.result ?? '';
+          if (evidence.matchingTitle) {
+            outputs['reddit_duplicate_matching_title'] = evidence.matchingTitle;
+          }
+
+          const maxScore = allScores.length > 0 ? Math.max(...allScores) : 0;
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.reddit_duplicate_check.evidence_parsed',
+            sessionId: id,
+            workflowId: definition.id,
+            stepId: step.id,
+            details: {
+              subreddit: String(runtimeParams['subreddit'] ?? ''),
+              candidateTitle: String(runtimeParams['post_title'] ?? runtimeParams['reddit_post_title'] ?? ''),
+              extractedTitleCount: (evidence.extractedTitles ?? []).length,
+              maxScore,
+              result: evidence.result,
+              matchingTitle: evidence.matchingTitle ?? undefined,
+            },
+          });
+        }
+
+        if (!effectiveResult.success) {
+          onStateUpdate({ phase: 'error', error: effectiveResult.error });
+          finalResult = {
+            workflowId: definition.id,
+            success: false,
+            stepResults,
+            outputs,
+            screenshots,
+            durationMs: Date.now() - workflowStart,
+            error: `Step '${step.id}' failed: ${effectiveResult.error}`,
           };
           break;
         }

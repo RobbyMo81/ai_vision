@@ -2,7 +2,7 @@ id: EN-005
 title: Reddit LLM handoff tracing for draft propagation
 storyType: forge-enhancement
 status: proposed
-sourceArtifact: docs/artifacts/2026-04-23-reddit-workflow-run.md
+sourceArtifact: docs/debriefs/2026-04-22-reddit-workflow-run.md
 objective: >
   Fix the Reddit publish path so generated title/body content survives the
   handoff from Gemini draft generation through workflow orchestration and into
@@ -82,7 +82,7 @@ definitionOfDone:
   resultType: enhancement-story
   mandatoryArtifacts:
     - docs/artifacts/2026-04-22-forge-story-reddit-llm-propagation.yaml
-    - docs/artifacts/2026-04-23-reddit-workflow-run.md
+    - docs/debriefs/2026-04-22-reddit-workflow-run.md
   doneStatement: >
     Done means the Reddit workflow has a named trace call linking the Gemini,
     workflow-resolution, and browser-use layers, and the resulting evidence

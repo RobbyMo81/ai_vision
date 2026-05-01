@@ -52,15 +52,20 @@ steps:
     engine: browser-use
     rawPrompt: true
     maxSteps: 5
-    outputFailsOn:
-      - "DUPLICATE_RISK:"
     prompt: >
       Duplicate check before posting to Reddit r/{{subreddit}}.
       Title to check: {{post_title}}.
       1. Navigate to reddit.com/r/{{subreddit}}/new
-      2. Scan visible posts for any title with >70% overlap
-      3. Navigate back to reddit.com/r/{{subreddit}}/submit
-      Respond with exactly one line: DUPLICATE_RISK: <matching title> or NO_DUPLICATE_FOUND
+      2. Collect every visible post title on the page into a JSON array.
+      3. For each title compute an overlap score between 0.0 and 1.0 against the candidate title
+         (1.0 = identical, 0.0 = no overlap). Use word-level Jaccard similarity.
+      4. Navigate back to reddit.com/r/{{subreddit}}/submit
+      Output ONLY the following four lines in exactly this order, nothing else:
+      EXTRACTED_TITLES: <json array of all visible post title strings>
+      OVERLAP_SCORES: <json array of objects, each with title and score fields, e.g. [{"title":"...","score":0.12}]>
+      DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND
+      (Replace NO_DUPLICATE_FOUND with DUPLICATE_RISK when any score is >= 0.70)
+      MATCHING_TITLE: <matching post title>  (include this line only when DUPLICATE_CHECK_RESULT is DUPLICATE_RISK)
 
   - type: agent_task
     id: prepare_and_focus_body
@@ -68,6 +73,11 @@ steps:
     engine: browser-use
     rawPrompt: true
     maxSteps: 6
+    expectedUrlAfter: "/r/{{subreddit}}/submit"
+    requiredOutputIncludes:
+      - "DRAFT_TITLE_TYPED: {{post_title}}"
+      - "DRAFT_BODY_FOCUSED: YES"
+    postconditionRequired: true
     prompt: >
       You are on reddit.com/r/{{subreddit}}/submit.
       1. Click the Text tab if it is not already selected (not Link or Image)
@@ -75,6 +85,9 @@ steps:
       3. Click the Title field and type exactly: {{post_title}}
       4. Click the Body text area to move keyboard focus into it
       5. STOP — do not type anything into the body field
+      6. Output ONLY these two lines, nothing else:
+      DRAFT_TITLE_TYPED: {{post_title}}
+      DRAFT_BODY_FOCUSED: YES
 
   - type: fill
     id: fill_body

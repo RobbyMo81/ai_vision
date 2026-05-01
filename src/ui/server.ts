@@ -223,9 +223,15 @@ let autoRefreshTimer = null;
 let telemetryRefreshTimer = null;
 let isAwaiting = false;
 let isTerminalState = false;
+let currentSessionId = '';
+const pageClientId = 'page-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+
+function nextRequestId() {
+  return 'req-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
 
 function connectWs() {
-  const wsUrl = 'ws://' + location.host + '/ws';
+  const wsUrl = 'ws://' + location.host + '/ws?clientId=' + encodeURIComponent(pageClientId);
   ws = new WebSocket(wsUrl);
   ws.onopen = () => {
     document.getElementById('wsIndicator').className = 'ws-indicator connected';
@@ -290,6 +296,10 @@ async function fetchStatus() {
 }
 
 function updateState(state) {
+  if (typeof state.id === 'string' && state.id.length > 0) {
+    currentSessionId = state.id;
+  }
+
   const phase = state.phase ?? 'idle';
   const hitlAction = state.hitlAction ?? null;
   isAwaiting = phase === 'awaiting_human' || phase === 'pii_wait' || phase === 'hitl_qa';
@@ -431,7 +441,19 @@ async function returnControl() {
   document.getElementById('returnBtn').disabled = true;
   document.getElementById('returnBtn').textContent = 'Returning control...';
   try {
-    await fetch('/api/return-control', { method: 'POST' });
+    const requestId = nextRequestId();
+    await fetch('/api/return-control', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AiVision-Client-Id': pageClientId,
+      },
+      body: JSON.stringify({
+        sessionId: currentSessionId,
+        requestId,
+        clientId: pageClientId,
+      }),
+    });
     log('Control returned to Claude', 'ok');
   } catch (e) {
     log('Failed to return control: ' + e.message, 'err');
@@ -450,10 +472,20 @@ async function confirmFinalStep(confirmed) {
   document.getElementById('returnBtn').disabled = true;
   document.getElementById('rejectBtn').disabled = true;
   try {
+    const requestId = nextRequestId();
     const resp = await fetch('/api/confirm-final-step', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmed, reason }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AiVision-Client-Id': pageClientId,
+      },
+      body: JSON.stringify({
+        confirmed,
+        reason,
+        sessionId: currentSessionId,
+        requestId,
+        clientId: pageClientId,
+      }),
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     log(confirmed ? 'Final step confirmed by HITL' : 'Final step rejected by HITL', confirmed ? 'ok' : 'warn');
@@ -529,11 +561,75 @@ telemetryRefreshTimer = setInterval(fetchTelemetry, 5000);
 // Server
 // ---------------------------------------------------------------------------
 
-export async function startUiServer(port = 3000): Promise<void> {
+export async function startUiServer(port = 3000): Promise<http.Server> {
   // Destructured import gives a fully-typed WebSocketServer without any cast.
   const { WebSocketServer } = await import('ws');
 
   const wss = new WebSocketServer({ noServer: true });
+  let websocketSeq = 0;
+  const websocketIds = new WeakMap<object, string>();
+  const websocketPageIds = new WeakMap<object, string>();
+  const pageIdToSockets = new Map<string, Set<string>>();
+
+  function headerValue(value: string | string[] | undefined): string {
+    if (Array.isArray(value)) return value.join(', ');
+    return value ?? '';
+  }
+
+  function callerMetadata(req: http.IncomingMessage): Record<string, unknown> {
+    return {
+      remoteAddress: req.socket.remoteAddress ?? '',
+      remotePort: req.socket.remotePort ?? 0,
+      forwardedFor: headerValue(req.headers['x-forwarded-for']),
+      userAgent: headerValue(req.headers['user-agent']),
+      origin: headerValue(req.headers.origin),
+      referer: headerValue(req.headers.referer),
+      host: headerValue(req.headers.host),
+      method: req.method ?? '',
+      path: req.url ?? '',
+    };
+  }
+
+  function nextWebSocketId(): string {
+    websocketSeq += 1;
+    return `ws-${Date.now()}-${websocketSeq}`;
+  }
+
+  function parseClientId(request: http.IncomingMessage): string {
+    const parsed = url.parse(request.url ?? '', true);
+    const queryClientId = parsed.query.clientId;
+    if (typeof queryClientId === 'string' && queryClientId.trim().length > 0) {
+      return queryClientId.trim();
+    }
+    return '';
+  }
+
+  function addSocketForPage(pageClientId: string, wsClientId: string): void {
+    if (!pageClientId) return;
+    const existing = pageIdToSockets.get(pageClientId) ?? new Set<string>();
+    existing.add(wsClientId);
+    pageIdToSockets.set(pageClientId, existing);
+  }
+
+  function removeSocketForPage(pageClientId: string, wsClientId: string): void {
+    if (!pageClientId) return;
+    const existing = pageIdToSockets.get(pageClientId);
+    if (!existing) return;
+    existing.delete(wsClientId);
+    if (existing.size === 0) {
+      pageIdToSockets.delete(pageClientId);
+    }
+  }
+
+  function socketsForPage(pageClientId: string): string[] {
+    if (!pageClientId) return [];
+    return Array.from(pageIdToSockets.get(pageClientId) ?? []);
+  }
+
+  function connectionCount(): number {
+    return wss.clients.size;
+  }
+
   telemetry.emit({
     source: 'ui',
     name: 'ui.server.started',
@@ -695,9 +791,137 @@ export async function startUiServer(port = 3000): Promise<void> {
     }
 
     if (req.method === 'POST' && pathname === '/api/return-control') {
-      hitlCoordinator.returnControl();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      let rcBody = '';
+      req.on('data', (chunk) => { rcBody += chunk; });
+      req.on('end', () => {
+        let rcParsed: { sessionId?: string; requestId?: string; clientId?: string } = {};
+        try {
+          rcParsed = JSON.parse(rcBody || '{}') as { sessionId?: string; requestId?: string; clientId?: string };
+        } catch {
+          // empty body OK
+        }
+        const current = workflowEngine.currentState;
+        const requestId = (rcParsed.requestId ?? '').trim();
+        const requestSessionId = (rcParsed.sessionId ?? '').trim();
+        const requestClientId = (rcParsed.clientId ?? '').trim();
+        const headerClientId = headerValue(req.headers['x-aivision-client-id']).trim();
+        const resolvedClientId = requestClientId || headerClientId;
+        const requestRunBinding =
+          requestSessionId.length > 0
+            ? requestSessionId === (current?.id ?? '')
+            : undefined;
+        const matchingSocketIds = socketsForPage(resolvedClientId);
+        const caller = callerMetadata(req);
+
+        telemetry.emit({
+          source: 'ui',
+          name: 'ui.hitl.return_control.received',
+          level: 'info',
+          sessionId: current?.id,
+          details: {
+            requestId,
+            requestSessionId,
+            activeSessionId: current?.id ?? '',
+            requestRunBinding,
+            requestClientId,
+            headerClientId,
+            resolvedClientId,
+            matchingWsClientIds: matchingSocketIds,
+            matchingWsClientCount: matchingSocketIds.length,
+            wsConnectionCount: connectionCount(),
+            currentPhase: current?.phase ?? 'idle',
+            currentHitlAction: current?.hitlAction ?? '',
+            currentStep: current?.currentStep ?? '',
+            ...caller,
+          },
+        });
+
+        const emitReturnControlRejection = (gate: string, rejReason: string): void => {
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.hitl.return_control.rejected',
+            level: 'warn',
+            sessionId: current?.id,
+            details: {
+              gate,
+              reason: rejReason,
+              requestId,
+              requestSessionId,
+              activeSessionId: current?.id ?? '',
+              requestRunBinding,
+              requestClientId,
+              headerClientId,
+              resolvedClientId,
+              matchingWsClientIds: matchingSocketIds,
+              matchingWsClientCount: matchingSocketIds.length,
+              currentPhase: current?.phase ?? 'idle',
+              currentHitlAction: current?.hitlAction ?? '',
+              currentStep: current?.currentStep ?? '',
+              wsConnectionCount: connectionCount(),
+              ...caller,
+            },
+          });
+        };
+
+        const isAllowedReturnControlState =
+          (current?.phase === 'awaiting_human' &&
+            (current?.hitlAction === 'return_control' || current?.hitlAction === 'verify_authentication')) ||
+          (current?.phase === 'hitl_qa' &&
+            (
+              current?.hitlAction === 'approve_draft' ||
+              current?.hitlAction === 'capture_notes' ||
+              current?.hitlAction === 'approve_step'
+            ));
+
+        if (!isAllowedReturnControlState) {
+          emitReturnControlRejection('return_control_action_gate', 'No active return-control wait in progress');
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No active return-control wait in progress' }));
+          return;
+        }
+
+        if (requestSessionId.length > 0 && requestSessionId !== (current?.id ?? '')) {
+          emitReturnControlRejection('session_binding_gate', 'Session ID mismatch');
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Session ID mismatch' }));
+          return;
+        }
+
+        if (resolvedClientId.length > 0 && matchingSocketIds.length === 0) {
+          emitReturnControlRejection('websocket_presence_gate', 'No active UI session for this client');
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No active UI session for this client' }));
+          return;
+        }
+
+        hitlCoordinator.returnControl();
+
+        telemetry.emit({
+          source: 'ui',
+          name: 'ui.hitl.return_control.completed',
+          level: 'info',
+          sessionId: current?.id,
+          details: {
+            requestId,
+            requestSessionId,
+            activeSessionId: current?.id ?? '',
+            requestRunBinding,
+            requestClientId,
+            headerClientId,
+            resolvedClientId,
+            matchingWsClientIds: matchingSocketIds,
+            matchingWsClientCount: matchingSocketIds.length,
+            wsConnectionCount: connectionCount(),
+            currentPhase: current?.phase ?? 'idle',
+            currentHitlAction: current?.hitlAction ?? '',
+            currentStep: current?.currentStep ?? '',
+            ...caller,
+          },
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      });
       return;
     }
 
@@ -706,9 +930,89 @@ export async function startUiServer(port = 3000): Promise<void> {
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
         try {
-          const parsed = JSON.parse(body || '{}') as { confirmed?: boolean; reason?: string };
+          const parsed = JSON.parse(body || '{}') as {
+            confirmed?: boolean;
+            reason?: string;
+            sessionId?: string;
+            requestId?: string;
+            clientId?: string;
+          };
           const current = workflowEngine.currentState;
           const reason = parsed.reason?.trim() ?? '';
+          const requestSessionId = parsed.sessionId?.trim() ?? '';
+          const requestClientId = parsed.clientId?.trim() ?? '';
+          const headerClientId = headerValue(req.headers['x-aivision-client-id']).trim();
+          const clientId = requestClientId || headerClientId;
+          const requestRunBinding =
+            requestSessionId.length > 0
+              ? requestSessionId === (current?.id ?? '')
+              : undefined;
+          const matchingSocketIds = socketsForPage(clientId);
+
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.hitl.confirm_final_step.received',
+            level: 'info',
+            sessionId: current?.id,
+            details: {
+              confirmed: Boolean(parsed.confirmed),
+              requestId: parsed.requestId ?? '',
+              requestSessionId,
+              activeSessionId: current?.id ?? '',
+              requestRunBinding,
+              requestClientId,
+              headerClientId,
+              resolvedClientId: clientId,
+              matchingWsClientIds: matchingSocketIds,
+              matchingWsClientCount: matchingSocketIds.length,
+              currentPhase: current?.phase ?? 'idle',
+              currentHitlAction: current?.hitlAction ?? '',
+              currentStep: current?.currentStep ?? '',
+              wsConnectionCount: connectionCount(),
+              ...callerMetadata(req),
+            },
+          });
+
+          const emitConfirmationRejection = (gate: string, rejReason: string): void => {
+            telemetry.emit({
+              source: 'ui',
+              name: 'ui.hitl.confirm_final_step.rejected',
+              level: 'warn',
+              sessionId: current?.id,
+              details: {
+                gate,
+                reason: rejReason,
+                requestSessionId,
+                activeSessionId: current?.id ?? '',
+                resolvedClientId: clientId,
+                matchingWsClientCount: matchingSocketIds.length,
+                wsConnectionCount: connectionCount(),
+                ...callerMetadata(req),
+              },
+            });
+          };
+
+          if (current?.phase !== 'hitl_qa') {
+            emitConfirmationRejection('run_phase_gate', 'No active final confirmation in progress');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'No active final confirmation in progress' }));
+            return;
+          }
+
+          if (requestSessionId.length > 0 && requestSessionId !== (current?.id ?? '')) {
+            emitConfirmationRejection('session_binding_gate', 'Session ID mismatch');
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Session ID mismatch' }));
+            return;
+          }
+
+          if (clientId.length > 0 && matchingSocketIds.length === 0) {
+            emitConfirmationRejection('websocket_presence_gate', 'No active UI session for this client');
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'No active UI session for this client' }));
+            return;
+          }
+
           if (current) {
             (current as SessionState).hitlAckAt = new Date().toISOString();
             (current as SessionState).hitlOutcomeConfirmed = Boolean(parsed.confirmed);
@@ -721,6 +1025,31 @@ export async function startUiServer(port = 3000): Promise<void> {
             }
           }
           hitlCoordinator.confirmCompletion(Boolean(parsed.confirmed), reason);
+
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.hitl.confirm_final_step.completed',
+            level: parsed.confirmed ? 'info' : 'warn',
+            sessionId: current?.id,
+            details: {
+              confirmed: Boolean(parsed.confirmed),
+              requestId: parsed.requestId ?? '',
+              requestSessionId,
+              activeSessionId: current?.id ?? '',
+              requestRunBinding,
+              requestClientId,
+              headerClientId,
+              resolvedClientId: clientId,
+              matchingWsClientIds: matchingSocketIds,
+              matchingWsClientCount: matchingSocketIds.length,
+              currentPhase: current?.phase ?? 'idle',
+              currentHitlAction: current?.hitlAction ?? '',
+              currentStep: current?.currentStep ?? '',
+              wsConnectionCount: connectionCount(),
+              ...callerMetadata(req),
+            },
+          });
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, confirmed: Boolean(parsed.confirmed), reason }));
         } catch (e) {
@@ -795,22 +1124,44 @@ export async function startUiServer(port = 3000): Promise<void> {
     }
   });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, request) => {
+    const wsId = nextWebSocketId();
+    const pageClientId = parseClientId(request);
+    websocketIds.set(ws, wsId);
+    websocketPageIds.set(ws, pageClientId);
+    addSocketForPage(pageClientId, wsId);
+
     telemetry.emit({
       source: 'ui',
       name: 'ui.ws.connected',
-      details: {},
+      details: {
+        wsClientId: wsId,
+        pageClientId,
+        pageWsClientIds: socketsForPage(pageClientId),
+        wsConnectionCount: connectionCount(),
+        ...callerMetadata(request),
+      },
     });
     ws.on('close', () => {
+      const trackedWsId = websocketIds.get(ws) ?? '';
+      const trackedPageClientId = websocketPageIds.get(ws) ?? '';
+      removeSocketForPage(trackedPageClientId, trackedWsId);
+
       telemetry.emit({
         source: 'ui',
         name: 'ui.ws.disconnected',
         level: 'warn',
-        details: {},
+        details: {
+          wsClientId: trackedWsId,
+          pageClientId: trackedPageClientId,
+          pageWsClientIds: socketsForPage(trackedPageClientId),
+          wsConnectionCount: connectionCount(),
+        },
       });
     });
   });
 
   await new Promise<void>((resolve) => server.listen(port, resolve));
   console.error(`[ui] HITL control panel: http://localhost:${port}`);
+  return server;
 }

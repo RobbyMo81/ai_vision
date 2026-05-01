@@ -42,6 +42,7 @@ export interface Discovery {
   title: string;
   detail: string;
   created_at: string;
+  // Schema compatibility flag for exported discoveries; retained for existing DBs.
   exported_to_agents_md: number;
 }
 
@@ -355,8 +356,12 @@ export class ForgeMemory {
   // ── UTILITIES ────────────────────────────────────────────
 
   /**
-   * Compile discoveries into AGENTS.md format.
-   * Call after all stories pass to update institutional memory.
+    * Compile discoveries into markdown sections for history archiving.
+    * Archive target files:
+    * - /home/spoq/ai-vision/docs/history/forge_history.md
+    * - /home/spoq/ai-vision/docs/history/history_index.md
+    *
+    * Method name is retained for compatibility with older scripts.
    */
   compileAgentsMd(): string {
     const discoveries = this.db.prepare(

@@ -69,8 +69,8 @@ Role:
 
 ### 6. Documentation / Planning Layer
 
-- `docs/artifacts/AI_VISION_V2_BLUEPRINT.md`
-- `docs/artifacts/CTO Technical Report.md`
+- `docs/debriefs/AI_VISION_V2_BLUEPRINT.md`
+- `docs/debriefs/CTO Technical Report.md`
 - `Application_Test.md`
 - `Application_Fixes.md`
 - `workflows/*.yaml`

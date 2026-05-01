@@ -1,0 +1,100 @@
+{
+  "confirmHttpStatus": 200,
+  "confirmResponse": {
+    "ok": true,
+    "confirmed": true,
+    "reason": "live repro 6"
+  },
+  "wsConnected": {
+    "id": "f860001b-06a7-42f1-8655-a812adafba2d",
+    "name": "ui.ws.connected",
+    "level": "info",
+    "source": "ui",
+    "details": {
+      "wsClientId": "ws-1777184606413-1",
+      "pageClientId": "page-live-repro-6",
+      "pageWsClientIds": [
+        "ws-1777184606413-1"
+      ],
+      "wsConnectionCount": 1,
+      "remoteAddress": "::ffff:127.0.0.1",
+      "remotePort": 41326,
+      "forwardedFor": "",
+      "userAgent": "",
+      "origin": "",
+      "referer": "",
+      "host": "localhost:3018",
+      "method": "GET",
+      "path": "/ws?clientId=page-live-repro-6"
+    },
+    "createdAt": "2026-04-26T06:23:26.413Z"
+  },
+  "confirmReceived": {
+    "id": "8f2c230f-57bc-40b6-abf1-982d8673b9c9",
+    "name": "ui.hitl.confirm_final_step.received",
+    "level": "info",
+    "source": "ui",
+    "details": {
+      "confirmed": true,
+      "requestId": "req-live-repro-6",
+      "requestSessionId": "session-live-repro-6",
+      "activeSessionId": "",
+      "requestRunBinding": false,
+      "requestClientId": "page-live-repro-6",
+      "headerClientId": "page-live-repro-6",
+      "resolvedClientId": "page-live-repro-6",
+      "matchingWsClientIds": [
+        "ws-1777184606413-1"
+      ],
+      "matchingWsClientCount": 1,
+      "currentPhase": "idle",
+      "currentHitlAction": "",
+      "currentStep": "",
+      "wsConnectionCount": 1,
+      "remoteAddress": "::ffff:127.0.0.1",
+      "remotePort": 41328,
+      "forwardedFor": "",
+      "userAgent": "node",
+      "origin": "",
+      "referer": "",
+      "host": "localhost:3018",
+      "method": "POST",
+      "path": "/api/confirm-final-step"
+    },
+    "createdAt": "2026-04-26T06:23:26.424Z"
+  },
+  "confirmCompleted": {
+    "id": "737acb95-e4e2-4702-9852-6a14e94dac66",
+    "name": "ui.hitl.confirm_final_step.completed",
+    "level": "info",
+    "source": "ui",
+    "details": {
+      "confirmed": true,
+      "requestId": "req-live-repro-6",
+      "requestSessionId": "session-live-repro-6",
+      "activeSessionId": "",
+      "requestRunBinding": false,
+      "requestClientId": "page-live-repro-6",
+      "headerClientId": "page-live-repro-6",
+      "resolvedClientId": "page-live-repro-6",
+      "matchingWsClientIds": [
+        "ws-1777184606413-1"
+      ],
+      "matchingWsClientCount": 1,
+      "currentPhase": "idle",
+      "currentHitlAction": "",
+      "currentStep": "",
+      "wsConnectionCount": 1,
+      "remoteAddress": "::ffff:127.0.0.1",
+      "remotePort": 41328,
+      "forwardedFor": "",
+      "userAgent": "node",
+      "origin": "",
+      "referer": "",
+      "host": "localhost:3018",
+      "method": "POST",
+      "path": "/api/confirm-final-step"
+    },
+    "createdAt": "2026-04-26T06:23:26.425Z"
+  }
+}

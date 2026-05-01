@@ -1,0 +1,70 @@
+id: US-027
+tracker_id: RF-009
+title: Direct Workflow Gate Layer - Phase 5 Content Output Validation Gate
+date: 2026-04-27
+story_type: implementation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  completed_dependencies:
+    - US-022: Direct workflow gate layer design
+    - US-023: Canonical direct HITL state publication
+    - US-024: Final-step confirmation pre-flight binding enforcement
+    - US-025: Return-control pre-flight binding enforcement
+    - US-026: Approval gate before browser side effects
+  source_artifacts:
+    - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+    - docs/architecture/as-built_execution_atlas.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+  current_gap: >
+    The direct engine can generate and substitute runtime outputs, but it does
+    not validate generated body/title values and unresolved downstream placeholders
+    as a generic gate before browser side effects.
+
+mission: >
+  Implement direct content/output validation so bad generated output and unresolved
+  downstream placeholders fail before browser posting steps execute.
+
+required_code_surfaces:
+  - src/workflow/engine.ts
+  - src/workflow/engine.test.ts
+
+implementation_requirements:
+  - Add a direct-path output validation helper in engine.ts.
+  - Validate generate_content outputKey immediately after writer output is stored.
+  - Validate outputTitleKey when the step config requires a title.
+  - Validate preflight-provided output before skipping generate_content.
+  - Reject empty content.
+  - Reject unresolved template markers.
+  - Reject known placeholder and generic markers.
+  - Reject missing required title.
+  - Reject downstream unresolved placeholders before browser side effects.
+  - Emit structured validation telemetry.
+  - Preserve mode: agentic.
+
+non_goals:
+  - Reddit duplicate-title evidence scoring.
+  - Browser side-effect postconditions.
+  - Generalized precondition skip gates.
+  - agent_task side-effect safety policy.
+  - mode: agentic removal.
+
+acceptance_tests:
+  - generate_content empty body fails fast.
+  - generate_content placeholder body fails fast.
+  - generate_content missing required title fails fast.
+  - generate_content generic placeholder text fails fast.
+  - preflight-provided invalid output fails before skip.
+  - downstream unresolved placeholder fails before browser-use.
+  - valid ai-vision content passes validation.
+  - mode: agentic routing remains unchanged.
+
+quality_gates:
+  - pnpm run typecheck
+  - pnpm test
+
+done_when: >
+  US-027 is complete when invalid generated and substituted content cannot reach
+  browser posting steps, validation telemetry records pass/fail decisions, regression
+  tests cover the invalid and valid cases, governance is updated, and quality gates pass.

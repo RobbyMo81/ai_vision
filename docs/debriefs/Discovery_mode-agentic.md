@@ -152,8 +152,8 @@ If `mode: agentic` is removed as a production execution mode, the following are 
   - `workflows/authenticated_task.yaml`
   - `workflows/write_and_post_to_reddit.yaml`
 - docs/artifacts that describe the orchestrator split:
-  - `docs/artifacts/claude-layer-shape-connects.md`
-  - `docs/artifacts/2026-04-24-reddit-production-run-bug-trace.md`
+  - `docs/debriefs/claude-layer-shape-connects.md`
+  - `docs/debriefs/2026-04-24-reddit-production-run-bug-trace.md`
 
 Important nuance:
 
@@ -550,4 +550,3 @@ Reason:
 - skip decisions are deterministic and visible
 - tests cover the new gates
 - the agentic workflows have been converted or retired
-

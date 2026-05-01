@@ -6,7 +6,7 @@ Date: `2026-04-24`
 Status: Design artifact — no runtime code changes  
 
 Source Atlas: `docs/architecture/as-built_execution_atlas.md`  
-Source Discovery: `docs/artifacts/Discovery_mode-agentic.md`
+Source Discovery: `docs/debriefs/Discovery_mode-agentic.md`
 
 ---
 

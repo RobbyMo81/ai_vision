@@ -1,0 +1,150 @@
+id: US-024
+title: Direct workflow gate layer — Phase 2 final-step confirmation pre-flight binding enforcement
+storyType: forge-refactor
+status: proposed
+trackerRow: RF-006
+sourceArtifacts:
+  - docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-storyline.md
+  - docs/debriefs/2026-04-25-confirm-final-step-trace-and-preflight-requirements.md
+  - downloads/live-repro-matrix-evidence.json
+  - docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md
+  - src/ui/server.ts
+  - src/workflow/engine.ts
+
+objective: >
+  Add three pre-flight binding gates to /api/confirm-final-step so stale-tab
+  and session-mismatched confirmation requests are rejected before completion.
+  Add equivalent caller-attribution trace instrumentation to /api/return-control.
+  Emit structured rejection telemetry for every pre-flight failure.
+
+layers:
+  - id: run-phase-gate
+    name: Run-phase pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - check workflowEngine.currentState.phase === 'hitl_qa' before forwarding confirm
+      - reject HTTP 409 if no active final-confirmation wait is in progress
+      - emit ui.hitl.confirm_final_step.rejected with gate=run_phase_gate
+
+  - id: session-binding-gate
+    name: Session binding pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - compare requestSessionId (from body) against workflowEngine.currentState.id
+      - reject HTTP 400 if requestSessionId is present and mismatches the active session
+      - emit ui.hitl.confirm_final_step.rejected with gate=session_binding_gate
+
+  - id: websocket-presence-gate
+    name: WebSocket presence pre-flight gate
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - use existing socketsForPage(resolvedClientId) to check matchingWsClientCount
+      - reject HTTP 403 if resolvedClientId is non-empty and matchingWsClientCount === 0
+      - emit ui.hitl.confirm_final_step.rejected with gate=websocket_presence_gate
+
+  - id: return-control-trace
+    name: Return-control caller attribution instrumentation
+    sourceAnchor: src/ui/server.ts
+    remediationRequirement:
+      - add callerMetadata() and wsClientId/pageClientId capture to /api/return-control handler
+      - emit ui.hitl.return_control.received telemetry matching the field shape from /api/confirm-final-step
+      - trace only — no enforcement in this story
+
+  - id: rejection-telemetry
+    name: Structured rejection telemetry event
+    sourceAnchor: src/telemetry/types.ts
+    remediationRequirement:
+      - add ui.hitl.confirm_final_step.rejected event name to telemetry contract
+      - implement rejection telemetry with one handler-scoped named const emitConfirmationRejection
+        immediately after current, requestSessionId, requestClientId, headerClientId,
+        clientId, requestRunBinding, and matchingSocketIds are computed
+      - do not use one-off inline emitters inside each gate branch
+      - do not lift the helper outside the handler because it depends on request-local
+        body/header/caller metadata
+      - include gate name, reject reason, requestSessionId, activeSessionId,
+        resolvedClientId, matchingWsClientCount, and full caller metadata fields
+
+shapes:
+  implementationSummary:
+    required:
+      - three named pre-flight gate blocks in the POST /api/confirm-final-step handler
+      - one handler-scoped named const emitConfirmationRejection shared across all three gate paths
+      - caller attribution block added to POST /api/return-control (trace only)
+      - regression test for each rejection path and for the active-tab happy path
+  storyReportShape:
+    requiredSections:
+      - gate_implementation
+      - rejection_telemetry_contract
+      - return_control_trace_parity
+      - test_coverage
+      - non_goals
+
+graphData:
+  mermaid: |
+    flowchart TD
+        REQ["POST /api/confirm-final-step"]
+        G1{"phase === hitl_qa?"}
+        G2{"requestSessionId matches?"}
+        G3{"matchingWsClientCount > 0?"}
+        EMIT_REJ["emit ui.hitl.confirm_final_step.rejected"]
+        FWD["forward to hitlCoordinator"]
+        EMIT_OK["emit ui.hitl.confirm_final_step.completed"]
+        HTTP409["HTTP 409"]
+        HTTP400["HTTP 400"]
+        HTTP403["HTTP 403"]
+
+        REQ --> G1
+        G1 -- no --> HTTP409
+        HTTP409 --> EMIT_REJ
+        G1 -- yes --> G2
+        G2 -- mismatch --> HTTP400
+        HTTP400 --> EMIT_REJ
+        G2 -- ok --> G3
+        G3 -- stale tab --> HTTP403
+        HTTP403 --> EMIT_REJ
+        G3 -- active tab --> FWD
+        FWD --> EMIT_OK
+
+    flowchart TD
+        RCQ["POST /api/return-control"]
+        ATTR["callerMetadata() + wsClientId resolution"]
+        EMIT_RC["emit ui.hitl.return_control.received"]
+        FWD_RC["forward to hitlCoordinator.release()"]
+
+        RCQ --> ATTR
+        ATTR --> EMIT_RC
+        EMIT_RC --> FWD_RC
+
+validationPlan:
+  - run-phase gate rejects with HTTP 409 when engine phase is not hitl_qa
+  - session binding gate rejects with HTTP 400 when requestSessionId mismatches active run
+  - websocket presence gate rejects with HTTP 403 when resolvedClientId has no live WS
+  - active-tab happy path succeeds and emits ui.hitl.confirm_final_step.completed
+  - return-control emits ui.hitl.return_control.received with caller attribution fields
+  - no enforcement added to return-control in this story
+  - pnpm run typecheck passes
+  - pnpm test passes
+
+exitCriteria:
+  explicit: true
+  storyExitsWhen:
+    - all three pre-flight gates are implemented and tested
+    - ui.hitl.confirm_final_step.rejected telemetry fires for each rejection path
+    - return-control handler emits ui.hitl.return_control.received with caller attribution
+    - regression tests cover all three rejection paths plus active-tab happy path
+    - pnpm run typecheck passes
+    - pnpm test passes
+
+definitionOfDone:
+  resultType: phase-2-gate-enforcement
+  mandatoryArtifacts:
+    - docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-storyline.md
+    - docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-forge-story.yaml
+    - docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-implementation-handoff.md
+    - docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-definition-of-done.md
+  doneStatement: >
+    Done means stale-tab and session-mismatched final-step confirmation requests are
+    rejected before reaching hitlCoordinator, every rejection emits a structured
+    telemetry event, /api/return-control traces caller attribution at parity with
+    /api/confirm-final-step, and all regression tests pass under pnpm run typecheck
+    and pnpm test.

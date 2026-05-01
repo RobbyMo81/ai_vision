@@ -3,7 +3,7 @@
 Story: `US-021`
 Tracker Row: `EN-006`
 Source Story Card: `docs/artifacts/tsc-crash-remediation-forge-story.yaml`
-Source Bug Report: `docs/artifacts/tsc-crash-bug-report.md`
+Source Bug Report: `docs/debriefs/tsc-crash-bug-report.md`
 
 ## Forge System Instructions
 
