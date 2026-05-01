@@ -43,15 +43,15 @@ Not yet complete:
 | `US-032` / `RF-014` | Complete | Fix dominant-intent drift found during US-031 production-run pre-flight. | Done. Classifier collects matched signals and selects dominant workflow intent. | Live `post_to_reddit.yaml` `submit_reddit_post` prompt classifies as `submit`, fallback fill text does not override submit, standalone fill/login/read-only behavior remains correct, and tests pass. |
 | `US-033` / `RF-015` | Complete | Fix the second live-prompt drift where `check_duplicate_reddit_post` can be blocked before it creates duplicate evidence. | Done. Exact live prompt fixtures cover duplicate-check and submit behavior, and the duplicate-check evidence producer is allowed through a narrow deterministic read-only contract. | Exact live duplicate-check and submit prompts are regression fixtures; duplicate-check can produce evidence before submit gating requires it; submit remains blocked until valid no-duplicate evidence exists; tests pass. |
 
-## Created But Not Complete Backlog Stories
+## Reconciled Backlog Stories
 
-These exist in `prd.json` with `passes: false`, but they are not the active HITL/direct-gate sequence.
+These older stories were outside the active HITL/direct-gate sequence and were later reconciled against repo evidence.
 
 | Story | Status | Why Not Completed | Done Requirement |
 |---|---|---|---|
-| `US-012` — browser-use live event bridge | Incomplete | Older browser-use telemetry story remains marked false in PRD. Later work added browser-use action telemetry, but this story has not been reconciled against its original acceptance criteria. | Python bridge posts browser-use action events to the callback URL; Node bridge emits telemetry; UI forwards events in real time; orchestrator receives mid-task state; typecheck and tests pass. |
-| `US-020` — TSC crash diagnostic classification baseline | Incomplete | Older diagnostic/investigation story remains marked false. It is not required for the HITL gate sequence unless TypeScript crashes recur. | Produce the bug report and YAML refactoring artifact with runtime baseline, Node 24 comparison, OS/Node/TypeScript layer evidence, metrics, and procedures. |
-| `US-021` — TSC crash layered remediation protocol | Incomplete | Older remediation-protocol story remains marked false. It depends on the diagnostic path and is not blocking the HITL gate sequence right now. | Produce the remediation report and YAML story artifact that classify the active failure layer and define remediation procedures. |
+| `US-012` — browser-use live event bridge | Complete-with-evidence | Source, tests, progress, and history now show the bridge landed: browser-use posts callbacks, Node emits telemetry, UI forwards events, orchestrator receives live state, and the repo validation gates pass. | Closed as implemented via backlog reconciliation. |
+| `US-020` — TSC crash diagnostic classification baseline | Archived-complete | The diagnostic bug report and YAML story artifact exist, and later Node 24 parity evidence plus remediation work absorbed the active issue. | Keep as archived baseline evidence, not active backlog. |
+| `US-021` — TSC crash layered remediation protocol | Superseded | The remediation path was completed under `EN-006`, and the standalone US-021 remediation report artifact was never produced under this story id. | Retire as superseded so it is not reopened as separate implementation work. |
 
 ## Atlas-Aligned Stories Still Needed
 

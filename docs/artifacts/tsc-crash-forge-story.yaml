@@ -1,7 +1,11 @@
 id: US-020
 title: TSC crash diagnostic classification baseline
 storyType: forge-enhancement
-status: proposed
+status: archived-complete
+archiveReason: >
+  The diagnostic bug report and story artifact exist and were later absorbed into
+  the completed remediation work plus current passing Node 24 typecheck evidence.
+  Keep this story as archived baseline evidence rather than an open backlog item.
 sourceArtifact: docs/debriefs/tsc_crash_error_investigation.md
 objective: >
   Classify `tsc --noEmit` crash ownership across OS/kernel, Node/V8 runtime,

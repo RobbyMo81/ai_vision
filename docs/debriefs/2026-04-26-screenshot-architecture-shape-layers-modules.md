@@ -13,6 +13,14 @@ The screenshot subsystem is implemented as a multi-path pipeline with three main
 
 The design favors operational flexibility (live HITL visibility + durable run artifacts) over a single canonical screenshot pathway.
 
+Operationally, the current system can also be summarized as:
+
+- 4 architectural layers
+- 3 main storage/transport branches
+- 5 primary screenshot capture sources
+- 4 concrete durable storage locations
+- multiple consumers across UI, HTTP, MCP, workflow persistence, and agentic orchestration
+
 ## End-to-End Shape
 
 ### 1) Capture Sources
@@ -34,6 +42,104 @@ The design favors operational flexibility (live HITL visibility + durable run ar
 - Session-level screenshot paths are inserted into session_screenshots.
 - Workflow-level full run output (including screenshot arrays when present) is persisted in workflow_runs.result_json.
 - Wrap-up also writes a filesystem JSON artifact with result/state/session context.
+
+## Operational Inventory
+
+### Who Uses Screenshot Data
+
+The screenshot data is consumed by the following runtime and persistence surfaces:
+
+1. HITL web UI websocket client
+  - Receives `type: 'screenshot'` payloads with `screenshotBase64` and renders them for the operator.
+  - Source modules: `src/ui/server.ts`, `src/session/types.ts`
+
+2. HITL HTTP polling client
+  - Calls `GET /api/screenshot` and receives `{ base64, url }` for manual refresh / browser-state visibility.
+  - Source module: `src/ui/server.ts`
+
+3. MCP clients
+  - Use the `browser_screenshot` tool and receive image content directly from the current browser page.
+  - Source module: `src/mcp/server.ts`
+
+4. Workflow runtime and wrap-up persistence
+  - The workflow `screenshot` step emits `screenshotPath` and `screenshotBase64`, and the full workflow result carries screenshot arrays into durable run artifacts.
+  - Source modules: `src/workflow/engine.ts`, `src/workflow/wrap-up.ts`
+
+5. Session and workflow history readers
+  - Session history reads normalized screenshot paths from SQLite, and workflow history reads result JSON that may contain screenshot payloads.
+  - Source modules: `src/db/repository.ts`
+
+6. Agentic orchestrator state/output flow
+  - The orchestrator screenshot tool captures page state and can store screenshot base64 under workflow outputs for later tool or completion use.
+  - Source module: `src/orchestrator/loop.ts`
+
+### How Many Locations Store Screenshots
+
+There are two valid counts depending on whether the question is about architectural branches or concrete durable storage targets.
+
+#### A. Main storage/transport branches: 3
+
+1. In-memory base64 transport
+  - Used for live websocket updates, HTTP screenshot responses, MCP image responses, and orchestrator output variables.
+
+2. Filesystem image artifacts
+  - Used for rolling session frames, workflow screenshot files, and Python bridge screenshot outputs.
+
+3. SQLite persistence
+  - Used for normalized screenshot path storage and workflow result JSON persistence.
+
+#### B. Concrete durable storage locations: 4
+
+1. Filesystem image files
+  - Rolling screenshot frames under `sessions/rolling` or `SESSION_DIR/rolling`
+  - Workflow screenshot artifacts under `SESSION_DIR/workflow`
+  - Bridge-produced screenshot image files from Python endpoints
+
+2. `session_screenshots` table
+  - Normalized path storage keyed by session
+  - Source modules: `src/db/migrations/001_init.sql`, `src/db/repository.ts`
+
+3. `workflow_runs.result_json`
+  - Denormalized workflow result blob that may include screenshot arrays and related metadata
+  - Source modules: `src/db/migrations/002_workflow_runs.sql`, `src/db/repository.ts`
+
+4. Wrap-up artifact JSON files
+  - Filesystem wrap-up records that persist the final workflow result/state/session context, including screenshot references carried in `result`
+  - Source module: `src/workflow/wrap-up.ts`
+
+### Who Takes Screenshots
+
+There are 5 primary screenshot capture sources in the current system.
+
+1. Shared Playwright session manager capture
+  - `sessionManager.screenshot()` returns a base64 JPEG for direct runtime use.
+  - Source module: `src/session/manager.ts`
+
+2. Session manager rolling screenshot timer
+  - `startScreenshotTimer()` periodically captures JPEG frames and writes them to disk.
+  - Source module: `src/session/manager.ts`
+
+3. Workflow `screenshot` step
+  - The direct workflow engine calls `sessionManager.screenshot()`, writes a workflow artifact file, and appends screenshot metadata to the run result.
+  - Source module: `src/workflow/engine.ts`
+
+4. Orchestrator screenshot tool
+  - The agentic tool surface captures PNG directly from the page and stores base64 in workflow outputs.
+  - Source module: `src/orchestrator/loop.ts`
+
+5. Python bridge screenshot endpoint
+  - Python automation servers capture PNG to a path and return `{ path, base64, taken_at }`, which TypeScript maps into the runtime `Screenshot` type.
+  - Source modules: `src/engines/browser-use/server/main.py`, `src/engines/python-bridge.ts`
+
+If the question is interpreted as who triggers capture rather than who owns the capture implementation, the trigger surfaces are broader:
+
+- HITL screenshot push loop in `src/ui/server.ts`
+- HITL screenshot HTTP endpoint in `src/ui/server.ts`
+- MCP `browser_screenshot` tool in `src/mcp/server.ts`
+- direct workflow `screenshot` steps in `src/workflow/engine.ts`
+- orchestrator screenshot tool calls in `src/orchestrator/loop.ts`
+- rolling timer activation in `src/session/manager.ts`
+- Python bridge `/screenshot` calls in `src/engines/python-bridge.ts`
 
 ## Layered Model
 

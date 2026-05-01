@@ -7,7 +7,7 @@
 
 ## Why This Exists
 
-Every Claude Code instance in the FORGE loop starts with a **clean context window**. Without a structured memory layer, each agent is blind to the work of every agent before it. This creates:
+Every Coding Agent instance in the FORGE loop starts with a **clean context window**. Without a structured memory layer, each agent is blind to the work of every agent before it. This creates:
 
 - Repeated mistakes across iterations
 - Conflicting implementation choices

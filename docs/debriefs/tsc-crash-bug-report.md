@@ -3,7 +3,7 @@
 Story: `US-020`
 Structured Story Artifact: `docs/artifacts/tsc-crash-forge-story.yaml`
 Source Investigation: `docs/debriefs/tsc_crash_error_investigation.md`
-Status: Draft investigation artifact
+Status: Archived-complete diagnostic artifact (reconciled 2026-05-01)
 
 ## Current State
 

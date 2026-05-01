@@ -31,7 +31,7 @@ Use this SOP after any completed story (`US-*`, `RF-*`, `EN-*`) with final valid
 | H-005 | US-009 | 2026-04-19 | PASS | SIC | Capture structured rejection reason and trigger SIC on final-step reject | `src/session/hitl.ts`, `src/workflow/wrap-up.ts` |
 | H-006 | US-010 | 2026-04-19 | PASS | Auth + HITL | Add QA pause and explicit authVerification contract for login gates | `src/workflow/engine.ts`, `src/ui/server.ts` |
 | H-007 | US-011 | 2026-04-19 | PASS | Browser Bridge | Recreate browser-use session objects after reset boundaries | `src/engines/browser-use/server/main.py` |
-| H-008 | US-012 | 2026-04-19 | PASS | Telemetry + Bridge | Classify business outcomes separately and recover orphan bridge ports | `src/engines/python-bridge.ts`, `src/telemetry/manager.ts` |
+| H-008 | US-012 | 2026-04-23 | PASS | Browser-Use Live Event Bridge | Post browser-use callbacks to the Node bridge, emit `browser_use.action.*`, forward live UI events, and surface mid-task state without polling | `src/engines/python-bridge.ts`, `src/orchestrator/loop.ts`, `src/ui/server.ts` |
 | H-009 | US-013 | 2026-04-19 | PASS | Workflow Runtime | Resolve placeholders immediately before step execution from live outputs | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
 | H-010 | US-014 | 2026-04-19 | PASS | SIC Persistence | Use FORGE DB as primary SIC storage with deterministic fallback behavior | `src/memory/forge-sic.ts`, `src/workflow/wrap-up.ts` |
 | H-011 | US-015 | 2026-04-19 | PASS | Governance | Enforce single SIC writer path to FORGE context_store | `src/memory/long-term.ts`, `src/workflow/wrap-up.ts` |
@@ -39,8 +39,8 @@ Use this SOP after any completed story (`US-*`, `RF-*`, `EN-*`) with final valid
 | H-013 | US-017 | 2026-04-19 | PASS | Secrets | Keep runtime secrets in local Vault flow, not `.env` payload | `scripts/secrets/vault-init.sh`, `README.md` |
 | H-014 | US-018 | 2026-04-19 | PASS | CI | Run lockfile-faithful typecheck/test/build on push + PR | `.github/workflows/ci.yml` |
 | H-015 | US-019 | 2026-04-21 | PASS | Workflow Determinism | Capture step arrays before spreads to avoid getter source drift | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
-| H-016 | US-020 | 2026-04-23 | PASS | TypeScript Stability | Keep schema expansion local and contain generic-heavy seams | `src/workflow/types.ts`, `src/mcp/server.ts` |
-| H-017 | US-021 | 2026-04-22 | PASS | Handoff Governance | Require 4-part Forge handoff package for engineering build tasks | `AGENTS.md`, `FORGE.md` |
+| H-016 | US-020 | 2026-04-23 | ARCHIVED-COMPLETE | TypeScript Crash Diagnostics | Preserve the diagnostic baseline artifact after Node 24 parity evidence and later remediation absorb the active issue | `docs/debriefs/tsc-crash-bug-report.md`, `docs/artifacts/tsc-crash-forge-story.yaml` |
+| H-017 | US-021 | 2026-05-01 | SUPERSEDED | Backlog Reconciliation | Retire stale remediation story id as superseded by completed EN-006 evidence and current passing typecheck path | `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/tsc-crash-remediation-forge-story.yaml` |
 | H-018 | EN-008 | 2026-04-22 | PASS | Startup Boundaries | Replace startup casts/inference seams with named typed boundaries | `src/workflow/types.ts`, `src/ui/server.ts` |
 | H-019 | EN-009 | 2026-04-24 | PASS | Forge Tooling | Keep `ForgeMP/` canonical with `scripts/forge` compatibility shims | `package.json`, `scripts/forge/forge.sh` |
 | H-020 | US-022 | 2026-04-24 | PASS | Gate Layer Design | Define direct gate contracts and insertion map before retirement work | `docs/artifacts/2026-04-24-direct-workflow-gate-layer-design.md` |
@@ -57,3 +57,4 @@ Use this SOP after any completed story (`US-*`, `RF-*`, `EN-*`) with final valid
 | H-031 | US-031 | 2026-04-28 | PASS | agent_task Side-Effect Safety Gate | Classify agent_task prompt intent before worker dispatch; block login/fill without approval, post/publish with invalid content, reddit submit without duplicate evidence | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
 | H-032 | US-032 | 2026-04-28 | PASS | agent_task Dominant Intent Fix | Collect matched intent signals and select dominant workflow intent so submit/publish/post/final-click override fallback fill wording while preserving safety gates | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
 | H-033 | US-033 | 2026-05-01 | PASS | Live Prompt Contract Gate | Treat the exact duplicate-check step contract as evidence-producing read-only work while keeping live submit prompts protected by duplicate evidence gates | `src/workflow/engine.ts`, `src/workflow/engine.test.ts` |
+| H-034 | US-034 | 2026-05-01 | PASS | Backlog Reconciliation | Close US-012 with evidence, archive US-020, supersede US-021, and align PRD/tracker/history naming so stale backlog does not reopen | `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/history/forge_history.md`, `progress.txt` |

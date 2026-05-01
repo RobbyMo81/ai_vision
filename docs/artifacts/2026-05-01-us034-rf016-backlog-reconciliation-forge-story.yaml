@@ -1,0 +1,69 @@
+id: US-034
+tracker_id: RF-016
+title: Backlog Reconciliation - US-012, US-020, US-021
+status: completed
+completionSummary: >
+  US-012 closed with implementation evidence, US-020 classified as
+  archived-complete, and US-021 retired as superseded. PRD, tracker, progress,
+  and FORGE history now use aligned terminal story states.
+date: 2026-05-01
+story_type: reconciliation
+forge_loop_required: true
+mode_agentic_policy: preserve
+
+context:
+  source_artifacts:
+    - prd.json
+    - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md
+    - progress.txt
+    - docs/history/forge_history.md
+    - docs/history/history_index.md
+    - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+    - docs/debriefs/tsc-crash-bug-report.md
+    - docs/artifacts/tsc-crash-forge-story.yaml
+    - docs/artifacts/tsc-crash-remediation-forge-story.yaml
+    - docs/artifacts/2026-04-23-tsc-crash-remediation-implementation-handoff.md
+  current_gap: >
+    Three older backlog stories are still open in prd.json even though repo evidence
+    suggests the work was implemented, superseded, or misnamed in tracker/history
+    surfaces. Future agents can reopen stale work because story ids, tracker ids,
+    and archived history titles do not align.
+
+mission: >
+  Reconcile US-012, US-020, and US-021 against current repository evidence,
+  decide their final backlog status, and align PRD, tracker, progress, and
+  FORGE history naming so stale work does not reopen.
+
+required_code_surfaces:
+  - prd.json
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md
+  - progress.txt
+  - docs/history/forge_history.md
+  - docs/history/history_index.md
+  - docs/debriefs/2026-04-26-hitl-gate-story-reference.md
+
+implementation_requirements:
+  - Verify US-012 acceptance against current bridge source, tests, and history.
+  - Close US-012 with evidence if its acceptance criteria are satisfied.
+  - Decide whether US-020 is archived-complete or retired and record why.
+  - Decide whether US-021 is completed by missing remediation evidence or retired as superseded.
+  - Reconcile tracker naming drift between EN-006/EN-007 and US-020/US-021.
+  - Reconcile FORGE history naming drift where story ids currently point at mismatched titles.
+  - Keep the reconciliation in one governed story instead of splitting into three new implementation stories.
+
+acceptance_tests:
+  - US-012 final status is backed by source, test, and history evidence.
+  - US-020 final status is backed by the bug report and supporting artifacts.
+  - US-021 final status is backed by remediation artifacts or an explicit supersession decision.
+  - PRD names and pass states align with the chosen final classifications.
+  - Tracker rows align with the final US-012/US-020/US-021 story naming.
+  - FORGE history and history index no longer use mismatched titles for US-012, US-020, or US-021.
+  - Progress log records a Summary of Work entry for the reconciliation outcome.
+
+quality_gates:
+  - jq empty prd.json
+
+done_when: >
+  US-034 is complete when the repository has one explicit, evidence-backed reconciliation
+  result for US-012, US-020, and US-021, and the naming drift across PRD, tracker,
+  progress, and FORGE history has been resolved so future agents do not reopen stale work.

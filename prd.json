@@ -145,7 +145,8 @@
       "id": "US-012",
       "title": "browser-use live event bridge",
       "priority": 12,
-      "passes": false,
+      "passes": true,
+      "description": "Reconciled 2026-05-01: complete with evidence. The browser-use bridge now posts action events to `BROWSER_USE_CALLBACK_URL`, the Node bridge emits telemetry, the UI forwards live browser-use events, the orchestrator consumes them without polling, and the repo now has passing typecheck/test validation.",
       "acceptance": [
         "browser-use Python server POSTs action events to BROWSER_USE_CALLBACK_URL",
         "Node.js python-bridge receives and emits telemetry for each browser-use action",
@@ -174,8 +175,8 @@
       "id": "US-020",
       "title": "TSC crash diagnostic classification baseline",
       "priority": 20,
-      "passes": false,
-      "description": "Create a reproducible FORGE investigation path for `tsc --noEmit` memory crashes that distinguishes Node/V8 heap aborts from kernel OOM kills and checker-graph pathologies.",
+      "passes": true,
+      "description": "Reconciled 2026-05-01: archived-complete. The repo contains the diagnostic bug report and YAML story artifact, and later Node 24 parity evidence plus EN-006 remediation work absorbed the active follow-through. This story should remain archived as the baseline diagnostic record rather than stay open as active backlog.",
       "acceptance": [
         "Investigation flow records local Node, pnpm, TypeScript, and `NODE_OPTIONS` before reproducing the crash",
         "Investigation compares local behavior against the CI-pinned Node 24 baseline before blaming the TypeScript graph",
@@ -186,15 +187,15 @@
       ],
       "exitCriteria": "Exit only when `docs/artifacts/tsc-crash-forge-story.yaml` authors the story with layers, shapes, graphed data, and bug-refactoring procedures, and the paired bug report artifact records a final ruled-in or ruled-out classification across OS/kernel, Node/V8, and TypeScript checker layers.",
       "definitionOfDone": "Done means the investigation yields an explicit error or bug report with concise refactoring procedures, names the ruled-in layer, rules out the competing layers with evidence, and persists the result in the FORGE YAML story artifact plus a human-readable report.",
-      "technicalNotes": "Derived from `docs/debriefs/tsc_crash_error_investigation.md`. Preserve the `SIGABRT` versus `SIGKILL` distinction, treat Node 24 parity as the first discriminator, and use `docs/artifacts/tsc-crash-forge-story.yaml` as the structured story-authoring artifact.",
+      "technicalNotes": "Derived from `docs/debriefs/tsc_crash_error_investigation.md`. Preserve the `SIGABRT` versus `SIGKILL` distinction, treat Node 24 parity as the first discriminator, and use `docs/artifacts/tsc-crash-forge-story.yaml` as the structured story-authoring artifact. Reconciled on 2026-05-01 as archived-complete historical evidence, not active backlog.",
       "safetyGates": []
     },
     {
       "id": "US-021",
       "title": "TSC crash layered remediation protocol",
       "priority": 21,
-      "passes": false,
-      "description": "Convert the tsc crash investigation output into an explicit remediation workflow that gates runtime parity first, separates Node/V8 remediation from OS remediation, delays TypeScript refactors until upstream layers are ruled out, and persists the result as a classified bug report.",
+        "passes": true,
+        "description": "Reconciled 2026-05-01: retired as superseded by the completed EN-006 remediation evidence and the now-clean typecheck path. The originally planned standalone US-021 remediation artifact set was never completed under this story id, so this entry should not remain open as active implementation backlog.",
       "acceptance": [
         "Remediation protocol records local Node, pnpm, TypeScript, and `NODE_OPTIONS` and treats CI-pinned Node 24 parity as the first remediation gate",
         "Remediation protocol separates `SIGABRT` Node/V8 evidence from `SIGKILL` or kernel/cgroup evidence and routes them to different remediation paths",
@@ -204,7 +205,7 @@
       ],
       "exitCriteria": "Exit only when `docs/artifacts/tsc-crash-remediation-forge-story.yaml` and its paired remediation bug report artifact both exist, runtime parity has been checked or explicitly documented as unavailable, and the final report names the ruled-in remediation layer with concise procedures and ruled-out competing layers.",
       "definitionOfDone": "Done means the remediation workflow produces an explicit error or bug report that identifies whether the active remediation path is OS/kernel, Node/V8 runtime, or TypeScript checker, and persists the required refactoring procedures in both a human-readable report and a FORGE YAML story artifact.",
-      "technicalNotes": "Derived from the consolidated remediation requirements in `docs/debriefs/ts-memory-troubleshooting.md`, `docs/debriefs/tsc_crash_error_investigation.md`, `docs/debriefs/tsc-crash-bug-report.md`, and `docs/artifacts/tsc-crash-forge-story.yaml`. Preserve the layered order: runtime parity, OS kill-path elimination, then TypeScript refactoring.",
+      "technicalNotes": "Derived from the consolidated remediation requirements in `docs/debriefs/ts-memory-troubleshooting.md`, `docs/debriefs/tsc_crash_error_investigation.md`, `docs/debriefs/tsc-crash-bug-report.md`, and `docs/artifacts/tsc-crash-forge-story.yaml`. Reconciled on 2026-05-01 as superseded by completed EN-006 tracker evidence plus current passing typecheck evidence; preserve the layered order as historical context only.",
       "safetyGates": []
     },
     {
@@ -496,6 +497,26 @@
       "exitCriteria": "Exit only when exact live workflow prompts are contract-tested, duplicate-check evidence production is not circularly blocked, submit remains protected by valid duplicate evidence, and all regression tests pass under typecheck and test gates.",
       "definitionOfDone": "Done means direct workflows can run evidence-producing read-only duplicate checks without pre-existing duplicate evidence while still blocking Reddit submit until valid no-duplicate evidence exists.",
       "technicalNotes": "Derived from docs/debriefs/2026-04-28-us031-agent-task-dominant-intent-drift.md. Keep this story scoped to live prompt contract coverage and the duplicate-check evidence-producer seam. Do not patch workflow YAML as a workaround, weaken submit evidence checks, modify Python/browser-use internals, remove agent_task, or remove mode: agentic.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-034",
+      "title": "Backlog reconciliation: US-012, US-020, US-021",
+      "priority": 3,
+      "passes": true,
+      "description": "Reconcile stale backlog state for US-012, US-020, and US-021 against current repo evidence, decide final close/retire status, and align PRD, tracker, progress, and FORGE history naming so future agents do not reopen stale work.",
+      "acceptance": [
+        "US-012 is closed with evidence or left open with one explicit unmet acceptance item",
+        "US-020 is explicitly classified as archived-complete or retired",
+        "US-021 is explicitly classified as completed or retired as superseded",
+        "Current source, tests, progress, and history evidence are cited for each decision",
+        "PRD, tracker, progress, and FORGE history naming align for US-012, US-020, and US-021",
+        "No separate implementation stories are created for this backlog cleanup",
+        "jq empty prd.json passes"
+      ],
+      "exitCriteria": "Exit only when US-012, US-020, and US-021 have one explicit evidence-backed final backlog status each, and the naming/status drift across PRD, tracker, progress, and FORGE history has been resolved.",
+      "definitionOfDone": "Done means the repository has one governed reconciliation result for US-012, US-020, and US-021, including aligned story names and statuses across PRD, tracker, progress, and FORGE history, so stale work is not reopened by story-id drift.",
+      "technicalNotes": "Derived from docs/debriefs/2026-04-26-hitl-gate-story-reference.md, docs/debriefs/tsc-crash-bug-report.md, and current FORGE history/tracker drift. Keep this story scoped to backlog reconciliation and naming/status alignment; do not split it into three implementation stories.",
       "safetyGates": []
     }
   ]

@@ -1,7 +1,12 @@
 id: US-021
 title: TSC crash layered remediation protocol
 storyType: forge-enhancement
-status: proposed
+status: superseded
+supersededBy: EN-006 completion evidence and US-034 backlog reconciliation
+supersessionReason: >
+  The repo already records this remediation path as completed under EN-006 with
+  passing typecheck evidence, while the dedicated standalone US-021 remediation
+  bug report artifact was never authored under this story id.
 sourceArtifacts:
   - docs/debriefs/ts-memory-troubleshooting.md
   - docs/debriefs/tsc_crash_error_investigation.md

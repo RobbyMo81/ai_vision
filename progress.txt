@@ -640,8 +640,41 @@
 - Investigation traced the drift from `workflows/post_to_reddit.yaml` step `submit_reddit_post` through CLI workflow loading, direct engine gate ordering, `executeStep`, `classifyAgentTaskSideEffect`, approval evidence, duplicate evidence, browser postcondition validation, telemetry, and US-031 tests.
 - Finding: the live `submit_reddit_post` prompt mixes fallback fill wording with dominant submit intent; the US-031 classifier checks `fill` before `submit`, so first-match classification can block submit for the wrong reason.
 - Blast radius: all `agent_task` prompts that mix a high-level protected goal with fallback lower-level actions, especially Reddit/X publishing, form-fill flows, and generic authenticated task prompts.
-- Seed stories recommended: `US-032 / RF-014` dominant intent classification fix, `US-033 / RF-015` live workflow prompt contract regression suite, and optional `US-034 / RF-016` explicit side-effect policy metadata.
+- Seed stories recommended: `US-032 / RF-014` dominant intent classification fix, `US-033 / RF-015` live workflow prompt contract regression suite, and an unassigned future candidate for explicit side-effect policy metadata.
+
+[2026-05-01] US-034 / RF-016 — Forge Workflow Seed Created — Backlog Reconciliation: US-012, US-020, US-021
+- Created one reconciliation story instead of three implementation stories to resolve stale backlog status and naming drift for `US-012`, `US-020`, and `US-021`.
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-01-us034-rf016-backlog-reconciliation-storyline.md`
+  - `2026-05-01-us034-rf016-backlog-reconciliation-forge-story.yaml`
+  - `2026-05-01-us034-rf016-backlog-reconciliation-implementation-handoff.md`
+  - `2026-05-01-us034-rf016-backlog-reconciliation-definition-of-done.md`
+- Added `US-034` to `prd.json` with `passes: false`.
+- Added `RF-016` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Reclaimed the `US-034 / RF-016` identifier from an older optional side-effect-policy seed by changing that older note to an unassigned future candidate.
+- Scope: close `US-012` with evidence, decide whether `US-020` is archived-complete or retired, decide whether `US-021` is completed or superseded, and align PRD/tracker/history naming so stale work is not reopened.
+- Validation: `jq empty prd.json` should pass after this story seed update.
 - No implementation code changed.
+
+[2026-05-01] US-034 / RF-016 — US-021 Reconciled As Superseded
+- Reconciled `US-021` as a superseded backlog entry rather than a still-open remediation implementation story.
+- Updated `prd.json` so `US-021` no longer remains open; the description and notes now record that the standalone US-021 artifact set was never completed under this story id.
+- Updated `docs/artifacts/tsc-crash-remediation-forge-story.yaml` from `proposed` to `superseded` and recorded the supersession reason.
+- Corrected the mismatched `US-021` history rows in `docs/history/forge_history.md` and `docs/history/history_index.md` so they no longer point at an unrelated handoff-governance story title.
+- Evidence for supersession: `EN-006` is already marked completed in `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `progress.txt` records remediation verification with clean `pnpm exec tsc --noEmit`, and no dedicated `docs/artifacts/tsc-crash-remediation-bug-report.md` exists for a standalone US-021 closeout.
+
+[2026-05-01] US-034 / RF-016 — PASS — Backlog Reconciliation: US-012, US-020, US-021
+- Final decisions recorded:
+  - `US-012` -> complete-with-evidence
+  - `US-020` -> archived-complete
+  - `US-021` -> superseded
+- Updated `prd.json` so all three stories now have explicit terminal states instead of stale open backlog records.
+- Updated `docs/debriefs/2026-04-26-hitl-gate-story-reference.md` so the old backlog reference no longer labels these stories as incomplete.
+- Updated `docs/history/forge_history.md` and `docs/history/history_index.md` so `US-012`, `US-020`, and `US-021` now use aligned titles and statuses.
+- Moved `RF-016` in `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` from `Proposed` to `Completed` and marked the US-034 story card completed.
+- Summary of Work: reconciled the stale backlog state for the browser-use live event bridge and the two TSC crash stories, aligned PRD/tracker/history/progress naming, and closed the governance cleanup without reopening implementation work.
+- Acceptance criteria: give `US-012`, `US-020`, and `US-021` one explicit terminal classification each; cite current source/test/history evidence; align PRD, tracker, progress, and FORGE history naming; avoid creating follow-on implementation stories.
+- Final validation result: `jq empty prd.json` exit 0; `pnpm run typecheck` exit 0; `pnpm test` 11/11 suites and 133/133 tests passed.
 
 [2026-04-28] US-032 / RF-014 — Forge Workflow Seed Created — agent_task Dominant Intent Classification Fix
 - Read `docs/debriefs/2026-04-28-us031-agent-task-dominant-intent-drift.md` and converted the primary seed into a governed Forge story package.
@@ -703,3 +736,16 @@ Validation:
 - Files touched: `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/debriefs/2026-04-26-hitl-gate-story-reference.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
 - Acceptance criteria: live YAML prompt fixtures now cover both `check_duplicate_reddit_post` and `submit_reddit_post`; the duplicate-check evidence producer can execute before evidence exists; evaluated telemetry records matched signals and the evidence-producing read-only selection details; submit remains blocked without evidence and with duplicate-risk evidence; valid no-duplicate evidence still allows submit dispatch; `mode: agentic` remains unchanged.
 - Final validation result: `pnpm run typecheck` exit `0`; `pnpm test` exit `0` with 11/11 suites and 133/133 tests passing. Focused validation also passed: `npx jest src/workflow/engine.test.ts --runInBand` with 66/66 tests.
+
+[2026-05-01] Screenshot Architecture Findings Investigation
+- Read `docs/debriefs/2026-04-26-screenshot-architecture-shape-layers-modules.md` and traced the immediate findings through `src/session/manager.ts`, `src/ui/server.ts`, `src/workflow/engine.ts`, `src/workflow/types.ts`, `src/workflow/wrap-up.ts`, `src/orchestrator/loop.ts`, `src/mcp/server.ts`, `src/engines/python-bridge.ts`, `src/engines/browser-use/server/main.py`, and `src/db/repository.ts`.
+- Added `docs/debriefs/2026-05-01-screenshot-architecture-findings-investigation.md`.
+- Summary of Work: confirmed one concrete UI gap where browser-use action screenshots can be transported but are not rendered, confirmed durable base64 persistence as a storage-growth risk, confirmed MIME/format heterogeneity as a future rendering risk, and clarified that rolling screenshots are artifact/telemetry-only rather than indexed in `session_screenshots`.
+- Acceptance criteria: investigate the screenshot architecture findings, classify whether each is a defect or hardening risk, and record actionable follow-up seeds without changing runtime code.
+- Final validation result: no runtime code changed; source-inspection investigation only, so `pnpm run typecheck` and test suites were not run.
+
+[2026-05-01] Screenshot Workflow Investigation Scratch Pad
+- Added `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md` to track the branching screenshot investigation before promotion into Forge stories.
+- Summary of Work: mapped live UI screenshots, browser-use action screenshots, workflow screenshot steps, wrap-up/SQLite persistence, session screenshot indexing, rolling screenshots, MCP screenshots, and orchestrator screenshots; recorded provisional policy for live frames, evidence screenshots, retention, sensitive-phase blocking, and a future screenshot payload container.
+- Acceptance criteria: create one scratch pad that captures the branches, risks, open decisions, candidate guardrails, and likely story split for the screenshot workflow investigation.
+- Final validation result: documentation-only scratch pad; `pnpm run typecheck` and test suites were not run.

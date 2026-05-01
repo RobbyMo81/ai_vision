@@ -3,6 +3,7 @@
 Date: `2026-04-28`
 
 Status:
+
 - Original dominant-submit drift: resolved by US-032 / RF-014
 - Second duplicate-check prompt drift: open
 - Current next story: US-033 / RF-015
@@ -464,7 +465,7 @@ Required tests:
 - `authenticated_task.yaml` user-supplied prompt policy classification
 - built-in Reddit and X workflows in `src/workflow/types.ts`
 
-### Future Story Seed: US-034 / RF-016 — agent_task Safety Policy Metadata
+### Future Story Seed: Unassigned — agent_task Safety Policy Metadata
 
 Goal:
 
@@ -503,7 +504,7 @@ Next action:
 ## N. GO / NO-GO
 
 | Decision | Recommendation | Reason |
-|---|---|---|
+| --- | --- | --- |
 | Run full production Reddit test now | NO-GO | Known live-prompt drift can block the duplicate-check evidence step before submit is reachable |
 | Run unchanged failure reproduction | only if explicitly requested | It would reproduce the current open drift but would not prove production readiness |
 | Create US-033 | GO | The current open drift is well-scoped and should become a governed live-prompt contract story |
@@ -542,26 +543,30 @@ Method:
 Verification results:
 
 1. Dominant-intent drift finding: **VALID**
-  - The classifier was first-match ordered and checked `fill` before `submit`.
-  - The live `submit_reddit_post` prompt contains both fallback fill and submit language.
-  - Regex replay using the exact YAML prompt produced:
-    - `login=false`
-    - `fill=true`
-    - `submit=true`
-    - `first=fill`
 
-2. Incorrect safety interpretation risk: **VALID**
-  - `login` and `fill` intents require `approvalGrantedForStep === true`.
-  - `submit_reddit_post` is not included in `require_human_approval_before` for the direct Reddit workflow.
-  - This creates a plausible block path before worker dispatch for the wrong reason (approval-for-fill vs dominant submit intent).
+- The classifier was first-match ordered and checked `fill` before `submit`.
+- The live `submit_reddit_post` prompt contains both fallback fill and submit language.
+- Regex replay using the exact YAML prompt produced:
+  - `login=false`
+  - `fill=true`
+  - `submit=true`
+  - `first=fill`
 
-3. Test coverage gap finding: **VALID**
-  - US-031 tests asserted safety behavior with simplified submit prompts.
-  - The tests did not use the exact live mixed-intent `submit_reddit_post` prompt from `workflows/post_to_reddit.yaml`.
+1. Incorrect safety interpretation risk: **VALID**
 
-4. Blast-radius expansion beyond Reddit: **PARTIALLY VERIFIED**
-  - The same mixed fallback-fill plus submit wording pattern exists in built-in workflow definitions.
-  - Additional non-Reddit examples are reasonable pattern extrapolations but were not all reproduced end-to-end in this pass.
+- `login` and `fill` intents require `approvalGrantedForStep === true`.
+- `submit_reddit_post` is not included in `require_human_approval_before` for the direct Reddit workflow.
+- This creates a plausible block path before worker dispatch for the wrong reason (approval-for-fill vs dominant submit intent).
+
+1. Test coverage gap finding: **VALID**
+
+- US-031 tests asserted safety behavior with simplified submit prompts.
+- The tests did not use the exact live mixed-intent `submit_reddit_post` prompt from `workflows/post_to_reddit.yaml`.
+
+1. Blast-radius expansion beyond Reddit: **PARTIALLY VERIFIED**
+
+- The same mixed fallback-fill plus submit wording pattern exists in built-in workflow definitions.
+- Additional non-Reddit examples are reasonable pattern extrapolations but were not all reproduced end-to-end in this pass.
 
 Conclusion of independent verification:
 
@@ -591,25 +596,29 @@ Method:
 Verification results:
 
 1. Circular block finding: **VALID**
-  - `check_duplicate_reddit_post` is the step that creates `reddit_duplicate_check_evidence` and `reddit_duplicate_check_result` after successful execution.
-  - The `agent_task` safety gate blocks Reddit-style submit/post/final-click intent when duplicate evidence is missing.
-  - Because this gate runs before worker dispatch, the evidence-producing step can be blocked before it creates evidence.
 
-2. Classifier drift finding on live prompt: **VALID**
-  - The exact live duplicate-check prompt includes `/submit` URL text (`navigate back to .../submit`) and posting language (`before posting to Reddit`).
-  - Regex replay on the live prompt produced:
-    - `submit=true`
-    - `post=true`
-    - first ranked protected intent = `submit`
-  - This causes the duplicate-check step to be interpreted as protected Reddit submission intent.
+- `check_duplicate_reddit_post` is the step that creates `reddit_duplicate_check_evidence` and `reddit_duplicate_check_result` after successful execution.
+- The `agent_task` safety gate blocks Reddit-style submit/post/final-click intent when duplicate evidence is missing.
+- Because this gate runs before worker dispatch, the evidence-producing step can be blocked before it creates evidence.
 
-3. Failure mode confirmation: **VALID**
-  - The blocked error message shape reported in the run (`Reddit submission intent missing duplicate-check evidence`) matches the existing `agent_task` duplicate-evidence safety branch.
-  - This confirms a safe failure-before-submit outcome, but for an incorrect intent classification reason.
+1. Classifier drift finding on live prompt: **VALID**
 
-4. Regression coverage gap: **VALID**
-  - Existing tests include read-only duplicate-check intent scenarios, but not the exact live prompt shape that includes `/submit` wording from `workflows/post_to_reddit.yaml`.
-  - The live prompt therefore bypassed current classifier regression assumptions.
+- The exact live duplicate-check prompt includes `/submit` URL text (`navigate back to .../submit`) and posting language (`before posting to Reddit`).
+- Regex replay on the live prompt produced:
+  - `submit=true`
+  - `post=true`
+  - first ranked protected intent = `submit`
+- This causes the duplicate-check step to be interpreted as protected Reddit submission intent.
+
+1. Failure mode confirmation: **VALID**
+
+- The blocked error message shape reported in the run (`Reddit submission intent missing duplicate-check evidence`) matches the existing `agent_task` duplicate-evidence safety branch.
+- This confirms a safe failure-before-submit outcome, but for an incorrect intent classification reason.
+
+1. Regression coverage gap: **VALID**
+
+- Existing tests include read-only duplicate-check intent scenarios, but not the exact live prompt shape that includes `/submit` wording from `workflows/post_to_reddit.yaml`.
+- The live prompt therefore bypassed current classifier regression assumptions.
 
 Conclusion of second independent verification:
 
