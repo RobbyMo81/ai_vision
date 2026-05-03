@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod';
-import type { SocialPublishOutcome } from '../session/types';
+import type { ScreenshotPayload, SocialPublishOutcome } from '../session/types';
 
 export interface AuthVerification {
   urlIncludes?: string[];
@@ -438,6 +438,21 @@ export interface StepResult {
   error?: string;
 }
 
+export interface WorkflowScreenshotRecord {
+  path: string;
+  base64?: string;
+  stepId: string;
+  evidenceId?: string;
+  contentHash?: string;
+  takenAt?: string;
+  source?: ScreenshotPayload['source'];
+  class?: ScreenshotPayload['class'];
+  mimeType?: ScreenshotPayload['mimeType'];
+  sensitivity?: ScreenshotPayload['sensitivity'];
+  retention?: ScreenshotPayload['retention'];
+  persistBase64?: ScreenshotPayload['persistBase64'];
+}
+
 export interface WorkflowResult {
   workflowId: string;
   success: boolean;
@@ -445,11 +460,23 @@ export interface WorkflowResult {
   /** Named outputs from extract steps, keyed by outputKey */
   outputs: Record<string, string>;
   /** All screenshots taken during the workflow */
-  screenshots: Array<{ path: string; base64: string; stepId: string }>;
+  screenshots: WorkflowScreenshotRecord[];
   durationMs: number;
   error?: string;
   /** Structured outcome for social-publishing workflows (e.g. post_to_x). */
   socialPublishOutcome?: SocialPublishOutcome;
+}
+
+export function sanitizeWorkflowResultForPersistence(result: WorkflowResult): WorkflowResult {
+  return {
+    ...result,
+    stepResults: result.stepResults.map(({ screenshotBase64, ...stepResult }) => ({
+      ...stepResult,
+    })),
+    screenshots: result.screenshots.map(({ base64, ...screenshot }) => ({
+      ...screenshot,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -749,3 +749,167 @@ Validation:
 - Summary of Work: mapped live UI screenshots, browser-use action screenshots, workflow screenshot steps, wrap-up/SQLite persistence, session screenshot indexing, rolling screenshots, MCP screenshots, and orchestrator screenshots; recorded provisional policy for live frames, evidence screenshots, retention, sensitive-phase blocking, and a future screenshot payload container.
 - Acceptance criteria: create one scratch pad that captures the branches, risks, open decisions, candidate guardrails, and likely story split for the screenshot workflow investigation.
 - Final validation result: documentation-only scratch pad; `pnpm run typecheck` and test suites were not run.
+
+[2026-05-01] US-035 / RF-017 — Forge Workflow Seed Created — Screenshot Security Policy Design
+- Polished Story A from `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md` into a governed design story.
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-01-us035-rf017-screenshot-security-policy-design-storyline.md`
+  - `2026-05-01-us035-rf017-screenshot-security-policy-design-forge-story.yaml`
+  - `2026-05-01-us035-rf017-screenshot-security-policy-design-implementation-handoff.md`
+  - `2026-05-01-us035-rf017-screenshot-security-policy-design-definition-of-done.md`
+- Added `US-035` to `prd.json` with `passes: false`.
+- Added `RF-017` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Summary of Work: converted screenshot security policy from scratch-pad candidate into a Forge-ready design handoff covering screenshot classes, sensitivity, retention, persistence, base64 handling, API/MCP access, audit, encryption-at-rest decision, legacy handling, and follow-on implementation split.
+- Acceptance criteria: four-part Forge package exists, PRD/tracker entries exist, scratch pad points to the promoted story, and runtime screenshot behavior remains unchanged.
+- Final validation result: documentation/governance seed only; `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run.
+
+[2026-05-01] US-036 / RF-018 — PASS — Screenshot Payload Contract
+- What changed: introduced the canonical `ScreenshotPayload` contract in `src/session/types.ts`; added live screenshot payload containers to UI websocket screenshot broadcasts while preserving legacy `screenshotBase64`; made the browser UI render screenshots with the payload MIME type; rendered browser-use action screenshots live when present; inferred browser-use action screenshot MIME type from base64 signatures; changed orchestrator screenshot outputs from raw base64 strings to JSON screenshot payload containers.
+- Files touched: `src/session/types.ts`, `src/ui/server.ts`, `src/engines/python-bridge.ts`, `src/orchestrator/loop.ts`, `src/engines/python-bridge.test.ts`, `src/orchestrator/loop.test.ts`, `src/ui/server.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-storyline.md`, `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-forge-story.yaml`, `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-implementation-handoff.md`, `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-definition-of-done.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: `ScreenshotPayload` exists with source/class/MIME/sensitivity/retention/persistence metadata; live UI screenshot payloads include the container while preserving compatibility; UI rendering is MIME-aware; browser-use action screenshots can render live; browser-use action events infer PNG/JPEG MIME type where possible; orchestrator screenshot outputs are JSON payload containers; persistence sanitization, sensitive gates, and rolling cleanup remain out of scope.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; focused `pnpm test -- --runInBand src/engines/python-bridge.test.ts src/orchestrator/loop.test.ts src/ui/server.test.ts` passed 3/3 suites and 43/43 tests.
+
+2026-05-01T22:35:00Z - US-035 / RF-017 PASS - Screenshot Security Policy Design
+- Added `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md` as the authoritative screenshot policy artifact covering screenshot classes, sensitivity states, evidence rules, capture policy by branch, persistence policy by destination, retention, access/audit rules, encryption-at-rest direction, legacy base64 handling, and follow-on implementation story boundaries.
+- Updated `prd.json` to mark `US-035` complete and updated `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` to mark `RF-017` completed with the governed evidence set.
+- Updated `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-forge-story.yaml`, `docs/history/forge_history.md`, and `docs/history/history_index.md` so the Forge story card and archive surfaces point to the final policy artifact.
+- Summary of Work: established one repo-authoritative screenshot security policy so later runtime stories no longer need to re-litigate class taxonomy, sensitive-phase blocking, durable persistence rules, base64 sanitization, access/audit requirements, retention, or encryption-at-rest defaults.
+- Acceptance criteria: the design artifact explicitly defines `live_frame`, `debug_frame`, `evidence`, and `sensitive_blocked`; defines sensitivity behavior for `pii_wait`, sensitive-target steps, and private account/page contexts; defines retention and durable persistence policy across live UI, MCP, workflow, orchestrator, filesystem, SQLite, wrap-up, and session index paths; defines `/api/screenshot` and MCP access/audit rules; defines legacy base64 handling and implementation story split.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` not run because this was a design-only story; test suites not run because this was a design-only story.
+
+[2026-05-02] US-037 / RF-019 - Forge Workflow Seed Created - Screenshot Persistence Sanitization
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-02-us037-rf019-screenshot-persistence-sanitization-storyline.md`
+  - `2026-05-02-us037-rf019-screenshot-persistence-sanitization-forge-story.yaml`
+  - `2026-05-02-us037-rf019-screenshot-persistence-sanitization-implementation-handoff.md`
+  - `2026-05-02-us037-rf019-screenshot-persistence-sanitization-definition-of-done.md`
+- Added `US-037` to `prd.json` with `passes: false`.
+- Added `RF-019` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Updated `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md` to mark Story C promoted and clarify the sanitize-first scope.
+- Summary of Work: converted Story C into a Forge-ready implementation handoff focused on stripping screenshot base64 from new `workflow_runs.result_json` and wrap-up artifact JSON writes while preserving path plus metadata, keeping runtime `WorkflowResult` compatible, and leaving sensitive gates, access gates, MCP audit, rolling cleanup, encryption, signed deletion logs, fail-closed authoring validation, and historical migration out of scope.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; scratch pad points to the promoted story; the handoff includes an explicit Forge directive, AI agent prompt, YAML story card, and definition of done; runtime screenshot behavior remains unchanged in this seeding step.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` not run because this was a documentation/governance seed; test suites not run because no runtime code changed.
+
+[2026-05-02] US-037 / RF-019 — PASS — Screenshot Persistence Sanitization
+- What changed: added `sanitizeWorkflowResultForPersistence(...)` in `src/workflow/types.ts`; updated `src/workflow/wrap-up.ts` to sanitize cloned workflow results only at the durable write boundary before SQLite `workflow_runs.result_json` and wrap-up artifact JSON persistence; added focused regression coverage in `src/workflow/wrap-up.test.ts`; updated the screenshot scratch pad, Forge tracker/history, story card status, PRD, progress log, and architecture atlas to reflect the completed sanitize-first persistence slice.
+- Files touched: `src/workflow/types.ts`, `src/workflow/wrap-up.ts`, `src/workflow/wrap-up.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-forge-story.yaml`, `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md`, `docs/architecture/as-built_execution_atlas.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: new `workflow_runs.result_json` writes omit `stepResults[].screenshotBase64`; new wrap-up artifact JSON omits `screenshots[].base64`; sanitized durable records preserve path, step id, and available screenshot metadata; runtime `WorkflowResult` objects remain usable before persistence; `session_screenshots` remains path-only; historical rows/artifacts remain legacy data with no migration; sensitive gates, access gates, MCP audit, rolling cleanup, encryption, signed deletion logs, and fail-closed authoring validation remain out of scope.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; focused `pnpm test -- --runInBand src/workflow/wrap-up.test.ts` passed 1/1 suites and 2/2 tests.
+
+[2026-05-02] US-037 Production Verification — Reddit r/test Screenshot Persistence
+- Ran the real `workflows/post_to_reddit.yaml` direct workflow in headed mode against `r/test` using HITL review and final confirmation.
+- Session: `0fc87308-785c-4fb4-a9fc-1ba782430c46`.
+- Published post: `https://www.reddit.com/r/test/comments/1t1gmq3/us037_screenshot_persistence_verification_20260502/`.
+- Captured and reviewed the live UI screenshot before shutdown; it showed the published post title and body visible in the Reddit UI.
+- Final workflow status: complete; final screenshot path: `sessions/workflow/reddit_post_screenshot-1777698919143.jpg`.
+- Persistence inspection: SQLite `workflow_runs.result_json` for the session has `success = 1`, keeps the screenshot path, and has no `screenshots[0].base64` or final step `screenshotBase64`; wrap-up artifact `/home/spoq/.ai-vision/memory/wrap-ups/0fc87308-785c-4fb4-a9fc-1ba782430c46.json` has no `screenshots[].base64`, no `stepResults[].screenshotBase64`, and no JSON-encoded screenshot payloads in `outputs`.
+- Summary of Work: validated US-037 on the real direct Reddit production workflow path, including publication, HITL confirmation, final screenshot capture, SQLite persistence, and wrap-up artifact persistence.
+- Acceptance criteria: real workflow publishes to `r/test`, captures the final screenshot, persists the run, stores durable screenshot path-only metadata, and does not retain direct workflow screenshot base64 in SQLite or wrap-up artifact JSON.
+- Final validation result: production workflow exited complete; SQLite inspection passed; wrap-up artifact inspection passed; no additional typecheck or unit test was run during this production validation.
+
+[2026-05-02] Screenshot Persistence Guard Rail — Agentic Orchestrator Outputs
+- Marked the agentic/orchestrator screenshot-output concern as a guard rail rather than a reopened `US-037` defect.
+- Rationale: the verified production path is the direct workflow path, `mode: agentic` is planned for retirement, and the remaining risk is limited to orchestrator screenshot tools that may serialize a `ScreenshotPayload` with `base64` into `WorkflowResult.outputs[output_key]`.
+- Guard rail: if `mode: agentic` remains active long enough for screenshot-bearing production workflows, add targeted sanitizer or blocking behavior for JSON-encoded `ScreenshotPayload.base64` in `WorkflowResult.outputs` before durable persistence.
+- Summary of Work: recorded the guard rail in the screenshot workflow scratch pad, progress log, and Forge memory so future agents do not reopen US-037 while still preserving the known edge-path risk.
+- Acceptance criteria: direct production US-037 validation remains closed; agentic/orchestrator screenshot output is tracked as a conditional guard rail tied to `mode: agentic` survival.
+- Final validation result: documentation/governance note only; no runtime code changed, so typecheck and tests were not run.
+
+[2026-05-02] US-038 / RF-020 - Forge Workflow Seed Created - Screenshot Capture Policy Gate
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-02-us038-rf020-screenshot-capture-policy-gate-storyline.md`
+  - `2026-05-02-us038-rf020-screenshot-capture-policy-gate-forge-story.yaml`
+  - `2026-05-02-us038-rf020-screenshot-capture-policy-gate-implementation-handoff.md`
+  - `2026-05-02-us038-rf020-screenshot-capture-policy-gate-definition-of-done.md`
+- Added `US-038` to `prd.json` with `passes: false`.
+- Added `RF-020` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Updated `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md` to promote Story D and rename it from Sensitive Screenshot Gate to Screenshot Capture Policy Gate.
+- Summary of Work: converted the agreed capture-policy shape into a Forge-ready implementation handoff covering screenshot classification, sensitive-region redaction, structured block responses, step-scoped TTL deletion, `GET /api/screenshot` active binding, MCP capture gating, live/rolling sensitive-phase handling, byte-free telemetry, and US-036/US-037 compatibility.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; scratch pad points to the promoted story; the handoff includes an explicit Forge directive, AI agent prompt, YAML story card, and definition of done; runtime screenshot behavior remains unchanged in this seeding step.
+- Final validation result: documentation/governance seed only; `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-02] Screenshot Retention Cleanup And Evidence Audit Scratch Pad
+- Added `docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md`.
+- Summary of Work: created the Story E scratch pad with a Mermaid graph of current screenshot storage locations, an inventory of who/what/when initiates screenshots, a definition of screenshot retention cleanup, and a definition of evidence audit using a future SQLite audit table for who/what/when/why evidence actions.
+- Files touched: `docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md`, `progress.txt`.
+- Acceptance criteria: graph current screenshot storage locations; verify who, what, and when the system takes screenshots; define screenshot retention cleanup; define evidence audit; keep this as a debrief scratch pad rather than a governed story artifact.
+- Final validation result: documentation-only scratch pad; file presence verified; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-02] US-038 / RF-020 — PASS — Screenshot Capture Policy Gate
+- What changed: added a shared screenshot policy decision helper and routed UI, MCP, rolling, and workflow screenshot capture through it; blocked `pii_wait` captures with structured denial metadata; redacted selector-known sensitive regions with Playwright masking; added step-scoped screenshot tracking and deletion on workflow step advance; bound `GET /api/screenshot` to the active session/client using the US-024 pattern; preserved US-036 payload compatibility and US-037 durable persistence sanitization.
+- Files touched: `src/session/screenshot-policy.ts`, `src/session/manager.ts`, `src/session/manager.test.ts`, `src/session/types.ts`, `src/ui/server.ts`, `src/ui/server.test.ts`, `src/mcp/server.ts`, `src/mcp/server.test.ts`, `src/workflow/engine.ts`, `src/workflow/wrap-up.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-forge-story.yaml`, `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md`, `docs/architecture/as-built_execution_atlas.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: screenshot capture requests flow through one shared decision path; `pii_wait` captures return no pixels and provide structured next actions; selector-known sensitive captures redact or fail closed; step-scoped screenshots are deleted on step advance; `GET /api/screenshot` rejects stale, mismatched, and unbound clients; MCP capture uses the same policy contract; rolling/live screenshot behavior is policy-gated during sensitive phases; telemetry records allow/redact/block/delete decisions without image bytes; US-036 and US-037 behavior stays compatible.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; focused `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/wrap-up.test.ts` passed 4/4 suites and 37/37 tests.
+
+[2026-05-02] US-039 / RF-021 - Forge Workflow Seed Created - Screenshot Retention Cleanup, Scavenger, And Evidence Audit
+- Reconciled Story E edge cases in `docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md`.
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-storyline.md`
+  - `2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-forge-story.yaml`
+  - `2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-implementation-handoff.md`
+  - `2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-definition-of-done.md`
+- Added `US-039` to `prd.json` with `passes: false`.
+- Added `RF-021` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Summary of Work: promoted Story E into a Forge-ready implementation handoff focused on rolling/debug cleanup, bounded startup and wrap-up scavengers, failed-deletion retry/dead-letter state, evidence audit states, stable evidence ids, capture-time content hashes, verified deletion semantics, WebSocket invalidation, TTL precedence, and aggregate byte-free cleanup telemetry.
+- Acceptance criteria: edge-case reconciliation is recorded; four-part Forge package exists; PRD and tracker entries exist; implementation handoff includes explicit Forge directive, AI agent prompt, YAML story card, and definition of done; runtime behavior remains unchanged in this seeding step.
+- Final validation result: documentation/governance seed only; `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-02] US-039 / RF-021 - PASS - Screenshot Retention Cleanup, Scavenger, And Evidence Audit
+- What changed: added `src/session/screenshot-retention.ts` for retention cleanup, TTL precedence, bounded startup scavenging, evidence audit writes, verified evidence deletion, content hashing, and cleanup telemetry; added SQLite `screenshot_evidence_audit` and `screenshot_cleanup_failures`; assigned evidence ids and capture-time hashes for workflow evidence screenshots; audited retained evidence and deleted non-evidence screenshots during successful wrap-up; broadcast `screenshot_deleted` after verified deletion.
+- Files touched: `src/session/screenshot-retention.ts`, `src/db/migrations/004_screenshot_evidence_audit.sql`, `src/db/repository.ts`, `src/session/manager.ts`, `src/session/types.ts`, `src/ui/server.ts`, `src/workflow/engine.ts`, `src/workflow/types.ts`, `src/workflow/wrap-up.ts`, `src/session/manager.test.ts`, `src/workflow/wrap-up.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-forge-story.yaml`, `docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md`, `docs/architecture/as-built_execution_atlas.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: rolling/debug cleanup exists for successful wrap-up and `ttl_24h` startup scavenging; cleanup failures persist as retryable/dead-letter records; evidence screenshots get stable ids and capture-time content hashes; audit rows store who/what/when/why/action/path/hash without bytes; evidence deletion records `pending_deletion` before unlink and `deleted` only after verification, otherwise `delete_failed`; WebSocket clients receive deletion invalidation; step-scoped screenshots remain transient; US-036/US-037/US-038 behavior remains compatible.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; focused `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts` passed 2/2 suites and 7/7 tests.
+
+[2026-05-02] Runtime Screenshot Purge - Manual Fresh Start
+- What changed: purged runtime screenshot image files under `/home/spoq/ai-vision/sessions` to start from a clean screenshot artifact state; did not delete dependency/package assets or source documentation images.
+- Files touched: deleted existing `.jpg`, `.jpeg`, and `.png` files under `/home/spoq/ai-vision/sessions`; updated `progress.txt`.
+- Acceptance criteria: all runtime screenshot image files under `sessions/` are removed; `~/.ai-vision/memory` remains free of screenshot image files.
+- Final validation result: `find /home/spoq/ai-vision/sessions -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' \) -print | wc -l` returned `0`; `find /home/spoq/.ai-vision/memory -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' \) -print | wc -l` returned `0`; typecheck and tests were not run because this was an artifact cleanup task only.
+
+[2026-05-03] Reddit Duplicate Check Stall - Blast Radius Investigation
+- What changed: created `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md` to capture the epicenter and blast radius for the failed headed `post_to_reddit` production-test attempts after screenshot purge.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: identify the failure epicenter; define blast-radius rings; distinguish implicated and non-implicated systems; preserve the recommendation for the next fix without changing runtime code.
+- Final validation result: debrief file presence verified; `workflow_runs` inspection found no durable rows for interrupted sessions `1c89cd5a-3285-4e78-8719-c5a28a16a912` and `963dccad-bfd7-4d3f-857c-4bfcaf1ce8d5`; runtime screenshot image scan under `/home/spoq/ai-vision/sessions` returned no files; typecheck and tests were not run because this was an investigation-only documentation task.
+
+[2026-05-03] Reddit Duplicate Check Stall - Screenshot Count Addendum
+- What changed: expanded `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md` with the excessive screenshot count finding and next-story inputs.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: document that the excessive counts came from UI live-frame and rolling debug-frame loops during the stuck duplicate-check step; clarify that this was not an agent screenshot-perception loop; carry hung-step screenshot guardrails into the next Forge story.
+- Final validation result: documentation-only update; no runtime code changed, so `pnpm run typecheck` and test suites were not run.
+
+[2026-05-03] Screenshot Timing Shape Investigation
+- What changed: investigated the current screenshot workflow layers, timing triggers, and module connections across session manager, screenshot policy, workflow engine, HITL UI, MCP, browser-use action callbacks, orchestrator screenshot payloads, wrap-up cleanup, and retention/audit utilities.
+- Files touched: `progress.txt`.
+- Acceptance criteria: identify active screenshot timing loops; explain how capture requests flow through policy; distinguish live UI frames, rolling debug frames, explicit workflow evidence screenshots, browser-use action screenshots, MCP screenshots, orchestrator screenshots, and cleanup timings; connect the finding to the next Forge story guardrail.
+- Final validation result: source investigation only; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] Screenshot Timing Collision Addendum
+- What changed: added screenshot timing fine-tuning inputs to `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, correcting the collision model and carrying capture scheduling, rolling throttling, and retry-with-backoff deletion requirements into the next Forge story.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: distinguish file-write/delete races from live UI byte transport; identify the real concurrency risks around Playwright screenshot encoding, rolling writes, step-scoped deletion, evidence retention, startup cleanup, and audit/source-of-truth mismatch; preserve next-story mitigations.
+- Final validation result: documentation-only update; source paths were inspected; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] Screenshot Post-Task TTL Retention Addendum
+- What changed: added post-task TTL retention requirements to `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, including a 120s success-only cleanup window, startup recovery for lost timers, failure/abort fallback to `ttl_24h`, and explicit rolling-directory cleanup scope.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: capture the deferred cleanup shape for the next Forge story; verify the current implementation gap where rolling frames are written to `sessions/rolling/` but are not included in `WorkflowResult.screenshots`; preserve concurrency requirements around UI live frames, evidence retention, retry-with-backoff deletion, and telemetry.
+- Final validation result: documentation-only update; inspected `SessionManager.startScreenshotTimer(...)`, `cleanupWorkflowScreenshotsOnWrapUp(...)`, `runStartupScreenshotScavenger(...)`, and wrap-up cleanup call sites; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] Deterministic Reddit Duplicate Check Threshold And Selector Definition
+- What changed: added deterministic Reddit duplicate-check thresholds, title normalization, DOM selector priority, bounded extraction rules, and fail-closed behavior to `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: define the Jaccard duplicate-risk threshold; preserve the current two-value duplicate evidence contract; define selector order based on observed Reddit DOM evidence; define bounded extraction and DOM-drift failure behavior for the next Forge story.
+- Final validation result: documentation-only update; inspected live workflow prompt, existing parser references, and failed browser-use artifacts showing `a[id^="post-title-"]`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] Capture Scheduler And Jaccard Complexity Fine-Tuning
+- What changed: added capture scheduler, hung-step guardrail, retry-with-backoff deletion, post-task TTL, and deterministic Jaccard complexity notes to `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`.
+- Files touched: `docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md`, `progress.txt`.
+- Acceptance criteria: document the latency risk classes; carry scheduler features into the next Forge story; bound deterministic duplicate-check complexity so Jaccard scoring does not become a new lag source.
+- Final validation result: documentation-only update; no runtime code changed, so `pnpm run typecheck` and test suites were not run.
+
+[2026-05-03] Reddit And Screenshot Recovery Implementation Story Plan
+- What changed: created `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md` defining the implementation sequence and story boundaries for `US-040 / RF-022`, `US-041 / RF-023`, and `US-042 / RF-024`.
+- Files touched: `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md`, `progress.txt`.
+- Acceptance criteria: define which stories will be implemented; specify scope, required behavior, acceptance criteria, out-of-scope boundaries, and Forge promotion checklist; save the plan as a new document.
+- Final validation result: documentation-only planning update; no runtime code changed, so `pnpm run typecheck` and test suites were not run.

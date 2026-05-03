@@ -88,4 +88,18 @@ describe('python-bridge lifecycle events', () => {
 
     browserUseActionEvents.off('browser_use_action', handler);
   });
+
+  it('infers browser-use action screenshot MIME type from base64 payload', () => {
+    const pngEvent = normalizeBrowserUseActionEvent({
+      action: 'screenshot',
+      screenshot_b64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    });
+    const jpegEvent = normalizeBrowserUseActionEvent({
+      action: 'screenshot',
+      screenshot_b64: '/9j/4AAQSkZJRgABAQAAAQABAAD',
+    });
+
+    expect(pngEvent.screenshotMimeType).toBe('image/png');
+    expect(jpegEvent.screenshotMimeType).toBe('image/jpeg');
+  });
 });

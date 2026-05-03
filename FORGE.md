@@ -88,6 +88,7 @@ For every change in the categories above, contributors MUST:
 5. Save Forge story package files and governed story deliverables under `docs/artifacts/` using date-prefixed filenames. Save non-story explainers, debriefs, investigations, traces, reports, quick references, and architecture notes under `docs/debriefs/`.
 6. For every engineering build handoff, provide the complete four-part package documented in `AGENTS.md`: a first-class Forge storyline, a compact YAML tracing story card when tracing is involved, an AI agent prompt that explicitly follows the Forge system and Forge build loop, and an explicit definition of done.
 7. **Deliver a Summary of Work** at the end of every completed story or task. The summary must state: what changed, which files were touched, what the acceptance criteria were, and the final validation result (typecheck exit code + test counts). This summary must appear in the agent's closing response and be recorded in `progress.txt`.
+8. If a change alters the built architecture, runtime topology, ownership boundaries, execution flow, or screenshot/runtime contract described in `docs/architecture/as-built_execution_atlas.md`, re-align that atlas in the same Forge workflow before closing the task.
 
 ## FORGE History Archiving SOP (Mandatory)
 

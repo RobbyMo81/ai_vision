@@ -1,0 +1,81 @@
+story:
+  id: US-039
+  refactor: RF-021
+  title: Screenshot Retention Cleanup, Scavenger, And Evidence Audit
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-02
+  forge_required: true
+
+problem: >
+  Screenshot files can outlive their intended retention class. Rolling/debug
+  files can survive crashes, cleanup failures can orphan files, and path-only
+  evidence records are too weak for audit. Evidence deletion must not be marked
+  deleted until filesystem deletion is verified.
+
+scope:
+  includes:
+    - Delete rolling/debug screenshots on successful wrap-up unless debug retention is explicitly enabled.
+    - Apply ttl_24h cleanup for failed/debug rolling artifacts.
+    - Add a bounded startup scavenger that does not block browser/session availability.
+    - Add a targeted wrap-up scavenger for the current session/run.
+    - Add durable failed-deletion retry or dead-letter state.
+    - Add a SQLite evidence audit table for who/what/when/why records.
+    - Add evidence audit states reviewed, retained, pending_deletion, deleted, delete_failed, rejected, and exported.
+    - Generate stable evidence ids and capture-time content hashes for evidence screenshots.
+    - Use session end time, then capture timestamp, then filesystem mtime fallback for TTL decisions.
+    - Add WebSocket invalidation when evidence deletion is verified.
+    - Aggregate cleanup telemetry without screenshot bytes.
+  excludes:
+    - Screenshot capture gates, redaction, or structured blocked responses from US-038.
+    - Durable base64 sanitization from US-037.
+    - Screenshot payload contract changes from US-036.
+    - Encryption-at-rest implementation.
+    - Historical migration beyond bounded scavenger classification/cleanup.
+    - Agentic/orchestrator output guard rail unless mode: agentic remains in production screenshot use.
+
+acceptance:
+  - Rolling/debug screenshots are deleted on successful wrap-up unless debug retention is enabled.
+  - Failed/debug rolling artifacts are retained only until ttl_24h cleanup eligibility.
+  - Startup scavenger processes bounded work units and does not block browser/session availability.
+  - Wrap-up scavenger reconciles the current session/run.
+  - Cleanup failures create durable retry/dead-letter records.
+  - Evidence screenshots receive stable evidence ids and capture-time content hashes.
+  - Evidence audit records who, what, when, why, action state, target path, evidence id, and content hash without screenshot bytes.
+  - Evidence deletion records pending_deletion before unlink, deleted only after verified unlink, and delete_failed on failure.
+  - TTL precedence uses session end time, then capture timestamp, then filesystem mtime fallback.
+  - WebSocket invalidation is broadcast after verified evidence deletion.
+  - Cleanup telemetry is aggregated by batch and contains no screenshot bytes.
+  - Step-scoped screenshots remain transient and are not eligible for evidence audit/manual review.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused cleanup/audit/scavenger tests pass.
+
+definition_of_done: >
+  Done means non-evidence screenshot files are cleaned up according to retention
+  policy, cleanup failures are durable and retryable, and retained evidence
+  screenshots have stable identity plus verified who/what/when/why audit trails.
+
+evidence_required:
+  - prd.json updated with US-039.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-021.
+  - Focused tests for cleanup, scavenger, failed-deletion retry, evidence audit states, and websocket invalidation.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+  - src/session/screenshot-retention.ts implemented.
+  - src/db/migrations/004_screenshot_evidence_audit.sql implemented.
+  - src/session/manager.test.ts and src/workflow/wrap-up.test.ts passed.
+
+validation:
+  required:
+    - jq empty prd.json passed
+    - pnpm run typecheck passed
+    - pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts passed
+  recommended:
+    - pnpm test when shared repository/session/wrap-up contracts are touched broadly
+
+source_artifacts:
+  scratch_pad: docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md
+  policy: docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md
+  capture_gate: docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-storyline.md

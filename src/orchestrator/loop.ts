@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { WorkflowDefinition, WorkflowResult, StepResult } from '../workflow/types';
-import { SessionState } from '../session/types';
+import { ScreenshotPayload, SessionState } from '../session/types';
 import { loadAllInstructions } from './loader';
 import { formatBankContext } from '../memory';
 import { sessionManager } from '../session/manager';
@@ -12,6 +12,32 @@ import { EngineId } from '../engines/interface';
 
 const MODEL = process.env.ORCHESTRATOR_MODEL ?? 'claude-sonnet-4-6';
 const MAX_ITERATIONS = 50;
+
+function buildLiveScreenshotPayload(input: {
+  source: ScreenshotPayload['source'];
+  mimeType: ScreenshotPayload['mimeType'];
+  base64: string;
+  sessionId?: string;
+  workflowId?: string;
+  stepId?: string;
+  url?: string;
+}): ScreenshotPayload {
+  return {
+    id: `${input.source}-${input.sessionId ?? 'session'}-${input.stepId ?? 'step'}-${Date.now()}`,
+    source: input.source,
+    class: 'live_frame',
+    mimeType: input.mimeType,
+    base64: input.base64,
+    takenAt: new Date().toISOString(),
+    sessionId: input.sessionId,
+    workflowId: input.workflowId,
+    stepId: input.stepId,
+    url: input.url,
+    sensitivity: 'unknown',
+    retention: 'ephemeral',
+    persistBase64: false,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Tool definitions exposed to the Claude orchestrator
@@ -185,7 +211,16 @@ async function executeTool(
         const page = await sessionManager.getPage();
         const buffer = await page.screenshot({ type: 'png' });
         const b64 = buffer.toString('base64');
-        if (input['output_key']) outputs[input['output_key'] as string] = b64;
+        const payload = buildLiveScreenshotPayload({
+          source: 'orchestrator',
+          mimeType: 'image/png',
+          base64: b64,
+          sessionId: eventScope?.sessionId,
+          workflowId: eventScope?.workflowId,
+          stepId: input.step_id,
+          url: page.url(),
+        });
+        if (input['output_key']) outputs[input['output_key'] as string] = JSON.stringify(payload);
         return { ok: true, result: 'Screenshot captured' };
       }
 

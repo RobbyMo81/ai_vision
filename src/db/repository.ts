@@ -4,6 +4,7 @@ import * as path from 'path';
 import { EngineId, TaskResult } from '../engines/interface';
 import { TaskMetadataRecord } from '../memory/metadata';
 import { TelemetryEvent } from '../telemetry/types';
+import type { CleanupFailureRecord, EvidenceAuditRecord } from '../session/screenshot-retention';
 
 export interface SessionRecord {
   id: string;
@@ -26,6 +27,19 @@ export interface WorkflowRunRecord {
   stateJson?: string;
   shortTermJson?: string;
   scratchPadMarkdown?: string;
+}
+
+export interface ScreenshotEvidenceAuditRow {
+  evidenceId: string;
+  sessionId: string;
+  workflowId?: string;
+  stepId?: string;
+  action: EvidenceAuditRecord['action'];
+  actor: string;
+  reason?: string;
+  screenshotPath: string;
+  contentHash: string;
+  createdAt: string;
 }
 
 export class SessionRepository {
@@ -172,6 +186,76 @@ export class SessionRepository {
       event.issue?.severity ?? null,
       event.issue?.message ?? null,
       event.createdAt,
+    );
+  }
+
+  saveScreenshotEvidenceAudit(record: EvidenceAuditRecord): void {
+    this.db.prepare(`
+      INSERT INTO screenshot_evidence_audit (
+        evidence_id, session_id, workflow_id, step_id, action, actor, reason,
+        screenshot_path, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      record.evidenceId,
+      record.sessionId,
+      record.workflowId ?? null,
+      record.stepId ?? null,
+      record.action,
+      record.actor,
+      record.reason ?? null,
+      record.screenshotPath,
+      record.contentHash,
+    );
+  }
+
+  listScreenshotEvidenceAudit(evidenceId: string): ScreenshotEvidenceAuditRow[] {
+    const rows = this.db.prepare(`
+      SELECT *
+      FROM screenshot_evidence_audit
+      WHERE evidence_id = ?
+      ORDER BY datetime(created_at) ASC, id ASC
+    `).all(evidenceId) as Array<{
+      evidence_id: string;
+      session_id: string;
+      workflow_id: string | null;
+      step_id: string | null;
+      action: EvidenceAuditRecord['action'];
+      actor: string;
+      reason: string | null;
+      screenshot_path: string;
+      content_hash: string;
+      created_at: string;
+    }>;
+
+    return rows.map(row => ({
+      evidenceId: row.evidence_id,
+      sessionId: row.session_id,
+      workflowId: row.workflow_id ?? undefined,
+      stepId: row.step_id ?? undefined,
+      action: row.action,
+      actor: row.actor,
+      reason: row.reason ?? undefined,
+      screenshotPath: row.screenshot_path,
+      contentHash: row.content_hash,
+      createdAt: row.created_at,
+    }));
+  }
+
+  saveScreenshotCleanupFailure(record: CleanupFailureRecord): void {
+    this.db.prepare(`
+      INSERT INTO screenshot_cleanup_failures (
+        screenshot_path, session_id, workflow_id, step_id, class, retention,
+        action, error, retry_count, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'retryable')
+    `).run(
+      record.screenshotPath,
+      record.sessionId ?? null,
+      record.workflowId ?? null,
+      record.stepId ?? null,
+      record.class ?? null,
+      record.retention ?? null,
+      record.action,
+      record.error,
     );
   }
 

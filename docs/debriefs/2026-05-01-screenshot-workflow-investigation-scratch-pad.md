@@ -16,9 +16,30 @@ The likely target model is:
 
 - live screenshots are ephemeral by default
 - durable screenshots are opt-in evidence artifacts
+- workflow screenshot retention is strict opt-in and fail-closed when evidence-purpose metadata is missing
 - screenshot base64 is not persisted by default
 - sensitive phases block or restrict screenshot capture
 - every screenshot crossing a boundary carries source, MIME type, sensitivity, and retention metadata
+
+## Operational Recommendation
+
+Proceed with the strict opt-in model already established in the screenshot policy docs.
+
+Retention recommendation:
+
+- do not invent a `SIC TTL` inside the current sprint
+- for SIC-style review, use the existing `keep_until_manual_review` retention mode landed by `US-035` / `RF-017`
+- treat storage management for retained evidence as a manual operational task until a later governed retention story exists
+
+Fail-closed rule:
+
+- if a workflow requests a screenshot without a defined evidence-purpose metadata block, the capture may execute for live/runtime use, but durable write-to-disk must be blocked
+
+Follow-on next steps:
+
+1. Refine documentation: explicitly link SIC-style review to the `keep_until_manual_review` enum in `docs/architecture/as-built_execution_atlas.md`
+2. Story C backlog: evaluate whether a future `ttl_90d` or `ttl_audit` retention mode is necessary to prevent long-term evidence storage bloat without changing the current sprint policy
+3. Audit trail: ensure the `manual_review` deletion action emits a signed log entry with who, when, and why for SIC evidence cleanup
 
 ## Branch Map
 
@@ -337,36 +358,118 @@ interface ScreenshotPayload {
 
 ## Action Checklist
 
+Completed in practice:
+
+- `US-035` / `RF-017` completed the screenshot policy and design decisions.
+- `US-036` / `RF-018` completed the screenshot payload contract work.
+- `US-037` / `RF-019` completed the screenshot persistence sanitization work.
+- The next actionable unchecked story is `Story D: Sensitive Screenshot Gate`.
+
+### US-035 Decision Matrix Audit Log
+
+Audit scope: confirm that every design-only decision required by `US-035` / `RF-017` was explicitly answered and landed in the governed policy artifact.
+
+- [x] Screenshot classes defined: `live_frame`, `debug_frame`, `evidence`, `sensitive_blocked`.
+- [x] Sensitivity states defined: `unknown`, `safe`, `sensitive`, `blocked`.
+- [x] `pii_wait` capture behavior defined.
+- [x] Sensitive-target step capture behavior defined.
+- [x] Private account/page sensitivity behavior defined.
+- [x] Evidence screenshot definition recorded.
+- [x] Durable screenshot model decided as strict opt-in evidence retention.
+- [x] Branch-by-branch capture policy recorded for UI, `/api/screenshot`, browser-use, workflow steps, wrap-up, session index, rolling, MCP, orchestrator, and bridge endpoints.
+- [x] Durable persistence policy recorded for filesystem artifacts.
+- [x] Durable persistence policy recorded for `workflow_runs.result_json`.
+- [x] Durable persistence policy recorded for wrap-up artifact JSON.
+- [x] Durable persistence policy recorded for `session_screenshots`.
+- [x] Live retention policy defined.
+- [x] Debug and rolling retention policy defined.
+- [x] Evidence retention policy defined as `keep_until_manual_review` by default.
+- [x] Access policy recorded for `/api/screenshot`.
+- [x] MCP screenshot access and audit policy recorded.
+- [x] Screenshot telemetry and audit fields defined.
+- [x] Encryption-at-rest default decided for durable evidence screenshots.
+- [x] Historical screenshot base64 policy decided as forward-only sanitization plus legacy retention rationale.
+- [x] Follow-on implementation split defined: payload contract, persistence sanitization, sensitive screenshot gate, rolling/debug cleanup.
+
+Completion source:
+
+- `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md`
+- `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-definition-of-done.md`
+- `docs/history/forge_history.md` (`H-035`)
+- `prd.json` (`US-035` passed)
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` (`RF-017` completed)
+
 ### Policy And Design
 
-- [ ] Define the screenshot policy layer explicitly: classes, sensitivity states, retention modes, and persistence rules.
-- [ ] Decide whether live screenshots are ephemeral by default across UI, MCP, and orchestrator paths.
-- [ ] Decide whether explicit workflow `screenshot` steps always mean durable evidence or require per-step purpose metadata.
-- [ ] Decide whether evidence screenshots require encryption at rest.
+- [x] Define the screenshot policy layer explicitly: classes, sensitivity states, retention modes, and persistence rules.
+- [x] Decide whether live screenshots are ephemeral by default across UI, MCP, and orchestrator paths.
+- [x] Decide whether explicit workflow `screenshot` steps always mean durable evidence or require per-step purpose metadata.
+- [x] Decide whether evidence screenshots require encryption at rest.
+
+Close the loop decision:
+
+- Define the screenshot policy layer explicitly: closed by `US-035` / `RF-017`; landed in `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md` through the class taxonomy, sensitivity model, persistence policy, and retention policy sections.
+- Decide whether live screenshots are ephemeral by default across UI, MCP, and orchestrator paths: closed by `US-035` / `RF-017`; live screenshots are `live_frame`, non-durable, and `ephemeral` by default.
+- Decide whether explicit workflow `screenshot` steps always mean durable evidence or require per-step purpose metadata: closed by `US-035` / `RF-017`; workflow `screenshot` steps require explicit evidence-purpose policy and are not automatic durable retention merely because bytes exist.
+- Decide whether explicit workflow `screenshot` steps always mean durable evidence or require per-step purpose metadata: closed by `US-035` / `RF-017`; workflow `screenshot` steps require explicit evidence-purpose policy, are not automatic durable retention merely because bytes exist, and should fail closed for durable writes when evidence-purpose metadata is missing.
+- Decide whether evidence screenshots require encryption at rest: closed by `US-035` / `RF-017`; durable evidence screenshots require encryption at rest by default unless a future safe explicit opt-out is defined.
 
 ### Payload Contract
 
-- [ ] Introduce a canonical `ScreenshotPayload` contract with source, MIME type, sensitivity, retention, and persistence metadata.
-- [ ] Replace raw screenshot base64 outputs in orchestrator paths with a screenshot payload container or reference.
-- [ ] Make browser-use action screenshot payloads MIME-aware.
-- [ ] Update UI rendering to use payload `mimeType` instead of hardcoded JPEG assumptions.
+- [x] Introduce a canonical `ScreenshotPayload` contract with source, MIME type, sensitivity, retention, and persistence metadata.
+- [x] Replace raw screenshot base64 outputs in orchestrator paths with a screenshot payload container or reference.
+- [x] Make browser-use action screenshot payloads MIME-aware.
+- [x] Update UI rendering to use payload `mimeType` instead of hardcoded JPEG assumptions.
+
+Close the loop decision:
+
+- Introduce a canonical `ScreenshotPayload` contract with source, MIME type, sensitivity, retention, and persistence metadata: closed by `US-036` / `RF-018`; the shared runtime screenshot payload contract now exists and is the canonical live/runtime container.
+- Replace raw screenshot base64 outputs in orchestrator paths with a screenshot payload container or reference: closed by `US-036` / `RF-018`; orchestrator screenshot outputs now flow through the payload container path instead of remaining raw standalone base64.
+- Make browser-use action screenshot payloads MIME-aware: closed by `US-036` / `RF-018`; browser-use action screenshot payloads now carry MIME information instead of relying on implicit JPEG assumptions.
+- Update UI rendering to use payload `mimeType` instead of hardcoded JPEG assumptions: closed by `US-036` / `RF-018`; UI rendering now follows payload MIME metadata.
 
 ### Sensitive-Phase Controls
 
-- [ ] Block screenshot capture during `pii_wait`.
-- [ ] Block or mask screenshots during sensitive-target step execution.
-- [ ] Add sensitive-phase gates for MCP screenshot capture.
-- [ ] Add sensitive-phase gates for live UI screenshot capture.
-- [ ] Add sensitive-phase gates for rolling screenshot capture.
-- [ ] Emit telemetry when screenshot capture is blocked by policy.
+- [x] Block screenshot capture during `pii_wait`.
+- [x] Block or mask screenshots during sensitive-target step execution.
+- [x] Redact known sensitive DOM regions before capture when metadata is sufficient.
+- [x] Return structured denial metadata with `blockedReason` and `nextAction` when capture is blocked.
+- [x] Add step-scoped TTL screenshots that delete bytes on workflow step advance.
+- [x] Add sensitive-phase gates for MCP screenshot capture.
+- [x] Add sensitive-phase gates for live UI screenshot capture.
+- [x] Add sensitive-phase gates for rolling screenshot capture.
+- [x] Emit telemetry when screenshot capture is blocked by policy.
+
+Close the loop decision:
+
+- Block screenshot capture during `pii_wait`: closed by `US-038` / `RF-020`; blocked captures now return structured denial metadata with no pixels.
+- Block or mask screenshots during sensitive-target step execution: closed by `US-038` / `RF-020`; selector-known sensitive targets redact via Playwright masking and other sensitive targets fail closed.
+- Redact known sensitive DOM regions before capture when metadata is sufficient: closed by `US-038` / `RF-020`; the runtime now masks selector-known sensitive regions before returning screenshots.
+- Return structured denial metadata with `blockedReason` and `nextAction` when capture is blocked: closed by `US-038` / `RF-020`.
+- Add step-scoped TTL screenshots that delete bytes on workflow step advance: closed by `US-038` / `RF-020`.
+- Add sensitive-phase gates for MCP screenshot capture: closed by `US-038` / `RF-020`.
+- Add sensitive-phase gates for live UI screenshot capture: closed by `US-038` / `RF-020`.
+- Add sensitive-phase gates for rolling screenshot capture: closed by `US-038` / `RF-020`.
+- Emit telemetry when screenshot capture is blocked by policy: closed by `US-038` / `RF-020`; allow/redact/block/delete decisions emit byte-free telemetry.
 
 ### Persistence Hardening
 
-- [ ] Strip screenshot base64 before persisting `workflow_runs.result_json`.
-- [ ] Strip screenshot base64 before wrap-up artifact JSON is written.
-- [ ] Keep durable screenshot records as path plus metadata rather than embedded base64.
+- [x] Strip screenshot base64 before persisting `workflow_runs.result_json`.
+- [x] Strip screenshot base64 before wrap-up artifact JSON is written.
+- [x] Keep durable screenshot records as path plus metadata rather than embedded base64.
 - [ ] Decide whether screenshot metadata should remain split across `session_screenshots` and workflow result JSON or be normalized further.
 - [ ] Extend durable screenshot metadata with source, purpose, retention, and sensitivity if durable screenshot querying remains supported.
+- [ ] Guard rail: if `mode: agentic` remains in service long enough to execute durable screenshot workflows, sanitize JSON-encoded `ScreenshotPayload` values in `WorkflowResult.outputs` before persistence or block durable screenshot output keys.
+
+Close the loop decision:
+
+- Strip screenshot base64 before persisting `workflow_runs.result_json`: closed by `US-037` / `RF-019`; new durable SQLite workflow result writes now sanitize `stepResults[].screenshotBase64` at the wrap-up persistence boundary.
+- Strip screenshot base64 before wrap-up artifact JSON is written: closed by `US-037` / `RF-019`; new wrap-up artifact JSON now sanitizes `screenshots[].base64` before the file write.
+- Keep durable screenshot records as path plus metadata rather than embedded base64: closed by `US-037` / `RF-019` for the sanitize-first slice; new durable writes keep path and available screenshot metadata while leaving runtime `WorkflowResult` objects unchanged in process.
+- Decide whether screenshot metadata should remain split across `session_screenshots` and workflow result JSON or be normalized further: still open; owned by `Story C: Screenshot Persistence Sanitization`.
+- Extend durable screenshot metadata with source, purpose, retention, and sensitivity if durable screenshot querying remains supported: still open; owned by `Story C: Screenshot Persistence Sanitization`.
+- Evaluate whether a future `ttl_90d` or `ttl_audit` retention mode is necessary for long-lived evidence without changing the current `keep_until_manual_review` default: still open; owned by `Story C: Screenshot Persistence Sanitization`.
+- Agentic/orchestrator screenshot output guard rail: not a reopened `US-037` defect after the direct production path passed. If `mode: agentic` is not retired before further screenshot-bearing production use, add a targeted guard that sanitizes or blocks JSON-encoded `ScreenshotPayload.base64` stored in `WorkflowResult.outputs`.
 
 ### Rolling Screenshot Cleanup
 
@@ -375,24 +478,52 @@ interface ScreenshotPayload {
 - [ ] Delete rolling/debug screenshots on successful wrap-up unless debug mode is enabled.
 - [ ] Confirm rolling screenshots are never captured during sensitive phases.
 
+Close the loop decision:
+
+- Decide whether rolling screenshots should be enabled by default in production: policy direction is closed by `US-035` / `RF-017` as disabled by default outside debugging mode; runtime enforcement remains open and should be implemented with rolling cleanup work.
+- Define TTL behavior for rolling/debug screenshots: policy direction is closed by `US-035` / `RF-017` as `ttl_24h` for failed/debug runs; runtime enforcement remains open and should be implemented with rolling cleanup work.
+- Delete rolling/debug screenshots on successful wrap-up unless debug mode is enabled: policy direction is closed by `US-035` / `RF-017`; runtime enforcement remains open and should be implemented with rolling cleanup work.
+- Confirm rolling screenshots are never captured during sensitive phases: closed by `US-038` / `RF-020`; sensitive rolling captures now block or step-scope through the shared policy gate.
+
 ### Live Access And Auditing
 
-- [ ] Decide whether `GET /api/screenshot` should require bound client/session checks similar to other HITL-sensitive endpoints.
+- [x] Decide whether `GET /api/screenshot` should require bound client/session checks similar to other HITL-sensitive endpoints.
 - [ ] Add audit telemetry for screenshot capture requests from UI endpoints.
 - [ ] Add audit telemetry for MCP screenshot capture requests.
-- [ ] Decide whether browser-use action screenshots should be rendered live in the UI when present.
+- [x] Decide whether browser-use action screenshots should be rendered live in the UI when present.
+
+Close the loop decision:
+
+- Decide whether `GET /api/screenshot` should require bound client/session checks similar to other HITL-sensitive endpoints: closed by `US-035` / `RF-017`; the policy requires bound client/session checks and blocked-phase denial.
+- Add audit telemetry for screenshot capture requests from UI endpoints: closed by `US-038` / `RF-020`; UI screenshot allow/block outcomes now emit byte-free telemetry with binding and decision context.
+- Add audit telemetry for MCP screenshot capture requests: closed by `US-038` / `RF-020`; MCP screenshot decisions now emit the same byte-free policy telemetry path.
+- Decide whether browser-use action screenshots should be rendered live in the UI when present: closed by `US-035` / `RF-017` and implemented by `US-036` / `RF-018`; they should render live through MIME-aware payloads and remain non-durable by default.
 
 ### Legacy And Migration
 
-- [ ] Decide whether historical result JSON containing screenshot base64 should be migrated, sanitized forward-only, or left as legacy data.
+- [x] Decide whether historical result JSON containing screenshot base64 should be migrated, sanitized forward-only, or left as legacy data.
 - [ ] Decide whether old durable screenshot artifacts need a compatibility path after payload contract changes.
+
+Close the loop decision:
+
+- Decide whether historical result JSON containing screenshot base64 should be migrated, sanitized forward-only, or left as legacy data: closed by `US-035` / `RF-017`; use forward-only sanitization and leave historical base64 as documented legacy data.
+- Decide whether old durable screenshot artifacts need a compatibility path after payload contract changes: still open; evaluate during `Story C` if any durable artifact readers depend on pre-payload shapes.
+- Decide whether old durable screenshot artifacts need a compatibility path after payload contract changes: still open; evaluate during `Story C` if any durable artifact readers depend on pre-payload shapes.
+- Ensure `manual_review` deletion emits a signed log entry with who, when, and why for SIC-style evidence cleanup: still open; should be implemented with later persistence/audit cleanup work after the sanitize-first storage boundary is in place.
 
 ### Forge Story Packaging
 
-- [ ] Promote Story A: Screenshot Security Policy Design if the policy surface needs a design-first story.
-- [ ] Promote Story B: Screenshot Payload Contract if the runtime/UI payload work is approved.
-- [ ] Promote Story C: Screenshot Persistence Sanitization if durable storage cleanup is approved.
-- [ ] Promote Story D: Sensitive Screenshot Gate if screenshot blocking rules are approved.
+- [x] Promote Story A: Screenshot Security Policy Design if the policy surface needs a design-first story.
+- [x] Promote Story B: Screenshot Payload Contract if the runtime/UI payload work is approved.
+- [x] Promote Story C: Screenshot Persistence Sanitization if durable storage cleanup is approved.
+- [x] Promote Story D: Screenshot Capture Policy Gate if screenshot blocking/redaction/step-TTL rules are approved.
+
+Close the loop decision:
+
+- Promote Story A: Screenshot Security Policy Design if the policy surface needs a design-first story: closed by `US-035` / `RF-017`.
+- Promote Story B: Screenshot Payload Contract if the runtime/UI payload work is approved: closed by `US-036` / `RF-018`.
+- Promote Story C: Screenshot Persistence Sanitization if durable storage cleanup is approved: closed and implemented by `US-037` / `RF-019`.
+- Promote Story D: Screenshot Capture Policy Gate if screenshot blocking/redaction/step-TTL rules are approved: closed and implemented by `US-038` / `RF-020`.
 
 ## Possible Forge Story Split
 
@@ -401,6 +532,15 @@ interface ScreenshotPayload {
 Deliverable:
 
 - define screenshot classes, retention rules, sensitive-phase gates, and persistence policy
+
+Promotion:
+
+- promoted to `US-035` / `RF-017`
+- story package:
+  - `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-storyline.md`
+  - `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-forge-story.yaml`
+  - `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-implementation-handoff.md`
+  - `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-definition-of-done.md`
 
 ### Story B: Screenshot Payload Contract
 
@@ -416,22 +556,51 @@ Deliverable:
 
 - strip base64 before DB/wrap-up persistence
 - keep path plus metadata
-- add retention cleanup for rolling/debug screenshots
+- keep runtime `WorkflowResult` compatibility before persistence
+- leave rolling/debug cleanup for the dedicated cleanup story
+- leave fail-closed durable-write validation for the follow-on authoring/access gate work
+- decide whether compatibility handling is needed for old durable screenshot artifacts
+- evaluate whether a future `ttl_90d` or `ttl_audit` retention mode is necessary
+- ensure `manual_review` deletion produces a signed who/when/why audit log for SIC-style evidence cleanup
 
-### Story D: Sensitive Screenshot Gate
+Promotion:
+
+- promoted to `US-037` / `RF-019`
+- story package:
+  - `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-storyline.md`
+  - `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-forge-story.yaml`
+  - `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-implementation-handoff.md`
+  - `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-definition-of-done.md`
+
+### Story D: Screenshot Capture Policy Gate
 
 Deliverable:
 
-- block live/durable/MCP/rolling captures during `pii_wait` or sensitive-target steps
-- emit telemetry when capture is blocked
+- classify screenshot capture requests as `live_frame`, `debug_frame`, `step_scoped`, `evidence`, or `sensitive_blocked`
+- redact/mask known sensitive DOM regions before capture when safe
+- block with structured `blockedReason` and `nextAction` metadata when pixels cannot be safely returned
+- delete step-scoped screenshot bytes on workflow step advance
+- gate `GET /api/screenshot` using the `US-024` active session/client binding pattern
+- gate MCP screenshot capture through the same policy decision contract
+- pause, deny, or step-scope live/rolling screenshots during sensitive phases
+- emit byte-free telemetry for allow/redact/block/delete decisions
+
+Promotion:
+
+- promoted to `US-038` / `RF-020`
+- story package:
+  - `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-storyline.md`
+  - `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-forge-story.yaml`
+  - `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-implementation-handoff.md`
+  - `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-definition-of-done.md`
 
 ## Current Open Decisions
 
 - Should rolling screenshots be enabled by default?
-- What TTL is acceptable for debug screenshots?
-- Should evidence screenshots be encrypted at rest?
-- Should `GET /api/screenshot` require client/session binding like HITL return-control endpoints?
-- Should old screenshot base64 in historical result JSON be migrated or left as legacy?
+- Does Story C need a future `ttl_90d` or `ttl_audit` retention mode for long-lived evidence?
+- How should the signed `manual_review` deletion log be represented and enforced?
+- Do old durable screenshot artifacts need a compatibility path after payload-contract changes?
+- Guard rail only: if `mode: agentic` survives long enough for production screenshot workflows, should orchestrator `outputs[output_key]` be sanitized for embedded `ScreenshotPayload.base64`, or should screenshot output keys be blocked at the orchestrator boundary?
 
 ## Source Files To Keep In View
 
@@ -449,4 +618,3 @@ Deliverable:
 - `src/engines/python-bridge.ts`
 - `src/engines/browser-use/server/main.py`
 - `src/engines/skyvern/server/main.py`
-

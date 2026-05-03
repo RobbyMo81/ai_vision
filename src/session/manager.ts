@@ -17,6 +17,14 @@ import * as fs from 'fs';
 import * as net from 'net';
 import { ChildProcess, spawn, execSync } from 'child_process';
 import { telemetry } from '../telemetry';
+import { decideScreenshotPolicy, SensitiveScreenshotContext } from './screenshot-policy';
+import { ScreenshotPayload, SessionState, ScreenshotSource } from './types';
+import { SessionRepository } from '../db/repository';
+import {
+  deleteScreenshotFile,
+  deleteEvidenceScreenshot,
+  runStartupScreenshotScavenger,
+} from './screenshot-retention';
 
 export interface SessionManagerOptions {
   /** Show the browser window (required for HITL so the user can interact). */
@@ -36,6 +44,10 @@ export class SessionManager extends EventEmitter {
   private _started = false;
   private _screenshotTimer: ReturnType<typeof setInterval> | null = null;
   private readonly _screenshotDir: string;
+  private readonly _stepScopedDir: string;
+  private _lastSessionState: SessionState | null = null;
+  private _sensitiveScreenshotContext: SensitiveScreenshotContext | null = null;
+  private readonly _stepScopedFiles = new Map<string, Set<string>>();
 
   constructor(opts: SessionManagerOptions = {}) {
     super();
@@ -50,6 +62,9 @@ export class SessionManager extends EventEmitter {
     this._screenshotDir = process.env.SESSION_DIR
       ? path.join(process.env.SESSION_DIR, 'rolling')
       : path.join(process.cwd(), 'sessions', 'rolling');
+    this._stepScopedDir = process.env.SESSION_DIR
+      ? path.join(process.env.SESSION_DIR, 'step-scoped')
+      : path.join(process.cwd(), 'sessions', 'step-scoped');
   }
 
   // ---------------------------------------------------------------------------
@@ -163,6 +178,20 @@ export class SessionManager extends EventEmitter {
     // Publish the CDP URL so PythonBridgeEngine subprocesses can attach to this browser
     process.env.BROWSER_CDP_URL = this.getCdpUrl();
     this.emit('started');
+    setImmediate(() => {
+      try {
+        runStartupScreenshotScavenger({ limit: 100 });
+      } catch (error) {
+        telemetry.emit({
+          source: 'session',
+          name: 'session.screenshot.startup_scavenger_failed',
+          level: 'warn',
+          details: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
+    });
     telemetry.emit({
       source: 'session',
       name: 'session.browser.started',
@@ -177,6 +206,7 @@ export class SessionManager extends EventEmitter {
 
   async close(): Promise<void> {
     this._started = false;
+    this.clearStepScopedScreenshots();
     telemetry.emit({
       source: 'session',
       name: 'session.browser.closing',
@@ -260,6 +290,143 @@ export class SessionManager extends EventEmitter {
     }
   }
 
+  syncSessionState(state: SessionState | null): void {
+    this._lastSessionState = state;
+  }
+
+  setSensitiveScreenshotContext(context: SensitiveScreenshotContext | null): void {
+    this._sensitiveScreenshotContext = context;
+  }
+
+  captureState(): SessionState | null {
+    return this._lastSessionState;
+  }
+
+  async captureScreenshot(request: {
+    source: ScreenshotSource;
+    accessPath: 'ui' | 'mcp' | 'workflow' | 'rolling';
+    state?: SessionState | null;
+    evidenceRequested?: boolean;
+  }): Promise<ScreenshotPayload> {
+    const state = request.state ?? this._lastSessionState;
+    const decision = decideScreenshotPolicy({
+      source: request.source,
+      accessPath: request.accessPath,
+      state,
+      sensitiveContext: this._sensitiveScreenshotContext,
+      evidenceRequested: request.evidenceRequested,
+    });
+    const page = await this.getPage();
+    const url = await this.currentUrl().catch(() => page.url());
+    const basePayload: ScreenshotPayload = {
+      id: `${request.source}-${Date.now()}`,
+      source: request.source,
+      class: decision.class,
+      mimeType: 'image/jpeg',
+      takenAt: new Date().toISOString(),
+      sessionId: state?.id,
+      stepId: state?.currentStep,
+      url,
+      sensitivity: decision.sensitivity,
+      retention: decision.retention,
+      persistBase64: false,
+      blockedReason: decision.blockedReason,
+      nextAction: decision.nextAction,
+      expiresOnStepAdvance: decision.expiresOnStepAdvance,
+      redactionApplied: decision.redactionApplied,
+      redactedSelectors: decision.redactSelectors,
+    };
+
+    if (!decision.allowed) {
+      telemetry.emit({
+        source: 'session',
+        name: 'session.screenshot.blocked',
+        level: 'warn',
+        sessionId: state?.id,
+        details: {
+          accessPath: request.accessPath,
+          class: decision.class,
+          blockedReason: decision.blockedReason ?? '',
+          nextAction: decision.nextAction ?? '',
+          stepId: state?.currentStep ?? '',
+          phase: state?.phase ?? 'idle',
+          source: request.source,
+        },
+      });
+      return basePayload;
+    }
+
+    const screenshotOptions: import('playwright-core').PageScreenshotOptions = {
+      type: 'jpeg',
+      quality: request.accessPath === 'rolling' ? 70 : 80,
+    };
+
+    if ((decision.redactSelectors ?? []).length > 0) {
+      const maskLocators: Array<import('playwright-core').Locator> = [];
+      for (const selector of decision.redactSelectors ?? []) {
+        const locator = page.locator(selector);
+        const count = await locator.count();
+        if (count === 0) {
+          telemetry.emit({
+            source: 'session',
+            name: 'session.screenshot.redaction_unavailable',
+            level: 'warn',
+            sessionId: state?.id,
+            details: {
+              accessPath: request.accessPath,
+              selector,
+              stepId: state?.currentStep ?? '',
+              source: request.source,
+            },
+          });
+          return {
+            ...basePayload,
+            class: 'sensitive_blocked',
+            sensitivity: 'blocked',
+            retention: 'ephemeral',
+            blockedReason: 'redaction_unavailable',
+            nextAction: 'complete_sensitive_step_via_hitl',
+            expiresOnStepAdvance: undefined,
+            redactionApplied: undefined,
+            redactedSelectors: undefined,
+          };
+        }
+        maskLocators.push(locator.first());
+      }
+      screenshotOptions.mask = maskLocators;
+      screenshotOptions.maskColor = '#000000';
+    }
+
+    const buf = await page.screenshot(screenshotOptions);
+    const payload: ScreenshotPayload = {
+      ...basePayload,
+      base64: buf.toString('base64'),
+    };
+
+    if (decision.expiresOnStepAdvance) {
+      payload.path = this.writeStepScopedScreenshot(buf, state?.currentStep);
+    }
+
+    telemetry.emit({
+      source: 'session',
+      name: decision.redactionApplied ? 'session.screenshot.redacted' : 'session.screenshot.allowed',
+      sessionId: state?.id,
+      details: {
+        accessPath: request.accessPath,
+        class: decision.class,
+        stepId: state?.currentStep ?? '',
+        phase: state?.phase ?? 'idle',
+        source: request.source,
+        retention: decision.retention,
+        redactionApplied: decision.redactionApplied === true,
+        expiresOnStepAdvance: decision.expiresOnStepAdvance === true,
+        path: payload.path ?? '',
+      },
+    });
+
+    return payload;
+  }
+
   async currentUrl(): Promise<string> {
     const page = await this.getPage();
     return page.url();
@@ -307,15 +474,30 @@ export class SessionManager extends EventEmitter {
       if (!this._page || !this._started) return;
       try {
         const timestamp = Date.now();
-        const url = this._page.url();
-        const buf = await this._page.screenshot({ type: 'jpeg', quality: 70 });
+        const payload = await this.captureScreenshot({
+          source: 'rolling',
+          accessPath: 'rolling',
+        });
+        if (!payload.base64) {
+          return;
+        }
+        const url = payload.url ?? this._page.url();
+        const buf = Buffer.from(payload.base64, 'base64');
         const filename = `frame-${timestamp}.jpg`;
-        const filepath = path.join(this._screenshotDir, filename);
+        const filepath = payload.path && payload.class === 'step_scoped'
+          ? payload.path
+          : path.join(this._screenshotDir, filename);
         fs.writeFileSync(filepath, buf);
         telemetry.emit({
           source: 'session',
           name: 'session.screenshot.rolling',
-          details: { url, file: filepath, timestamp },
+          details: {
+            url,
+            file: filepath,
+            timestamp,
+            class: payload.class,
+            retention: payload.retention,
+          },
         });
       } catch { /* page may be navigating — skip frame */ }
     }, intervalMs);
@@ -358,6 +540,98 @@ export class SessionManager extends EventEmitter {
       await new Promise((r) => setTimeout(r, 300));
     }
     throw new Error(`Chrome CDP on port ${this.cdpPort} did not respond within ${timeoutMs}ms`);
+  }
+
+  handleStepAdvance(nextStepId?: string): void {
+    const deletedFiles: string[] = [];
+    const failedFiles: string[] = [];
+    const repo = new SessionRepository();
+    for (const [stepId, files] of this._stepScopedFiles.entries()) {
+      if (stepId === nextStepId) continue;
+      for (const file of files) {
+        const deleted = deleteScreenshotFile({
+          repo,
+          screenshotPath: file,
+          sessionId: this._lastSessionState?.id,
+          workflowId: undefined,
+          stepId,
+          class: 'step_scoped',
+          retention: 'step_scoped',
+          action: 'step_advance_cleanup',
+        });
+        if (deleted) {
+          deletedFiles.push(file);
+        } else {
+          failedFiles.push(file);
+        }
+      }
+      this._stepScopedFiles.delete(stepId);
+    }
+
+    if (deletedFiles.length > 0 || failedFiles.length > 0) {
+      telemetry.emit({
+        source: 'session',
+        name: 'session.screenshot.step_scoped_deleted',
+        level: failedFiles.length > 0 ? 'warn' : 'info',
+        details: {
+          deletedCount: deletedFiles.length,
+          failedCount: failedFiles.length,
+          nextStepId: nextStepId ?? '',
+          deletedFiles,
+          failedFiles,
+        },
+      });
+    }
+  }
+
+  clearStepScopedScreenshots(): void {
+    this.handleStepAdvance(undefined);
+  }
+
+  deleteEvidenceScreenshot(input: {
+    evidenceId: string;
+    sessionId: string;
+    workflowId?: string;
+    stepId?: string;
+    screenshotPath: string;
+    contentHash?: string;
+    actor?: string;
+    reason?: string;
+  }): { deleted: boolean; contentHash: string } {
+    const result = deleteEvidenceScreenshot({
+      repo: new SessionRepository(),
+      evidenceId: input.evidenceId,
+      sessionId: input.sessionId,
+      workflowId: input.workflowId,
+      stepId: input.stepId,
+      screenshotPath: input.screenshotPath,
+      contentHash: input.contentHash,
+      actor: input.actor ?? 'ui',
+      reason: input.reason ?? 'manual evidence deletion',
+    });
+
+    if (result.deleted) {
+      this.emit('screenshot_deleted', {
+        evidenceId: input.evidenceId,
+        sessionId: input.sessionId,
+        workflowId: input.workflowId,
+        stepId: input.stepId,
+        screenshotPath: input.screenshotPath,
+      });
+    }
+
+    return result;
+  }
+
+  private writeStepScopedScreenshot(buf: Buffer, stepId?: string): string {
+    fs.mkdirSync(this._stepScopedDir, { recursive: true });
+    const resolvedStepId = stepId && stepId.length > 0 ? stepId : 'unknown-step';
+    const filepath = path.join(this._stepScopedDir, `${resolvedStepId}-${Date.now()}.jpg`);
+    fs.writeFileSync(filepath, buf);
+    const files = this._stepScopedFiles.get(resolvedStepId) ?? new Set<string>();
+    files.add(filepath);
+    this._stepScopedFiles.set(resolvedStepId, files);
+    return filepath;
   }
 }
 

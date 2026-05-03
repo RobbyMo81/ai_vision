@@ -26,6 +26,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { sessionManager } from '../session/manager';
+import {
+  contentHashForBuffer,
+  generateEvidenceId,
+} from '../session/screenshot-retention';
 import { hitlCoordinator } from '../session/hitl';
 import { SessionState } from '../session/types';
 import { EngineId } from '../engines/interface';
@@ -1173,6 +1177,13 @@ async function executeStep(
         if (isSpi) {
           const label = field?.label ?? 'Sensitive field';
           const fieldId = field?.id ?? sub.id;
+          sessionManager.setSensitiveScreenshotContext({
+            stepId: sub.id,
+            selectors: [sub.selector],
+            labels: [label],
+            blockedReason: 'pii_wait_active',
+            nextAction: 'retry_after_sensitive_phase',
+          });
           telemetry.emit({
             source: 'workflow',
             name: 'workflow.step.pii_wait',
@@ -1229,9 +1240,13 @@ async function executeStep(
             });
           }
 
-          await sessionManager.type(sub.selector, value, sub.clearFirst);
-          shortTermMemory.addScratchNote(`Secure HITL entry completed for ${label}.`);
-          return { stepId: sub.id, success: true, durationMs: Date.now() - start };
+          try {
+            await sessionManager.type(sub.selector, value, sub.clearFirst);
+            shortTermMemory.addScratchNote(`Secure HITL entry completed for ${label}.`);
+            return { stepId: sub.id, success: true, durationMs: Date.now() - start };
+          } finally {
+            sessionManager.setSensitiveScreenshotContext(null);
+          }
         }
 
         await sessionManager.type(sub.selector, sub.text, sub.clearFirst);
@@ -1240,12 +1255,46 @@ async function executeStep(
 
       // ----- screenshot -----------------------------------------------------
       case 'screenshot': {
-        const b64 = await sessionManager.screenshot();
+        const screenshot = await sessionManager.captureScreenshot({
+          source: 'workflow_step',
+          accessPath: 'workflow',
+          state: workflowEngine.currentState,
+          evidenceRequested: true,
+        });
+        if (!screenshot.base64) {
+          return {
+            stepId: sub.id,
+            success: false,
+            error: `Screenshot blocked: ${screenshot.blockedReason ?? 'policy_denied'} (${screenshot.nextAction ?? 'no_next_action'})`,
+            durationMs: Date.now() - start,
+          };
+        }
+        const b64 = screenshot.base64;
+        const screenshotBytes = Buffer.from(b64, 'base64');
         const screenshotDir = path.join(process.env.SESSION_DIR ?? './sessions', 'workflow');
         fs.mkdirSync(screenshotDir, { recursive: true });
         const filePath = path.join(screenshotDir, `${sub.id}-${Date.now()}.jpg`);
-        fs.writeFileSync(filePath, Buffer.from(b64, 'base64'));
-        screenshots.push({ path: filePath, base64: b64, stepId: sub.id });
+        fs.writeFileSync(filePath, screenshotBytes);
+        const evidenceId = screenshot.class === 'evidence'
+          ? generateEvidenceId(workflowEngine.currentState?.id ?? 'unknown-session', sub.id, filePath)
+          : undefined;
+        const contentHash = screenshot.class === 'evidence'
+          ? contentHashForBuffer(screenshotBytes)
+          : undefined;
+        screenshots.push({
+          path: filePath,
+          base64: b64,
+          stepId: sub.id,
+          evidenceId,
+          contentHash,
+          takenAt: screenshot.takenAt,
+          source: screenshot.source,
+          class: screenshot.class,
+          mimeType: screenshot.mimeType,
+          sensitivity: screenshot.sensitivity,
+          retention: screenshot.retention,
+          persistBase64: screenshot.persistBase64,
+        });
         if (sub.outputKey) outputs[sub.outputKey] = filePath;
         return {
           stepId: sub.id,
@@ -1318,6 +1367,12 @@ async function executeStep(
           .map(target => target.label);
 
         if (guardedFields.length > 0) {
+          sessionManager.setSensitiveScreenshotContext({
+            stepId: sub.id,
+            labels: guardedFields,
+            blockedReason: 'sensitive_target_active',
+            nextAction: 'complete_sensitive_step_via_hitl',
+          });
           onStateUpdate({
             phase: 'pii_wait',
             hitlAction: 'return_control',
@@ -1329,6 +1384,7 @@ async function executeStep(
             `HITL must complete sensitive fields: ${guardedFields.join(', ')}`,
             'Sensitive fields are excluded from model prompts and must remain HITL-controlled.',
           );
+          sessionManager.setSensitiveScreenshotContext(null);
           onStateUpdate({
             phase: 'running',
             hitlAction: undefined,
@@ -2152,6 +2208,7 @@ export class WorkflowEngine {
       partial: Partial<SessionState>,
       source?: string,
     ): void => {
+      const previousStep = this._currentState?.currentStep;
       const previousPhase = this._currentState?.phase;
       this._currentState = {
         id,
@@ -2161,6 +2218,10 @@ export class WorkflowEngine {
         ...this._currentState,
         ...partial,
       };
+      sessionManager.syncSessionState(this._currentState);
+      if (this._currentState.currentStep && this._currentState.currentStep !== previousStep) {
+        sessionManager.handleStepAdvance(this._currentState.currentStep);
+      }
       if (partial.phase && partial.phase !== previousPhase) {
         // Sync hitlCoordinator._phase before the event fires so every listener
         // sees both surfaces in agreement.

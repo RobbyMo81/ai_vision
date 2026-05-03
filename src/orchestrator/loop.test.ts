@@ -165,6 +165,40 @@ describe('runOrchestratorLoop US-009', () => {
     expect(result.outputs.foo).toBe('bar');
   });
 
+  it('stores orchestrator screenshot outputs as screenshot payload containers', async () => {
+    const mockPage = {
+      screenshot: jest.fn().mockResolvedValue(Buffer.from('png-bytes')),
+      url: jest.fn(() => 'https://example.com/visible'),
+    };
+    const { sessionManager } = require('../session/manager');
+    sessionManager.getPage.mockResolvedValue(mockPage);
+
+    mockAnthropicCreate
+      .mockResolvedValueOnce(
+        makeToolUseResponse([
+          { id: 'tu-1', name: 'screenshot', input: { step_id: 'capture_visible', output_key: 'visible_screenshot' } },
+        ]),
+      )
+      .mockResolvedValue(makeEndTurnResponse());
+
+    const result = await runOrchestratorLoop(BASE_DEFINITION, {}, 'sess-shot');
+    const payload = JSON.parse(result.outputs.visible_screenshot);
+
+    expect(payload).toEqual(expect.objectContaining({
+      source: 'orchestrator',
+      class: 'live_frame',
+      mimeType: 'image/png',
+      base64: Buffer.from('png-bytes').toString('base64'),
+      sessionId: 'sess-shot',
+      workflowId: 'loop-unit-test',
+      stepId: 'capture_visible',
+      url: 'https://example.com/visible',
+      sensitivity: 'unknown',
+      retention: 'ephemeral',
+      persistBase64: false,
+    }));
+  });
+
   it('enforces permissions.require_human_approval_before on matching step_id', async () => {
     const definition: WorkflowDefinition = {
       ...BASE_DEFINITION,

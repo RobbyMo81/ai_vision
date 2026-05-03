@@ -8,6 +8,8 @@
  */
 
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ---------------------------------------------------------------------------
 // Module mocks (must be declared before any import of the module under test)
@@ -42,6 +44,7 @@ jest.mock('../session/manager', () => ({
   sessionManager: {
     isStarted: false,
     screenshot: jest.fn(),
+    captureScreenshot: jest.fn(),
     currentUrl: jest.fn().mockResolvedValue(''),
     on: jest.fn(),
   },
@@ -104,9 +107,48 @@ function makeRequest(
   });
 }
 
+function makeGetRequest(
+  port: number,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; data: unknown }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port,
+        path,
+        method: 'GET',
+        headers,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (c) => { raw += c; });
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode ?? 0, data: JSON.parse(raw) }); }
+          catch { resolve({ status: res.statusCode ?? 0, data: raw }); }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/confirm-final-step  —  pre-flight gate tests
 // ---------------------------------------------------------------------------
+
+describe('HITL screenshot UI payload rendering', () => {
+  it('renders MIME-aware screenshot payloads and browser-use action screenshots', () => {
+    const serverSource = fs.readFileSync(path.join(__dirname, 'server.ts'), 'utf8');
+
+    expect(serverSource).toContain('payload.screenshot.mimeType');
+    expect(serverSource).toContain("img.src = 'data:' + mimeType + ';base64,' + base64;");
+    expect(serverSource).toContain('payload.browserUseEvent.screenshotBase64');
+    expect(serverSource).toContain("payload.browserUseEvent.screenshotMimeType || 'image/jpeg'");
+  });
+});
 
 describe('POST /api/confirm-final-step — pre-flight gates', () => {
   let server: http.Server;
@@ -440,5 +482,72 @@ describe('POST /api/return-control — pre-flight gates + attribution telemetry'
     expect(completedCall).toBeDefined();
     expect(completedCall[0].details.requestId).toBe('req-1');
     expect(completedCall[0].details.requestSessionId).toBe('sess-rc');
+  });
+});
+
+describe('GET /api/screenshot — binding and policy gate', () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeAll(async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { startUiServer } = jest.requireActual('./server') as typeof import('./server');
+    server = await startUiServer(0);
+    port = (server.address() as { port: number }).port;
+  });
+
+  afterAll((done) => {
+    server.close(done);
+    (console.error as jest.Mock).mockRestore?.();
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockEngine.currentState = { phase: 'running', id: 'sess-shot', currentStep: 'step-a' };
+    const sessionModule = jest.requireMock('../session/manager') as {
+      sessionManager: {
+        isStarted: boolean;
+        captureScreenshot: jest.Mock;
+      };
+    };
+    sessionModule.sessionManager.isStarted = true;
+    sessionModule.sessionManager.captureScreenshot.mockResolvedValue({
+      id: 'shot-1',
+      source: 'session_manager',
+      class: 'sensitive_blocked',
+      mimeType: 'image/jpeg',
+      takenAt: new Date('2026-05-02T00:00:00.000Z').toISOString(),
+      sessionId: 'sess-shot',
+      stepId: 'step-a',
+      url: 'https://example.test/form',
+      sensitivity: 'blocked',
+      retention: 'ephemeral',
+      persistBase64: false,
+      blockedReason: 'pii_wait_active',
+      nextAction: 'retry_after_sensitive_phase',
+    });
+  });
+
+  it('returns 400 for mismatched session binding', async () => {
+    const result = await makeGetRequest(port, '/api/screenshot?sessionId=wrong-session&clientId=');
+    expect(result.status).toBe(400);
+    expect((result.data as { error: string }).error).toMatch(/Session ID mismatch/);
+  });
+
+  it('returns 403 for an unbound client id', async () => {
+    const result = await makeGetRequest(port, '/api/screenshot?sessionId=sess-shot&clientId=stale-client');
+    expect(result.status).toBe(403);
+    expect((result.data as { error: string }).error).toMatch(/No active UI session/);
+  });
+
+  it('returns structured blocked screenshot payloads without pixels', async () => {
+    const result = await makeGetRequest(port, '/api/screenshot?sessionId=sess-shot&clientId=');
+    expect(result.status).toBe(200);
+    expect((result.data as { base64?: string }).base64).toBeUndefined();
+    expect((result.data as { screenshot: { class: string; blockedReason: string; nextAction: string } }).screenshot).toMatchObject({
+      class: 'sensitive_blocked',
+      blockedReason: 'pii_wait_active',
+      nextAction: 'retry_after_sensitive_phase',
+    });
   });
 });

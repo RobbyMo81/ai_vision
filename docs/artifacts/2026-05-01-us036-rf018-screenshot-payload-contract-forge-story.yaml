@@ -1,0 +1,43 @@
+id: US-036
+tracker_id: RF-018
+title: Screenshot Payload Contract
+date: 2026-05-01
+story_type: implementation
+forge_loop_required: true
+source_policy_story: US-035
+status: completed
+
+mission: >
+  Implement the first runtime screenshot security-policy slice by introducing
+  a canonical screenshot payload/container, making UI rendering MIME-aware,
+  rendering browser-use action screenshots when present, and replacing raw
+  orchestrator screenshot base64 outputs with payload containers.
+
+owned_surfaces:
+  - src/session/types.ts
+  - src/ui/server.ts
+  - src/engines/python-bridge.ts
+  - src/orchestrator/loop.ts
+  - src/engines/python-bridge.test.ts
+  - src/orchestrator/loop.test.ts
+  - src/ui/server.test.ts
+
+acceptance_tests:
+  - ScreenshotPayload contract exists with source, class, mimeType, sensitivity, retention, and persistBase64 metadata.
+  - Live UI screenshot websocket payloads include ScreenshotPayload while preserving screenshotBase64 compatibility.
+  - UI screenshot rendering uses payload MIME type instead of hardcoded JPEG.
+  - UI renders browser-use action screenshots live when screenshotBase64 is present.
+  - Browser-use action events infer image/jpeg or image/png from base64 magic where possible.
+  - Orchestrator screenshot tool stores a JSON ScreenshotPayload container under output_key instead of raw base64.
+  - Persistence sanitization, sensitive-phase gates, and rolling cleanup remain out of scope.
+
+quality_gates:
+  - jq empty prd.json
+  - pnpm run typecheck
+  - pnpm test -- --runInBand src/engines/python-bridge.test.ts src/orchestrator/loop.test.ts src/ui/server.test.ts
+
+done_when: >
+  US-036 is complete when screenshot-bearing live/runtime boundaries share a
+  payload container shape, browser-use action screenshots can render live with
+  MIME-aware UI handling, orchestrator screenshots no longer write raw base64
+  outputs, and focused tests plus typecheck pass.

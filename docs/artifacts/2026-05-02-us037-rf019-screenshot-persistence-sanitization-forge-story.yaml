@@ -1,0 +1,74 @@
+story:
+  id: US-037
+  refactor: RF-019
+  title: Screenshot Persistence Sanitization
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-02
+  forge_required: true
+
+problem: >
+  Screenshot payload bytes can still reach durable persistence surfaces through
+  workflow result JSON and wrap-up artifact JSON. That duplicates image storage,
+  increases retention risk, and can persist sensitive screenshot pixels outside
+  screenshot-specific policy controls.
+
+scope:
+  includes:
+    - Strip stepResults[].screenshotBase64 before workflow_runs.result_json is written.
+    - Strip screenshots[].base64 before wrap-up artifact JSON is written.
+    - Preserve screenshot path, step id, and canonical metadata for retained durable records.
+    - Add source, class, mimeType, sensitivity, retention, and persistBase64 false metadata where needed.
+    - Preserve runtime WorkflowResult compatibility for in-process callers.
+    - Keep session_screenshots path-only unless an existing durable query path requires a minimal metadata extension.
+    - Treat historical result JSON containing base64 as legacy data with no bulk migration.
+    - Add focused tests for SQLite and wrap-up persistence sanitization.
+  excludes:
+    - Sensitive-phase screenshot capture gates.
+    - GET /api/screenshot binding enforcement.
+    - MCP screenshot access gates or audit enforcement.
+    - Rolling/debug screenshot cleanup.
+    - Signed manual-review deletion logs.
+    - Encryption-at-rest implementation.
+    - Historical screenshot data migration.
+    - Fail-closed workflow authoring validation for missing evidence-purpose metadata.
+
+acceptance:
+  - New workflow_runs.result_json writes omit stepResults[].screenshotBase64.
+  - New wrap-up artifact JSON writes omit screenshots[].base64.
+  - Sanitized screenshot records retain path, stepId, source, class, mimeType, sensitivity, retention, and persistBase64 false when available.
+  - Runtime WorkflowResult objects returned before persistence are not stripped for in-process compatibility.
+  - session_screenshots remains path-only unless a minimal existing-query metadata extension is justified in code and tests.
+  - No bulk migration changes historical workflow_runs.result_json or historical wrap-up artifacts.
+  - Access gates, sensitive gates, MCP audit, rolling cleanup, encryption, and manual-review deletion logs remain out of scope.
+  - Focused tests prove durable persistence omits screenshot base64 while preserving metadata.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused persistence and wrap-up tests pass.
+
+definition_of_done: >
+  Done means new durable workflow persistence no longer embeds screenshot base64
+  in SQLite result JSON or wrap-up artifact JSON, while durable evidence remains
+  represented by path plus metadata and runtime callers retain the existing
+  WorkflowResult shape.
+
+evidence_required:
+  - prd.json updated with US-037.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-019.
+  - Focused tests covering repository and wrap-up sanitization.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - focused persistence/wrap-up tests
+  recommended:
+    - pnpm test when shared workflow or repository contracts are touched broadly
+
+source_artifacts:
+  policy: docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md
+  prior_story: docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-storyline.md
+  scratch_pad: docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md

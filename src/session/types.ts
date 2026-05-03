@@ -27,6 +27,54 @@ export type TaskPhase =
   | 'complete'       // Workflow finished successfully
   | 'error';         // Workflow halted with an error
 
+export type ScreenshotSource =
+  | 'session_manager'
+  | 'browser_use_action'
+  | 'browser_use_endpoint'
+  | 'orchestrator'
+  | 'workflow_step'
+  | 'mcp'
+  | 'rolling';
+
+export type ScreenshotClass =
+  | 'live_frame'
+  | 'debug_frame'
+  | 'step_scoped'
+  | 'evidence'
+  | 'sensitive_blocked';
+
+export type ScreenshotMimeType = 'image/jpeg' | 'image/png';
+
+export type ScreenshotRetention =
+  | 'ephemeral'
+  | 'delete_on_success'
+  | 'ttl_24h'
+  | 'ttl_7d'
+  | 'keep_until_manual_review'
+  | 'step_scoped';
+
+export interface ScreenshotPayload {
+  id: string;
+  source: ScreenshotSource;
+  class: ScreenshotClass;
+  mimeType: ScreenshotMimeType;
+  base64?: string;
+  path?: string;
+  takenAt: string;
+  sessionId?: string;
+  workflowId?: string;
+  stepId?: string;
+  url?: string;
+  sensitivity: 'unknown' | 'safe' | 'sensitive' | 'blocked';
+  retention: ScreenshotRetention;
+  persistBase64: false;
+  blockedReason?: string;
+  nextAction?: string;
+  expiresOnStepAdvance?: boolean;
+  redactionApplied?: boolean;
+  redactedSelectors?: string[];
+}
+
 /** Snapshot of the current session state pushed to the UI and returned by MCP tools. */
 export interface SessionState {
   id: string;
@@ -77,8 +125,12 @@ export interface HitlEventPayload {
     | 'bridge_disconnected'
     | 'browser_use_action'
     | 'screenshot'
+    | 'screenshot_deleted'
     | 'step_complete';
   state: SessionState;
   screenshotBase64?: string;
+  screenshot?: ScreenshotPayload;
   browserUseEvent?: BrowserUseActionEvent;
+  evidenceId?: string;
+  screenshotPath?: string;
 }

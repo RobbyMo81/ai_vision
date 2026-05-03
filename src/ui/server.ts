@@ -255,8 +255,14 @@ function connectWs() {
 }
 
 function handleEvent(payload) {
-  if (payload.type === 'screenshot' && payload.screenshotBase64) {
-    showScreenshot(payload.screenshotBase64);
+  if (payload.type === 'screenshot_deleted') {
+    hideScreenshot();
+    log('Screenshot evidence deleted: ' + (payload.evidenceId || payload.screenshotPath || 'unknown'), 'warn');
+  }
+  if (payload.screenshot && payload.screenshot.base64) {
+    showScreenshot(payload.screenshot.base64, payload.screenshot.mimeType);
+  } else if (payload.type === 'screenshot' && payload.screenshotBase64) {
+    showScreenshot(payload.screenshotBase64, 'image/jpeg');
   }
   if (payload.state) {
     updateState(payload.state);
@@ -277,6 +283,12 @@ function handleEvent(payload) {
     const action = payload.browserUseEvent.actionNames.join(', ');
     const url = payload.browserUseEvent.url ? ' @ ' + payload.browserUseEvent.url : '';
     log('browser-use: ' + action + url, 'info');
+    if (payload.browserUseEvent.screenshotBase64) {
+      showScreenshot(
+        payload.browserUseEvent.screenshotBase64,
+        payload.browserUseEvent.screenshotMimeType || 'image/jpeg'
+      );
+    }
   }
 }
 
@@ -412,20 +424,38 @@ async function fetchTelemetry() {
   }
 }
 
-function showScreenshot(base64) {
+function showScreenshot(base64, mimeType = 'image/jpeg') {
   const img = document.getElementById('screenshotImg');
   const noShot = document.getElementById('noScreenshot');
-  img.src = 'data:image/jpeg;base64,' + base64;
+  img.src = 'data:' + mimeType + ';base64,' + base64;
   img.style.display = 'block';
   noShot.style.display = 'none';
 }
 
+function hideScreenshot() {
+  const img = document.getElementById('screenshotImg');
+  const noShot = document.getElementById('noScreenshot');
+  img.src = '';
+  img.style.display = 'none';
+  noShot.style.display = 'block';
+}
+
 async function fetchScreenshot() {
   try {
-    const resp = await fetch('/api/screenshot');
+    const query = new URLSearchParams();
+    if (currentSessionId) query.set('sessionId', currentSessionId);
+    query.set('clientId', pageClientId);
+    const resp = await fetch('/api/screenshot?' + query.toString(), {
+      headers: {
+        'X-AiVision-Client-Id': pageClientId,
+      },
+    });
     if (!resp.ok) return;
     const data = await resp.json();
     if (data.base64) showScreenshot(data.base64);
+    if (data.screenshot && data.screenshot.base64) {
+      showScreenshot(data.screenshot.base64, data.screenshot.mimeType);
+    }
     if (data.url) document.getElementById('urlBarDisplay').textContent = data.url;
   } catch (e) { /* browser not started */ }
 }
@@ -654,13 +684,22 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
     screenshotInterval = setInterval(async () => {
       if (!sessionManager.isStarted) return;
       try {
-        const base64 = await sessionManager.screenshot();
         const state = workflowEngine.currentState ?? {
           id: 'live', phase: 'awaiting_human' as const,
           startedAt: new Date(), lastUpdatedAt: new Date(),
           currentUrl: await sessionManager.currentUrl().catch(() => undefined),
         };
-        broadcast({ type: 'screenshot', state, screenshotBase64: base64 });
+        const screenshot = await sessionManager.captureScreenshot({
+          source: 'session_manager',
+          accessPath: 'ui',
+          state,
+        });
+        broadcast({
+          type: 'screenshot',
+          state,
+          screenshotBase64: screenshot.base64,
+          screenshot,
+        });
       } catch { /* browser not ready */ }
     }, 1200);
   }
@@ -738,6 +777,31 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
     broadcast({ type: 'browser_use_action', state, browserUseEvent: event });
   });
 
+  sessionManager.on('screenshot_deleted', (event: {
+    evidenceId: string;
+    sessionId: string;
+    workflowId?: string;
+    stepId?: string;
+    screenshotPath: string;
+  }) => {
+    const now = new Date();
+    const current = workflowEngine.currentState;
+    const state: SessionState = {
+      id: event.sessionId || current?.id || 'screenshot-deleted',
+      phase: current?.phase ?? 'running',
+      startedAt: current?.startedAt ?? now,
+      lastUpdatedAt: now,
+      ...current,
+    };
+
+    broadcast({
+      type: 'screenshot_deleted',
+      state,
+      evidenceId: event.evidenceId,
+      screenshotPath: event.screenshotPath,
+    });
+  });
+
   const server = http.createServer((req, res) => {
     const parsed = url.parse(req.url ?? '/', true);
     const pathname = parsed.pathname ?? '/';
@@ -769,11 +833,66 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
         res.end(JSON.stringify({ error: 'Browser not started' }));
         return;
       }
-      sessionManager.screenshot()
-        .then(async (base64) => {
-          const currentUrl = await sessionManager.currentUrl().catch(() => '');
+      const current = workflowEngine.currentState;
+      const requestSessionId = typeof parsed.query.sessionId === 'string' ? parsed.query.sessionId.trim() : '';
+      const requestClientId = typeof parsed.query.clientId === 'string' ? parsed.query.clientId.trim() : '';
+      const headerClientId = headerValue(req.headers['x-aivision-client-id']).trim();
+      const resolvedClientId = requestClientId || headerClientId;
+      const matchingSocketIds = socketsForPage(resolvedClientId);
+      const caller = callerMetadata(req);
+
+      if (requestSessionId && requestSessionId !== (current?.id ?? '')) {
+        telemetry.emit({
+          source: 'ui',
+          name: 'ui.screenshot.rejected',
+          level: 'warn',
+          sessionId: current?.id,
+          details: {
+            gate: 'session_binding_gate',
+            requestSessionId,
+            activeSessionId: current?.id ?? '',
+            resolvedClientId,
+            ...caller,
+          },
+        });
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session ID mismatch for screenshot request.' }));
+        return;
+      }
+
+      if (resolvedClientId && matchingSocketIds.length === 0) {
+        telemetry.emit({
+          source: 'ui',
+          name: 'ui.screenshot.rejected',
+          level: 'warn',
+          sessionId: current?.id,
+          details: {
+            gate: 'websocket_presence_gate',
+            requestSessionId,
+            activeSessionId: current?.id ?? '',
+            resolvedClientId,
+            matchingWsClientIds: matchingSocketIds,
+            matchingWsClientCount: matchingSocketIds.length,
+            ...caller,
+          },
+        });
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No active UI session is bound to this screenshot request.' }));
+        return;
+      }
+
+      sessionManager.captureScreenshot({
+        source: 'session_manager',
+        accessPath: 'ui',
+        state: current,
+      })
+        .then((screenshot) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ base64, url: currentUrl }));
+          res.end(JSON.stringify({
+            base64: screenshot.base64,
+            url: screenshot.url ?? current?.currentUrl ?? '',
+            screenshot,
+          }));
         })
         .catch((e) => {
           telemetry.emit({
@@ -787,6 +906,58 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: String(e) }));
         });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/screenshot/delete') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as {
+            evidenceId?: string;
+            sessionId?: string;
+            workflowId?: string;
+            stepId?: string;
+            screenshotPath?: string;
+            contentHash?: string;
+            reason?: string;
+          };
+          const current = workflowEngine.currentState;
+          const sessionId = parsed.sessionId?.trim() || current?.id || '';
+          if (!parsed.evidenceId || !parsed.screenshotPath || !sessionId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'evidenceId, screenshotPath, and sessionId are required.' }));
+            return;
+          }
+          if (current?.id && sessionId !== current.id) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Session ID mismatch for screenshot deletion request.' }));
+            return;
+          }
+
+          const result = sessionManager.deleteEvidenceScreenshot({
+            evidenceId: parsed.evidenceId,
+            sessionId,
+            workflowId: parsed.workflowId,
+            stepId: parsed.stepId,
+            screenshotPath: parsed.screenshotPath,
+            contentHash: parsed.contentHash,
+            actor: 'ui',
+            reason: parsed.reason,
+          });
+
+          res.writeHead(result.deleted ? 200 : 500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            deleted: result.deleted,
+            evidenceId: parsed.evidenceId,
+            contentHash: result.contentHash,
+          }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        }
+      });
       return;
     }
 

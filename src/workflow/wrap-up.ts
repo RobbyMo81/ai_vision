@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { SessionRepository } from '../db/repository';
+import {
+  auditEvidenceScreenshots,
+  cleanupWorkflowScreenshotsOnWrapUp,
+} from '../session/screenshot-retention';
 import { taskMetadata, TaskMetadataRecord } from '../memory/metadata';
 import {
   forgeSicStore,
@@ -13,7 +17,11 @@ import {
 } from '../memory';
 import { SessionState } from '../session/types';
 import { telemetry } from '../telemetry';
-import { WorkflowDefinition, WorkflowResult } from './types';
+import {
+  sanitizeWorkflowResultForPersistence,
+  WorkflowDefinition,
+  WorkflowResult,
+} from './types';
 
 interface WrapUpInput {
   definition: WorkflowDefinition;
@@ -277,10 +285,26 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
 
   longTermMemory.writeStory(story);
 
+  const repo = new SessionRepository();
+  auditEvidenceScreenshots({
+    repo,
+    sessionId: input.sessionId,
+    workflowId: input.definition.id,
+    screenshots: input.result.screenshots,
+  });
+  const cleanupSummary = cleanupWorkflowScreenshotsOnWrapUp({
+    repo,
+    sessionId: input.sessionId,
+    workflowId: input.definition.id,
+    success: input.result.success,
+    screenshots: input.result.screenshots,
+  });
+  const persistedResult = sanitizeWorkflowResultForPersistence(input.result);
+
   const artifact: WrapUpArtifact = {
     sessionId: input.sessionId,
     workflowId: input.definition.id,
-    result: input.result,
+    result: persistedResult,
     shortTerm: session,
     finalState: input.finalState,
     tokenizerLedgerPath,
@@ -288,13 +312,12 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
     wrappedAt: new Date().toISOString(),
   };
 
-  const repo = new SessionRepository();
   repo.saveWorkflowRun({
     sessionId: input.sessionId,
     workflowId: input.definition.id,
     workflowName: input.definition.name,
     success: input.result.success,
-    resultJson: JSON.stringify(input.result),
+    resultJson: JSON.stringify(persistedResult),
     stateJson: input.finalState ? JSON.stringify(input.finalState) : undefined,
     shortTermJson: session ? JSON.stringify(session) : undefined,
     scratchPadMarkdown,
@@ -341,6 +364,8 @@ export async function wrapUpWorkflowRun(input: WrapUpInput): Promise<{
       hasSicTrigger: Boolean(sicTrigger),
       tokenizerLedgerDetected: Boolean(tokenizerLedgerPath),
       metadataRecords: metadataRecords.length,
+      cleanupDeletedCount: cleanupSummary.deletedCount,
+      cleanupFailedCount: cleanupSummary.failedCount,
     },
   });
 

@@ -81,6 +81,7 @@ export interface BrowserUseActionEvent {
   url?: string;
   title?: string;
   screenshotBase64?: string;
+  screenshotMimeType?: 'image/jpeg' | 'image/png';
   evaluationPreviousGoal?: string;
   memory?: string;
   nextGoal?: string;
@@ -127,6 +128,13 @@ export function resetLatestBridgeExitEventForTest(): void {
   latestBridgeExitEvent = null;
 }
 
+function inferImageMimeType(base64?: string): 'image/jpeg' | 'image/png' | undefined {
+  if (!base64) return undefined;
+  if (base64.startsWith('/9j/')) return 'image/jpeg';
+  if (base64.startsWith('iVBORw0KGgo')) return 'image/png';
+  return undefined;
+}
+
 export function normalizeBrowserUseActionEvent(
   input: BrowserUseActionEventInput,
 ): BrowserUseActionEvent {
@@ -155,6 +163,7 @@ export function normalizeBrowserUseActionEvent(
     url: input.url,
     title: input.title,
     screenshotBase64: input.screenshot_b64,
+    screenshotMimeType: inferImageMimeType(input.screenshot_b64),
     evaluationPreviousGoal: input.evaluation_previous_goal,
     memory: input.memory,
     nextGoal: input.next_goal,
@@ -181,6 +190,7 @@ export function recordBrowserUseActionEvent(event: BrowserUseActionEvent): void 
       memory: event.memory,
       nextGoal: event.nextGoal,
       screenshotIncluded: Boolean(event.screenshotBase64),
+      screenshotMimeType: event.screenshotMimeType,
     },
   });
   browserUseActionEvents.emit('browser_use_action', event);

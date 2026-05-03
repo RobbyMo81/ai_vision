@@ -1,0 +1,84 @@
+id: US-035
+tracker_id: RF-017
+title: Screenshot Security Policy Design
+date: 2026-05-01
+story_type: design
+forge_loop_required: true
+runtime_code_changes_allowed: false
+status: completed
+primary_artifact: docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md
+validation:
+  - jq empty prd.json -> exit 0
+
+context:
+  problem: >
+    Screenshot pixels can contain sensitive page data and currently cross live,
+    filesystem, SQLite, wrap-up, MCP, browser-use, and orchestrator boundaries
+    without one screenshot-specific policy for sensitivity, retention,
+    persistence, auditing, or blocking.
+  source_artifacts:
+    - docs/debriefs/2026-04-26-screenshot-architecture-shape-layers-modules.md
+    - docs/debriefs/2026-05-01-screenshot-architecture-findings-investigation.md
+    - docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md
+
+mission: >
+  Produce an authoritative screenshot security policy design that classifies
+  screenshot branches, defines retention and persistence rules, blocks sensitive
+  capture paths, and prepares later implementation stories for payload,
+  persistence, gate, and cleanup changes.
+
+branches:
+  - live_ui_websocket_screenshots
+  - api_screenshot_endpoint
+  - browser_use_action_screenshots
+  - workflow_screenshot_steps
+  - workflow_wrap_up_and_sqlite_persistence
+  - session_screenshots_index
+  - rolling_screenshots
+  - mcp_browser_screenshot_tool
+  - orchestrator_screenshot_tool_outputs
+  - python_bridge_screenshot_endpoints
+
+required_design_sections:
+  - screenshot_classes
+  - sensitivity_states
+  - evidence_screenshot_definition
+  - retention_modes
+  - persistence_policy
+  - base64_persistence_policy
+  - sensitive_phase_capture_policy
+  - api_and_mcp_access_policy
+  - telemetry_and_audit_policy
+  - encryption_at_rest_decision
+  - legacy_result_json_migration_policy
+  - implementation_story_split
+
+acceptance_tests:
+  - Design defines live_frame, debug_frame, evidence, and sensitive_blocked screenshot classes.
+  - Design defines when screenshots are ephemeral, delete-on-success, TTL-bound, manually retained, or blocked.
+  - Design explicitly says whether durable screenshots are opt-in evidence artifacts.
+  - Design defines whether base64 may be persisted in workflow_runs.result_json or wrap-up artifacts.
+  - Design defines capture behavior during pii_wait and sensitive-target steps.
+  - Design defines whether GET /api/screenshot requires active client/session binding.
+  - Design defines MCP screenshot access and audit expectations.
+  - Design defines whether evidence screenshots require encryption at rest.
+  - Design covers legacy result JSON that already contains screenshot base64.
+  - Design splits implementation into follow-on Forge stories with clear scope boundaries.
+
+quality_gates:
+  - jq empty prd.json
+
+done_when: >
+  US-035 is complete when the repo has one governed design artifact for
+  screenshot security policy, PRD/tracker/history/progress surfaces point to it,
+  and follow-on implementation stories can execute without re-litigating
+  screenshot classes, retention, persistence, sensitive-phase behavior, or
+  access/audit policy.
+
+completion_summary: >
+  Completed as a design-only Forge story by promoting the screenshot security
+  policy into one authoritative artifact that defines screenshot classes,
+  sensitivity states, evidence rules, persistence/base64 policy, sensitive-phase
+  blocking, access and audit requirements, encryption-at-rest direction, legacy
+  handling, and follow-on implementation story boundaries.
+

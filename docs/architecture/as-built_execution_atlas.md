@@ -3,6 +3,7 @@
 **Project:** ai-vision  
 **Date:** 2026-04-24  
 **Scope:** Discovery only. No runtime changes.
+**Last Updated:** 2026-05-01 (reconciled with backlog and history)
 
 This document maps the current as-built execution topology of `ai-vision` across TypeScript, Python, YAML, UI, HITL, browser automation, memory/story/SIC, tests, and docs.
 
@@ -109,6 +110,9 @@ What is missing is a generalized gate layer that can replace the hidden flexibil
 - **Primary files:** [`src/memory/short-term.ts`](/home/spoq/ai-vision/src/memory/short-term.ts), [`src/memory/long-term.ts`](/home/spoq/ai-vision/src/memory/long-term.ts), [`src/memory/forge-sic.ts`](/home/spoq/ai-vision/src/memory/forge-sic.ts), [`src/workflow/wrap-up.ts`](/home/spoq/ai-vision/src/workflow/wrap-up.ts)
 - **Shape:** persistence sink, learning pipeline, correlation layer
 - **Triggers:** wrap-up, rejection handling, improvement capture, MCP memory tools
+- **Screenshot retention note:** As of `US-039` / `RF-021`, [`src/session/screenshot-retention.ts`](/home/spoq/ai-vision/src/session/screenshot-retention.ts) owns screenshot cleanup and evidence audit helpers. Non-evidence rolling/debug files are deleted on successful wrap-up or by bounded startup TTL scavenging; cleanup failures are recorded in SQLite `screenshot_cleanup_failures` for retry/dead-letter handling.
+- **Screenshot evidence audit note:** Evidence screenshots receive stable evidence ids and capture-time content hashes. SQLite `screenshot_evidence_audit` records who/what/when/why/action/path/hash metadata without screenshot bytes, and evidence deletion moves through `pending_deletion` before `deleted` or `delete_failed`.
+- **Screenshot persistence note:** As of `US-037` / `RF-019`, wrap-up sanitizes new durable screenshot writes before they reach SQLite `workflow_runs.result_json` or wrap-up artifact JSON. In-process `WorkflowResult` objects remain unchanged until that durable boundary.
 
 ### 12. Test layer
 
@@ -396,7 +400,7 @@ flowchart TD
   H --> I[complete or fail]
 ```
 
-### **Path details**
+### **Direct Path Details**
 
 - **Entry point:** `src/cli/index.ts` `workflow` command, or webhook/MCP run
 - **Schema parse:** `src/orchestrator/loader.ts` → `src/workflow/types.ts`
@@ -425,7 +429,7 @@ flowchart TD
   G --> K[complete_workflow]
 ```
 
-### **Path details**
+### **Agentic Path Details**
 
 - **Entry point:** YAML workflow with `mode: agentic`
 - **Schema parse:** same loader/schema boundary
@@ -535,13 +539,13 @@ flowchart TD
 | `src/orchestrator/loader.ts` | TS | YAML loading | loader/registry | Load YAML workflows and auxiliary instructions | file paths, workflow ids | workflow defs, instruction text | CLI, engine, orchestrator | workflow types, fs | none | YAML definitions | fs reads | medium | Separate workflow loading from instruction loading if agentic shrinks |
 | `src/workflow/types.ts` | TS | schema/type | schema boundary | Define workflow contracts and step types | YAML/object definitions | parsed workflow schema | loader, engine, orchestrator | none | none | workflow definitions | validation only | low | This is the most important contract file |
 | `src/workflow/engine.ts` | TS | direct workflow kernel | state machine/dispatcher | Execute workflows, publish state, wrap up | parsed workflow def, params | terminal result, state updates | CLI, webhook, MCP, UI-triggered flows | HITL, memory, Python bridge, orchestrator loop | runtime outputs, currentState | workflow schema, session, memory, bridge state | browser actions, HITL waits, persistence | high | This is the main gate host |
-| `src/workflow/wrap-up.ts` | TS | memory/SIC | persistence sink | Convert run evidence into story/SIC artifacts | workflow result, session state | story, SIC trigger, DB writes | engine | memory, DB, Forge SIC | stories, triggers, wrap-up artifacts | runtime outputs, final HITL notes | file/DB writes | medium | Centralize all end-of-run learning here |
+| `src/workflow/wrap-up.ts` | TS | memory/SIC | persistence sink | Convert run evidence into story/SIC artifacts | workflow result, session state | story, SIC trigger, DB writes | engine | memory, DB, Forge SIC | stories, triggers, wrap-up artifacts | runtime outputs, final HITL notes | file/DB writes | medium | Centralize all end-of-run learning here; new durable wrap-up writes sanitize screenshot base64 before SQLite and artifact JSON persistence |
 | `src/orchestrator/loop.ts` | TS | agentic/orchestrator | planner loop | Run Claude outer loop and tool calls | workflow def, instructions, session | tool actions, completion result | engine (agentic YAML) | HITL, Python bridge, loader | orchestrator control state | permissions, instructions, workflow | browser actions, HITL waits | high | Quarantine if agentic becomes non-production |
 | `src/session/hitl.ts` | TS | HITL/session | blocking wait/event emitter | Own human waits and resume resolution | workflow requests | resolved waits, phase changes | engine, orchestrator, UI endpoints | none | internal phase, wait resolvers | current wait reason, instructions | blocking waits | high | The canonical wait owner |
-| `src/session/types.ts` | TS | HITL/session | schema boundary | Define session and HITL states | runtime updates | typed session state | UI, engine, HITL | none | state enums | session projections | none | low | Keep state enums aligned with UI |
-| `src/session/manager.ts` | TS | session/runtime | manager | Own browser session lifecycle and URL/screenshot utilities | browser session, workflow context | browser state services | engine, UI, MCP | browser bridge/session | runtime browser session lifecycle | current URL, screenshot state | browser session creation/close | high | Keep bridge/session recovery logic explicit |
-| `src/ui/server.ts` | TS | UI/server | HTTP/ws projection | Serve HITL UI and status/control endpoints | workflow state, HITL requests | HTML, JSON, websocket events | CLI, browser | engine, HITL coordinator, session manager | no canonical state; projections only | engine.currentState, HITL phase, screenshots | network I/O, UI control | medium | Do not make this the canonical state owner |
-| `src/mcp/server.ts` | TS | tool surface | dispatcher/adapter | Expose browser, workflow, memory, telemetry tools | MCP requests | tool responses | MCP client | engine, HITL, memory, telemetry | none | workflow state, memory, telemetry | stdio/bridge actions | medium | Keep generic registration contained |
+| `src/session/types.ts` | TS | HITL/session | schema boundary | Define session and HITL states | runtime updates | typed session state | UI, engine, HITL | none | state enums | session projections | none | low | Keep state enums aligned with UI; screenshot evidence under SIC-style review uses `keep_until_manual_review` rather than a separate SIC TTL |
+| `src/session/manager.ts` | TS | session/runtime | manager | Own browser session lifecycle and URL/screenshot utilities | browser session, workflow context | browser state services | engine, UI, MCP | browser bridge/session | runtime browser session lifecycle | current URL, screenshot state | browser session creation/close | high | Keep bridge/session recovery logic explicit; screenshot capture now centralizes allow/redact/block/evidence decisions plus step-scoped TTL deletion |
+| `src/ui/server.ts` | TS | UI/server | HTTP/ws projection | Serve HITL UI and status/control endpoints | workflow state, HITL requests | HTML, JSON, websocket events | CLI, browser | engine, HITL coordinator, session manager | no canonical state; projections only | engine.currentState, HITL phase, screenshots | network I/O, UI control | medium | Do not make this the canonical state owner; `/api/screenshot` now enforces active session/client binding before returning pixels |
+| `src/mcp/server.ts` | TS | tool surface | dispatcher/adapter | Expose browser, workflow, memory, telemetry tools | MCP requests | tool responses | MCP client | engine, HITL, memory, telemetry | none | workflow state, memory, telemetry | stdio/bridge actions | medium | Keep generic registration contained; MCP screenshots now route through the shared screenshot gate and return structured blocked payloads when denied |
 | `src/engines/python-bridge.ts` | TS | Python boundary | subprocess bridge | Launch and talk to Python automation services | engine config, env, task input | browser actions, task results | engine, UI, CLI | Python bridge server | bridge lifecycle | bridge port, callback state, browser session state | subprocess, HTTP, callback server | high | Critical boundary for stability |
 | `src/engines/browser-use/engine.ts` | TS | Python boundary | adapter | Specialize bridge for browser-use | task input | browser-use results | registry, engine router | python-bridge | none | engine config | process/HTTP | high | Bounded worker |
 | `src/engines/skyvern/engine.ts` | TS | Python boundary | adapter | Specialize bridge for Skyvern | task input | Skyvern results | registry, engine router | python-bridge | none | engine config | process/HTTP | medium | Secondary engine adapter |
@@ -597,8 +601,8 @@ flowchart TB
     D3["AGENTS.md / FORGE.md"]
   end
 
-  CLI1 --> Y2
-  CLI1 --> T2
+  **Date:** 2026-05-01  
+  **Scope:** As-built architecture map aligned to the current runtime build.
   CLI1 --> T4
   CLI1 --> T8
   Y1 --> Y2

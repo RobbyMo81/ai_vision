@@ -1,0 +1,80 @@
+story:
+  id: US-038
+  refactor: RF-020
+  title: Screenshot Capture Policy Gate
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-02
+  forge_required: true
+
+problem: >
+  Screenshot capture still needs a runtime policy gate. Screenshots should not
+  be either always allowed or always blocked. The platform needs one decision
+  contract that can allow, redact, step-scope with delete-on-step-advance,
+  deny with structured next-action metadata, or persist only explicit evidence.
+
+scope:
+  includes:
+    - Classify screenshot requests as live_frame, debug_frame, step_scoped, evidence, or sensitive_blocked.
+    - Evaluate workflow phase, current step, field/target sensitivity metadata, capture source, and session context.
+    - Block or structured-deny screenshot capture during pii_wait unless an approved redaction path exists.
+    - Redact or mask known sensitive DOM regions before capture when metadata supports safe redaction.
+    - Fail closed or return HITL/next-action metadata when redaction cannot be applied.
+    - Add step-scoped TTL deletion for temporary agent-context screenshots on workflow step advance.
+    - Gate GET /api/screenshot with active session/client binding using the US-024 binding pattern.
+    - Gate MCP screenshot capture through the same policy decision contract.
+    - Pause, deny, or step-scope rolling/live screenshot capture during sensitive phases.
+    - Emit telemetry for allow, redact, block, and step-TTL deletion without logging screenshot bytes.
+    - Return structured denial payloads that tell the agent what safe action is available next.
+  excludes:
+    - Historical screenshot migration.
+    - Encryption-at-rest implementation for durable evidence screenshots.
+    - Full rolling/debug cleanup TTL beyond step-scoped deletion.
+    - Signed manual-review evidence deletion records.
+    - Broad session_screenshots metadata normalization.
+    - Agentic/orchestrator output guard rail unless mode: agentic remains in production screenshot use.
+
+acceptance:
+  - Screenshot capture requests flow through a shared policy decision helper or equivalent centralized contract.
+  - Policy can return allow, redact, step_scoped, evidence, or sensitive_blocked decisions.
+  - pii_wait capture attempts return structured denial or safe redaction behavior with no unredacted pixels.
+  - Sensitive-target step capture masks/redacts known sensitive regions before capture or fails closed.
+  - Step-scoped screenshots are deleted when the workflow advances to the next step.
+  - GET /api/screenshot rejects stale, mismatched, or unbound clients using the US-024 binding pattern.
+  - MCP screenshot capture is denied or structured-gated through the same policy decision.
+  - Rolling/live screenshots are paused, denied, or step-scoped during sensitive phases.
+  - Blocked screenshot responses include blockedReason and nextAction but no screenshot bytes.
+  - Telemetry records allow/redact/block/delete decisions without image bytes.
+  - Existing US-036 payload and US-037 persistence behavior remain compatible.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused UI/session/workflow/MCP tests pass for allow, redact, block, and step-TTL deletion paths.
+
+definition_of_done: >
+  Done means screenshots are controlled at capture time: sensitive pixels are
+  redacted or denied, temporary screenshots expire on step advance, UI and MCP
+  access are bound to active context, and agents receive structured next-action
+  metadata instead of blind failures.
+
+evidence_required:
+  - prd.json updated with US-038.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-020.
+  - Focused tests for capture policy decisions, UI binding, MCP gating, redaction/blocking, and step TTL deletion.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - focused UI/session/workflow/MCP tests
+  recommended:
+    - pnpm test when shared screenshot/session contracts are touched broadly
+
+source_artifacts:
+  policy: docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md
+  payload_contract: docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-storyline.md
+  persistence_story: docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-storyline.md
+  scratch_pad: docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md
+  binding_pattern: docs/artifacts/2026-04-26-us024-rf006-confirmation-preflight-definition-of-done.md

@@ -72,6 +72,7 @@ AI_VISION_UI_SHUTDOWN_GRACE_MS=1500
 - MCP tool registration and similar SDK-heavy generic seams should be contained behind one local non-generic helper plus argument normalizers instead of repeating schema-plus-handler inference inline.
 - For established repo patterns, execute the minimal coherent file changes directly instead of presenting option menus, trade-off loops, or recommendation-only responses.
 - If a task is mostly specified, assume the smallest safe missing details and finish the implementation in one pass unless a real blocker remains.
+- If a task changes the actual build architecture, runtime topology, ownership boundaries, execution flow, or screenshot/runtime contract, re-align `docs/architecture/as-built_execution_atlas.md` before closing the Forge workflow.
 - **At the end of every completed story or task, deliver a Summary of Work.** The summary must cover: what changed, which files were touched, the acceptance criteria, and the final validation result (typecheck exit code + test suite counts). It must appear in the agent's closing response and be recorded in `progress.txt`.
 - Keep `docs/artifacts/` reserved for Forge story package files and governed story deliverables. Save non-story debriefs, investigations, traces, reports, quick references, and architecture notes under `docs/debriefs/`.
 

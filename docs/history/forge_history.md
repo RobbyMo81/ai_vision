@@ -41,8 +41,6 @@ Older completed stories are condensed below to keep this archive readable. The l
 | `US-027` | 2026-04-27 | PASS | Validate generated/preflight output and scan side-effect steps for unresolved placeholders before dispatch. | The downstream placeholder gate must run on the resolved substituted step, not the template. | `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `prd.json`, `progress.txt` |
 | `US-028` | 2026-04-27 | PASS | Parse structured Reddit duplicate-check evidence after the check step and gate submit on valid no-duplicate evidence. | `DUPLICATE_RISK` blocks at the submit gate, not at parse time, so check-only workflows can still finish successfully. | `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `workflows/post_to_reddit.yaml`, `workflows/write_and_post_to_reddit.yaml` |
 
----
-
 ### [US-029] — Direct Workflow Gate Layer Phase 7: Browser Side-Effect/Postcondition Gate — 2026-04-27
 
 **Status:** PASS
@@ -206,5 +204,210 @@ This story also aligned the stale reference surfaces: PRD states, the backlog re
 - `jq empty prd.json` → exit 0
 - `pnpm run typecheck` → exit 0
 - `pnpm test` → 11/11 suites, 133/133 tests passed
+
+---
+
+## H-035 — US-035 / RF-017: Screenshot Security Policy Design
+
+**Date:** 2026-05-01
+**Story:** US-035 / RF-017
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Policy Design
+
+### Summary
+
+Completed the design-only Forge story that promotes screenshot handling from scattered branch behavior into one explicit security policy.
+
+The new authoritative artifact defines a screenshot class taxonomy (`live_frame`, `debug_frame`, `evidence`, `sensitive_blocked`), a sensitivity model (`unknown`, `safe`, `sensitive`, `blocked`), and the rule that durable screenshots are opt-in evidence artifacts by default rather than an accidental side effect of existing image-producing paths.
+
+The design resolves the main policy questions that were previously open across live UI, `/api/screenshot`, browser-use action screenshots, workflow screenshot steps, wrap-up/SQLite persistence, `session_screenshots`, rolling screenshots, MCP screenshot capture, orchestrator screenshot outputs, and Python bridge endpoints. It explicitly requires base64 to remain live-only by default, blocks screenshot capture during `pii_wait` and sensitive-target steps, requires active client/session binding for `/api/screenshot`, treats MCP screenshot capture as privileged and audited, and sets encryption at rest as the default for durable evidence screenshots.
+
+The artifact also records the forward-only legacy policy for historical result JSON that already contains screenshot base64 and splits future implementation into four follow-on stories: payload contract, persistence sanitization, sensitive screenshot gate, and rolling/debug cleanup.
+
+### Files Touched
+
+- `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design.md`
+- `docs/artifacts/2026-05-01-us035-rf017-screenshot-security-policy-design-forge-story.yaml`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → not run; design-only story
+- `pnpm test` → not run; design-only story
+
+---
+
+## H-036 — US-036 / RF-018: Screenshot Payload Contract
+
+**Date:** 2026-05-01
+**Story:** US-036 / RF-018
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Payload Contract
+
+### Summary
+
+Implemented the first runtime story from the screenshot security policy design.
+
+The runtime now has a `ScreenshotPayload` contract that carries source, class, MIME type, sensitivity, retention, and base64 persistence metadata. Live UI screenshot broadcasts now include the payload container while preserving the legacy `screenshotBase64` field for compatibility.
+
+The HITL browser UI now renders screenshot payloads with their MIME type instead of assuming JPEG, and browser-use action screenshots render live when present. Browser-use action event normalization infers PNG or JPEG from base64 signatures when possible, giving the UI enough metadata to render callback screenshots without hardcoded assumptions.
+
+The orchestrator screenshot tool now stores a JSON screenshot payload container under `output_key` instead of writing raw base64 output values. Persistence sanitization, sensitive screenshot gates, and rolling/debug cleanup remain deferred to follow-on stories as required by the policy design.
+
+### Files Touched
+
+- `src/session/types.ts`
+- `src/ui/server.ts`
+- `src/engines/python-bridge.ts`
+- `src/orchestrator/loop.ts`
+- `src/engines/python-bridge.test.ts`
+- `src/orchestrator/loop.test.ts`
+- `src/ui/server.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-storyline.md`
+- `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-forge-story.yaml`
+- `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-implementation-handoff.md`
+- `docs/artifacts/2026-05-01-us036-rf018-screenshot-payload-contract-definition-of-done.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/engines/python-bridge.test.ts src/orchestrator/loop.test.ts src/ui/server.test.ts` → 3/3 suites, 43/43 tests passed
+
+---
+
+## H-037 — US-037 / RF-019: Screenshot Persistence Sanitization
+
+**Date:** 2026-05-02
+**Story:** US-037 / RF-019
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Persistence Sanitization
+
+### Summary
+
+Implemented the sanitize-first durable persistence slice from the screenshot security policy design.
+
+Wrap-up now clones and sanitizes `WorkflowResult` objects at the durable boundary instead of mutating the in-process runtime result. New SQLite `workflow_runs.result_json` writes omit `stepResults[].screenshotBase64`, and new wrap-up artifact JSON omits `screenshots[].base64` while preserving path, step id, and any available screenshot metadata such as source, class, MIME type, sensitivity, retention, and `persistBase64: false`.
+
+This story intentionally leaves sensitive-phase capture gates, access controls, MCP screenshot audit, rolling/debug cleanup, encryption-at-rest, historical migration, and fail-closed authoring validation out of scope. The next unchecked runtime story remains the sensitive screenshot gate work.
+
+### Files Touched
+
+- `src/workflow/types.ts`
+- `src/workflow/wrap-up.ts`
+- `src/workflow/wrap-up.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-02-us037-rf019-screenshot-persistence-sanitization-forge-story.yaml`
+- `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/workflow/wrap-up.test.ts` → 1/1 suites, 2/2 tests passed
+
+---
+
+## H-038 — US-038 / RF-020: Screenshot Capture Policy Gate
+
+**Date:** 2026-05-02
+**Story:** US-038 / RF-020
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Capture Policy Gate
+
+### Summary
+
+Implemented the runtime screenshot gate from the screenshot security policy sequence.
+
+Screenshot capture now flows through one shared policy contract in the session layer. The gate classifies requests as `live_frame`, `debug_frame`, `step_scoped`, `evidence`, or `sensitive_blocked`, blocks `pii_wait` captures with structured `blockedReason` and `nextAction` metadata, redacts selector-known sensitive regions through Playwright masking when the workflow exposes a safe selector context, and fails closed when redaction is not safely available.
+
+`GET /api/screenshot` now uses the US-024-style session/client binding checks before returning pixels, MCP screenshot capture uses the same shared gate, rolling screenshots obey the same policy path, and step-scoped screenshots are deleted on workflow step advance with byte-free deletion telemetry. The existing payload contract from US-036 and persistence sanitization from US-037 remain compatible.
+
+### Files Touched
+
+- `src/session/screenshot-policy.ts`
+- `src/session/manager.ts`
+- `src/session/manager.test.ts`
+- `src/session/types.ts`
+- `src/ui/server.ts`
+- `src/ui/server.test.ts`
+- `src/mcp/server.ts`
+- `src/mcp/server.test.ts`
+- `src/workflow/engine.ts`
+- `src/workflow/wrap-up.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-forge-story.yaml`
+- `docs/debriefs/2026-05-01-screenshot-workflow-investigation-scratch-pad.md`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/wrap-up.test.ts` → 4/4 suites, 37/37 tests passed
+
+---
+
+## H-039 — US-039 / RF-021: Screenshot Retention Cleanup, Scavenger, And Evidence Audit
+
+**Date:** 2026-05-02
+**Story:** US-039 / RF-021
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Retention And Evidence Audit
+
+### Summary
+
+Implemented screenshot retention cleanup and evidence audit for the screenshot security policy sequence.
+
+The runtime now assigns stable evidence ids and capture-time content hashes to workflow evidence screenshots, persists byte-free evidence audit records in SQLite, and deletes non-evidence workflow screenshots on successful wrap-up unless debug retention is explicitly enabled. Startup now schedules a bounded rolling/debug screenshot scavenger off the browser startup path, and cleanup failures are written to durable retry/dead-letter state instead of being swallowed.
+
+Evidence deletion now records `pending_deletion`, verifies filesystem unlink, then records `deleted` or `delete_failed`. Verified evidence deletion emits a `screenshot_deleted` event so WebSocket clients can invalidate stale screenshot state. Step-scoped screenshots remain transient and outside manual evidence review.
+
+### Files Touched
+
+- `src/session/screenshot-retention.ts`
+- `src/db/migrations/004_screenshot_evidence_audit.sql`
+- `src/db/repository.ts`
+- `src/session/manager.ts`
+- `src/session/types.ts`
+- `src/ui/server.ts`
+- `src/workflow/engine.ts`
+- `src/workflow/types.ts`
+- `src/workflow/wrap-up.ts`
+- `src/session/manager.test.ts`
+- `src/workflow/wrap-up.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-forge-story.yaml`
+- `docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts` → 2/2 suites, 7/7 tests passed
 
 ---

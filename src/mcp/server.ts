@@ -154,6 +154,24 @@ interface ToolRegistrar {
   ) => unknown;
 }
 
+export async function captureBrowserScreenshotForMcp(): Promise<{ content: Array<Record<string, unknown>> }> {
+  const screenshot = await sessionManager.captureScreenshot({
+    source: 'mcp',
+    accessPath: 'mcp',
+    state: workflowEngine.currentState,
+  });
+
+  if (screenshot.base64) {
+    return {
+      content: [{ type: 'image' as const, data: screenshot.base64, mimeType: screenshot.mimeType }],
+    };
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({ screenshot }) }],
+  };
+}
+
 function registerTool(server: ToolRegistrar, tool: McpToolDefinition): void {
   server.tool(tool.name, tool.description, tool.parameters, tool.handler);
 }
@@ -246,12 +264,7 @@ export async function createMcpServer(): Promise<void> {
     name: 'browser_screenshot',
     description: 'Capture a screenshot of the current browser page.',
     parameters: {},
-    handler: async () => {
-      const base64 = await sessionManager.screenshot();
-      return {
-        content: [{ type: 'image' as const, data: base64, mimeType: 'image/jpeg' }],
-      };
-    },
+    handler: async () => captureBrowserScreenshotForMcp(),
   });
 
   // -------------------------------------------------------------------------
