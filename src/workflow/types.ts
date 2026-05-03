@@ -433,9 +433,26 @@ export interface StepResult {
   success: boolean;
   durationMs: number;
   output?: string;
+  postActionReviewEvidence?: PostActionReviewEvidence;
+  postActionReviewParseErrors?: string[];
   screenshotPath?: string;
   screenshotBase64?: string;
   error?: string;
+}
+
+export interface PostActionReviewEvidence {
+  stepId: string;
+  actionTaken: string;
+  observedSuccess: boolean;
+  observedSuccessSignal?: string;
+  createdId?: string;
+  canonicalUrl?: string;
+  currentUrl?: string;
+  visibleTitle?: string;
+  visibleBodyExcerpt?: string;
+  confidence?: 'low' | 'medium' | 'high';
+  riskFlags: string[];
+  rawEvidence?: string;
 }
 
 export interface WorkflowScreenshotRecord {

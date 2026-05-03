@@ -3,7 +3,7 @@
 **Project:** ai-vision  
 **Date:** 2026-04-24  
 **Scope:** Discovery only. No runtime changes.
-**Last Updated:** 2026-05-01 (reconciled with backlog and history)
+**Last Updated:** 2026-05-03 (reconciled with US-042 screenshot retention flow)
 
 This document maps the current as-built execution topology of `ai-vision` across TypeScript, Python, YAML, UI, HITL, browser automation, memory/story/SIC, tests, and docs.
 
@@ -110,7 +110,7 @@ What is missing is a generalized gate layer that can replace the hidden flexibil
 - **Primary files:** [`src/memory/short-term.ts`](/home/spoq/ai-vision/src/memory/short-term.ts), [`src/memory/long-term.ts`](/home/spoq/ai-vision/src/memory/long-term.ts), [`src/memory/forge-sic.ts`](/home/spoq/ai-vision/src/memory/forge-sic.ts), [`src/workflow/wrap-up.ts`](/home/spoq/ai-vision/src/workflow/wrap-up.ts)
 - **Shape:** persistence sink, learning pipeline, correlation layer
 - **Triggers:** wrap-up, rejection handling, improvement capture, MCP memory tools
-- **Screenshot retention note:** As of `US-039` / `RF-021`, [`src/session/screenshot-retention.ts`](/home/spoq/ai-vision/src/session/screenshot-retention.ts) owns screenshot cleanup and evidence audit helpers. Non-evidence rolling/debug files are deleted on successful wrap-up or by bounded startup TTL scavenging; cleanup failures are recorded in SQLite `screenshot_cleanup_failures` for retry/dead-letter handling.
+- **Screenshot retention note:** As of `US-042` / `RF-024`, [`src/session/screenshot-retention.ts`](/home/spoq/ai-vision/src/session/screenshot-retention.ts) owns both immediate retention policy cleanup and delayed successful-run cleanup. Successful runs now retain rolling/debug screenshots for a bounded `120000ms` post-task window after the rolling timer stops, then delete them through a retry-with-backoff path; startup recovery consults SQLite `workflow_runs` success state to delete expired successful-run rolling files when the timer was lost, while failed/aborted debug frames remain under `ttl_24h` and evidence/manual-review screenshots stay preserved.
 - **Screenshot evidence audit note:** Evidence screenshots receive stable evidence ids and capture-time content hashes. SQLite `screenshot_evidence_audit` records who/what/when/why/action/path/hash metadata without screenshot bytes, and evidence deletion moves through `pending_deletion` before `deleted` or `delete_failed`.
 - **Screenshot persistence note:** As of `US-037` / `RF-019`, wrap-up sanitizes new durable screenshot writes before they reach SQLite `workflow_runs.result_json` or wrap-up artifact JSON. In-process `WorkflowResult` objects remain unchanged until that durable boundary.
 
@@ -447,6 +447,7 @@ flowchart TD
 - **Observed direct path:** `post_to_reddit`, `write_and_post_to_reddit`
 - **Path shape:** generate editorial draft -> pause for approval -> post or continue
 - **Important note:** these workflows are the clearest example of the direct path already supporting explicit human approval gates
+- **Post-action evidence path:** `submit_reddit_post` now stores bounded post-action review evidence on the step result, lets the direct postcondition accept canonical `/comments/<id>` URLs or corroborated Reddit `?created=t3_<id>` outcomes, and escalates unresolved LLM-success versus deterministic-failure disagreements through `hitl_qa:confirm_completion` instead of ending in a blind failure
 
 ### 4. Authenticated task workflow
 
@@ -470,6 +471,7 @@ flowchart TD
 ### 8. Workflow requiring final confirmation
 
 - **Path shape:** `confirm_completion` mode -> `hitl_qa` -> human confirms or rejects -> engine records outcome -> wrap-up
+- **Additional direct-path reuse:** the same `confirm_completion` surface is now reused for post-action evidence disagreement review when Reddit publish evidence and deterministic postconditions disagree
 
 ## I. TypeScript/Python Boundary Map
 
@@ -544,7 +546,7 @@ flowchart TD
 | `src/orchestrator/loop.ts` | TS | agentic/orchestrator | planner loop | Run Claude outer loop and tool calls | workflow def, instructions, session | tool actions, completion result | engine (agentic YAML) | HITL, Python bridge, loader | orchestrator control state | permissions, instructions, workflow | browser actions, HITL waits | high | Quarantine if agentic becomes non-production |
 | `src/session/hitl.ts` | TS | HITL/session | blocking wait/event emitter | Own human waits and resume resolution | workflow requests | resolved waits, phase changes | engine, orchestrator, UI endpoints | none | internal phase, wait resolvers | current wait reason, instructions | blocking waits | high | The canonical wait owner |
 | `src/session/types.ts` | TS | HITL/session | schema boundary | Define session and HITL states | runtime updates | typed session state | UI, engine, HITL | none | state enums | session projections | none | low | Keep state enums aligned with UI; screenshot evidence under SIC-style review uses `keep_until_manual_review` rather than a separate SIC TTL |
-| `src/session/manager.ts` | TS | session/runtime | manager | Own browser session lifecycle and URL/screenshot utilities | browser session, workflow context | browser state services | engine, UI, MCP | browser bridge/session | runtime browser session lifecycle | current URL, screenshot state | browser session creation/close | high | Keep bridge/session recovery logic explicit; screenshot capture now centralizes allow/redact/block/evidence decisions, queues Node-side screenshot requests by priority, collapses duplicate UI live frames, and throttles rolling debug capture on hung steps |
+| `src/session/manager.ts` | TS | session/runtime | manager | Own browser session lifecycle and URL/screenshot utilities | browser session, workflow context | browser state services | engine, UI, MCP | browser bridge/session | runtime browser session lifecycle | current URL, screenshot state | browser session creation/close | high | Keep bridge/session recovery logic explicit; screenshot capture now centralizes allow/redact/block/evidence decisions, queues Node-side screenshot requests by priority, collapses duplicate UI live frames, throttles rolling debug capture on hung steps, and triggers startup recovery for expired successful-run rolling screenshots |
 
 | `src/session/screenshot-scheduler.ts` | TS | session/runtime | scheduler | Serialize Node-side screenshot capture and enforce request priority/collapse | screenshot request priority, collapse key, capture callback | scheduled capture result | session manager | none | in-memory queue state | queued screenshot tasks | none | medium | Keep this queue local to the session layer; policy decisions still belong in `src/session/screenshot-policy.ts` |
 | `src/ui/server.ts` | TS | UI/server | HTTP/ws projection | Serve HITL UI and status/control endpoints | workflow state, HITL requests | HTML, JSON, websocket events | CLI, browser | engine, HITL coordinator, session manager | no canonical state; projections only | engine.currentState, HITL phase, screenshots | network I/O, UI control | medium | Do not make this the canonical state owner; `/api/screenshot` now enforces active session/client binding before returning pixels |

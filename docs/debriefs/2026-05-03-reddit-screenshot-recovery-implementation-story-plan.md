@@ -218,4 +218,9 @@ Before implementation, each story must be promoted into a complete Forge handoff
 - `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-implementation-handoff.md`
 - `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-definition-of-done.md`
 
-The next story to promote after `US-041` is `US-042 / RF-024`.
+`US-042 / RF-024` has been promoted to a complete Forge handoff package:
+
+- `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-storyline.md`
+- `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-forge-story.yaml`
+- `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-implementation-handoff.md`
+- `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-definition-of-done.md`

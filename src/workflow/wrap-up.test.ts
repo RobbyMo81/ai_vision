@@ -273,7 +273,7 @@ describe('wrap-up screenshot persistence sanitization', () => {
     });
 
     expect(fs.existsSync(evidencePath)).toBe(true);
-    expect(fs.existsSync(debugPath)).toBe(false);
+    expect(fs.existsSync(debugPath)).toBe(true);
     expect(fs.existsSync(ttlPath)).toBe(true);
 
     const db = new DatabaseSync(process.env.DB_PATH!);

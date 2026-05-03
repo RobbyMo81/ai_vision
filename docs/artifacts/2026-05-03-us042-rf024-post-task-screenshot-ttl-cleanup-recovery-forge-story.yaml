@@ -1,0 +1,79 @@
+story:
+  id: US-042
+  refactor: RF-024
+  title: Post-Task Screenshot TTL Cleanup And Recovery
+  status: proposed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-03
+  forge_required: true
+
+problem: >
+  Rolling/debug screenshots are written directly to sessions/rolling by
+  SessionManager.startScreenshotTimer(...), but wrap-up cleanup only sees
+  WorkflowResult.screenshots. Successful runs need a short post-task retention
+  window for immediate verification, then automatic cleanup. Failed or aborted
+  runs should retain debug frames under ttl_24h.
+
+scope:
+  includes:
+    - Add a success-only post-task cleanup scheduler for rolling/debug screenshots.
+    - Use a 120000ms cleanup TTL after successful workflow completion.
+    - Stop rolling capture before scheduling success cleanup.
+    - Explicitly clean sessions/rolling and eligible debug frames instead of relying only on WorkflowResult.screenshots.
+    - Preserve evidence screenshots and keep_until_manual_review screenshots.
+    - Preserve failed and aborted run debug frames under ttl_24h.
+    - Recover lost success cleanup timers during startup using durable workflow success state.
+    - Add retry-with-backoff for unlink operations.
+    - Persist failed deletion records in screenshot_cleanup_failures.
+    - Emit byte-free scheduled/completed/failed cleanup telemetry.
+  excludes:
+    - Reddit submit gate or postcondition changes.
+    - LLM post-action review evidence changes from US-043.
+    - Screenshot payload shape changes from US-036.
+    - Persistence sanitization changes from US-037.
+    - Sensitive screenshot policy changes from US-038.
+    - Broad evidence audit schema rewrites from US-039.
+    - Browser-use or mode: agentic retirement work.
+
+acceptance:
+  - Successful workflow runs schedule a 120000ms post-task cleanup for rolling/debug screenshots.
+  - Successful-run rolling/debug files remain available before TTL expiry.
+  - Successful-run rolling/debug files are deleted after TTL expiry.
+  - Failed and aborted runs do not use the 120s success cleanup path and remain under ttl_24h.
+  - Startup recovery deletes successful-run rolling/debug artifacts whose timer was lost and whose TTL expired.
+  - Rolling directory cleanup is explicitly covered and does not rely only on WorkflowResult.screenshots.
+  - Evidence and keep_until_manual_review screenshots are preserved.
+  - Failed unlink operations retry with backoff and record screenshot_cleanup_failures when still failing.
+  - Cleanup telemetry is byte-free and records scheduled, completed, and failed outcomes.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused retention/workflow tests pass.
+
+definition_of_done: >
+  Done means successful-run rolling/debug screenshots have a bounded 120 second
+  post-task lifetime with startup recovery for lost timers, while failed/aborted
+  run debug frames and evidence/manual-review screenshots keep their existing
+  retention protections.
+
+evidence_required:
+  - prd.json updated with US-042.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-024.
+  - Focused tests for success timer scheduling, pre-expiry retention, post-expiry deletion, failure fallback, startup recovery, evidence preservation, and retry failure recording.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts src/workflow/engine.test.ts
+  recommended:
+    - pnpm test when shared session/workflow retention contracts are touched broadly
+
+source_artifacts:
+  incident_debrief: docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md
+  story_plan: docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md
+  retention_story: docs/artifacts/2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-storyline.md
+  scheduler_story: docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-storyline.md
+

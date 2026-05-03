@@ -700,10 +700,36 @@
       "safetyGates": []
     },
     {
+      "id": "US-042",
+      "title": "Post-Task Screenshot TTL Cleanup And Recovery",
+      "priority": 1,
+      "passes": true,
+      "description": "Add a success-only 120 second post-task cleanup window for rolling/debug screenshots with startup recovery for lost timers, while preserving failed-run debug retention and evidence/manual-review screenshots.",
+      "acceptance": [
+        "Successful workflow runs schedule a 120000ms post-task cleanup for rolling/debug screenshots",
+        "Successful-run rolling/debug files remain available before TTL expiry",
+        "Successful-run rolling/debug files are deleted after TTL expiry",
+        "Failed and aborted runs do not use the 120s success cleanup path and remain under ttl_24h",
+        "Startup recovery deletes successful-run rolling/debug artifacts whose timer was lost and whose TTL expired",
+        "Rolling directory cleanup is explicitly covered and does not rely only on WorkflowResult.screenshots",
+        "Evidence and keep_until_manual_review screenshots are preserved",
+        "Failed unlink operations retry with backoff and record screenshot_cleanup_failures when still failing",
+        "Cleanup telemetry is byte-free and records scheduled, completed, and failed outcomes",
+        "US-036 through US-043 screenshot/workflow contracts remain compatible",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused retention/workflow tests pass"
+      ],
+      "exitCriteria": "Exit only when successful-run rolling/debug files have a bounded 120 second post-task lifetime, failed/aborted debug frames keep the existing ttl_24h behavior, restart recovery prevents permanent successful-run rolling orphans, evidence is preserved, and focused validation passes.",
+      "definitionOfDone": "Done means successful-run rolling/debug screenshots have a bounded 120 second post-task lifetime with startup recovery for lost timers, while failed/aborted run debug frames and evidence/manual-review screenshots keep their existing retention protections.",
+      "technicalNotes": "Derived from docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md and docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md. Keep this story scoped to post-task screenshot TTL cleanup and recovery; do not alter Reddit submit gates, US-043 LLM evidence, or screenshot payload/security contracts.",
+      "safetyGates": []
+    },
+    {
       "id": "US-043",
       "title": "LLM Post-Action Review Evidence Contract",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "description": "Capture LLM/browser-use post-action reasoning as structured evidence that deterministic workflow gates can corroborate, reject, or escalate to HITL review after irreversible browser side effects.",
       "acceptance": [
         "Side-effecting agent_task results can carry structured post-action review evidence",
@@ -712,7 +738,7 @@
         "Malformed or missing LLM review evidence cannot bypass deterministic gates",
         "LLM-success/deterministic-failure disagreement enters HITL review instead of a blind terminal failure",
         "HITL review state includes step id, deterministic failure reason, LLM success signal, current URL, canonical URL, and match status where available",
-        "Telemetry is byte-free and records post-action evidence accepted, rejected, or escalated",
+        "Telemetry is byte-free and records post-action evidence parsed, accepted, rejected, or escalated",
         "Existing duplicate-check, approval, and postcondition tests continue to pass",
         "US-042 post-task screenshot TTL cleanup remains out of scope",
         "jq empty prd.json passes",

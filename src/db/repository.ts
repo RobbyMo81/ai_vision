@@ -42,6 +42,13 @@ export interface ScreenshotEvidenceAuditRow {
   createdAt: string;
 }
 
+export interface WorkflowRunRetentionState {
+  sessionId: string;
+  workflowId: string;
+  success: boolean;
+  createdAt: string;
+}
+
 export class SessionRepository {
   private db: DatabaseSync;
 
@@ -257,6 +264,31 @@ export class SessionRepository {
       record.action,
       record.error,
     );
+  }
+
+  getWorkflowRunRetentionState(sessionId: string): WorkflowRunRetentionState | null {
+    const row = this.db.prepare(`
+      SELECT session_id, workflow_id, success, created_at
+      FROM workflow_runs
+      WHERE session_id = ?
+      LIMIT 1
+    `).get(sessionId) as {
+      session_id: string;
+      workflow_id: string;
+      success: number;
+      created_at: string;
+    } | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      sessionId: row.session_id,
+      workflowId: row.workflow_id,
+      success: row.success === 1,
+      createdAt: row.created_at,
+    };
   }
 
   listTelemetry(limit = 50): TelemetryEvent[] {

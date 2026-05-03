@@ -1,10 +1,16 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { DatabaseSync } from 'node:sqlite';
 import { SessionManager } from './manager';
 import { telemetry } from '../telemetry';
 import type { SessionState } from './types';
-import { runStartupScreenshotScavenger } from './screenshot-retention';
+import {
+  buildRollingScreenshotFilename,
+  runPostTaskScreenshotCleanupRecovery,
+  runStartupScreenshotScavenger,
+  schedulePostTaskScreenshotCleanup,
+} from './screenshot-retention';
 import { SessionRepository } from '../db/repository';
 
 jest.mock('../telemetry', () => ({
@@ -351,5 +357,96 @@ describe('SessionManager screenshot policy', () => {
     expect(summary.deletedCount).toBe(1);
     expect(fs.existsSync(oldFrame)).toBe(false);
     expect(fs.existsSync(freshFrame)).toBe(true);
+  });
+
+  it('startup recovery deletes successful rolling frames after the 120 second ttl and preserves failed runs', async () => {
+    const repo = new SessionRepository(process.env.DB_PATH);
+    repo.saveWorkflowRun({
+      sessionId: 'sess-success',
+      workflowId: 'wf-success',
+      workflowName: 'Success workflow',
+      success: true,
+      resultJson: JSON.stringify({ success: true, screenshots: [] }),
+    });
+    repo.saveWorkflowRun({
+      sessionId: 'sess-failed',
+      workflowId: 'wf-failed',
+      workflowName: 'Failed workflow',
+      success: false,
+      resultJson: JSON.stringify({ success: false, screenshots: [] }),
+    });
+
+    const rollingDir = path.join(sessionDir, 'rolling');
+    fs.mkdirSync(rollingDir, { recursive: true });
+    const successFrame = path.join(rollingDir, buildRollingScreenshotFilename('sess-success', 1));
+    const failedFrame = path.join(rollingDir, buildRollingScreenshotFilename('sess-failed', 2));
+    fs.writeFileSync(successFrame, Buffer.from('success'));
+    fs.writeFileSync(failedFrame, Buffer.from('failed'));
+
+    const createdAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const db = new DatabaseSync(process.env.DB_PATH!);
+    db.prepare('UPDATE workflow_runs SET created_at = ? WHERE session_id = ?').run(createdAt, 'sess-success');
+    db.prepare('UPDATE workflow_runs SET created_at = ? WHERE session_id = ?').run(createdAt, 'sess-failed');
+
+    const summary = await runPostTaskScreenshotCleanupRecovery({
+      repo,
+      nowMs: Date.now(),
+      limit: 10,
+      rollingDir,
+    });
+
+    expect(summary.deletedCount).toBe(1);
+    expect(summary.deletedFiles).toContain(successFrame);
+    expect(fs.existsSync(successFrame)).toBe(false);
+    expect(fs.existsSync(failedFrame)).toBe(true);
+  });
+
+  it('scheduled post-task cleanup deletes rolling and debug screenshots for successful runs', async () => {
+    jest.useFakeTimers();
+
+    try {
+      const repo = new SessionRepository(process.env.DB_PATH);
+      repo.saveWorkflowRun({
+        sessionId: 'sess-success',
+        workflowId: 'wf-success',
+        workflowName: 'Success workflow',
+        success: true,
+        resultJson: JSON.stringify({ success: true, screenshots: [] }),
+      });
+
+      const rollingDir = path.join(sessionDir, 'rolling');
+      fs.mkdirSync(rollingDir, { recursive: true });
+      const rollingFrame = path.join(rollingDir, buildRollingScreenshotFilename('sess-success', Date.now()));
+      const debugFrame = path.join(sessionDir, 'debug-frame.jpg');
+      fs.writeFileSync(rollingFrame, Buffer.from('rolling'));
+      fs.writeFileSync(debugFrame, Buffer.from('debug'));
+
+      schedulePostTaskScreenshotCleanup({
+        repo,
+        sessionId: 'sess-success',
+        workflowId: 'wf-success',
+        rollingDir,
+        delayMs: 120_000,
+        screenshots: [
+          {
+            path: debugFrame,
+            stepId: 'debug-step',
+            source: 'rolling',
+            class: 'debug_frame',
+            mimeType: 'image/jpeg',
+            sensitivity: 'unknown',
+            retention: 'delete_on_success',
+            persistBase64: false,
+          },
+        ],
+      });
+
+      await jest.advanceTimersByTimeAsync(120_000);
+
+      expect(fs.existsSync(rollingFrame)).toBe(false);
+      expect(fs.existsSync(debugFrame)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

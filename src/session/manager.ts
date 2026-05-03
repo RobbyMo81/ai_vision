@@ -21,8 +21,10 @@ import { decideScreenshotPolicy, SensitiveScreenshotContext } from './screenshot
 import { ScreenshotPayload, SessionState, ScreenshotSource } from './types';
 import { SessionRepository } from '../db/repository';
 import {
+  buildRollingScreenshotFilename,
   deleteScreenshotFile,
   deleteEvidenceScreenshot,
+  runPostTaskScreenshotCleanupRecovery,
   runStartupScreenshotScavenger,
 } from './screenshot-retention';
 import { ScreenshotRequestPriority, ScreenshotScheduler } from './screenshot-scheduler';
@@ -191,8 +193,9 @@ export class SessionManager extends EventEmitter {
     // Publish the CDP URL so PythonBridgeEngine subprocesses can attach to this browser
     process.env.BROWSER_CDP_URL = this.getCdpUrl();
     this.emit('started');
-    setImmediate(() => {
+    setImmediate(async () => {
       try {
+        await runPostTaskScreenshotCleanupRecovery({ limit: 100 });
         runStartupScreenshotScavenger({ limit: 100 });
       } catch (error) {
         telemetry.emit({
@@ -557,7 +560,7 @@ export class SessionManager extends EventEmitter {
         }
         const url = payload.url ?? this._page.url();
         const buf = Buffer.from(payload.base64, 'base64');
-        const filename = `frame-${timestamp}.jpg`;
+        const filename = buildRollingScreenshotFilename(payload.sessionId, timestamp);
         const filepath = payload.path && payload.class === 'step_scoped'
           ? payload.path
           : path.join(this._screenshotDir, filename);

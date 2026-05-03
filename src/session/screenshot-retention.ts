@@ -47,6 +47,10 @@ export interface CleanupSummary {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_BATCH_LIMIT = 100;
+const SUCCESSFUL_RUN_POST_TASK_TTL_MS = 120_000;
+const DELETE_RETRY_ATTEMPTS = 3;
+const DELETE_RETRY_BASE_DELAY_MS = 50;
+const postTaskCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function sessionRoot(): string {
   return process.env.SESSION_DIR ?? path.join(process.cwd(), 'sessions');
@@ -62,6 +66,11 @@ export function workflowScreenshotDir(): string {
 
 export function debugScreenshotRetentionEnabled(): boolean {
   return process.env.AI_VISION_RETAIN_DEBUG_SCREENSHOTS === 'true';
+}
+
+export function buildRollingScreenshotFilename(sessionId: string | undefined, timestamp: number): string {
+  const encodedSessionId = encodeURIComponent(sessionId && sessionId.length > 0 ? sessionId : 'unknown');
+  return `frame-${encodedSessionId}__${timestamp}.jpg`;
 }
 
 export function generateEvidenceId(sessionId: string, stepId: string, screenshotPath: string): string {
@@ -152,6 +161,55 @@ export function deleteScreenshotFile(input: {
   }
 }
 
+export async function deleteScreenshotFileWithRetry(input: {
+  repo?: SessionRepository;
+  screenshotPath: string;
+  sessionId?: string;
+  workflowId?: string;
+  stepId?: string;
+  class?: string;
+  retention?: string;
+  action: string;
+  retryAttempts?: number;
+  retryBaseDelayMs?: number;
+  wait?: (delayMs: number) => Promise<void>;
+}): Promise<boolean> {
+  const retryAttempts = input.retryAttempts ?? DELETE_RETRY_ATTEMPTS;
+  const retryBaseDelayMs = input.retryBaseDelayMs ?? DELETE_RETRY_BASE_DELAY_MS;
+  const wait = input.wait ?? ((delayMs: number) => new Promise<void>(resolve => setTimeout(resolve, delayMs)));
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < retryAttempts; attempt += 1) {
+    try {
+      if (fs.existsSync(input.screenshotPath)) {
+        fs.unlinkSync(input.screenshotPath);
+      }
+      if (!fs.existsSync(input.screenshotPath)) {
+        return true;
+      }
+      lastError = new Error('Screenshot file still exists after unlink.');
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    if (attempt < retryAttempts - 1) {
+      await wait(retryBaseDelayMs * 2 ** attempt);
+    }
+  }
+
+  input.repo?.saveScreenshotCleanupFailure({
+    screenshotPath: input.screenshotPath,
+    sessionId: input.sessionId,
+    workflowId: input.workflowId,
+    stepId: input.stepId,
+    class: input.class,
+    retention: input.retention,
+    action: input.action,
+    error: lastError?.message ?? 'Screenshot cleanup failed for an unknown reason.',
+  });
+  return false;
+}
+
 export function cleanupWorkflowScreenshotsOnWrapUp(input: {
   repo: SessionRepository;
   sessionId: string;
@@ -174,7 +232,8 @@ export function cleanupWorkflowScreenshotsOnWrapUp(input: {
       continue;
     }
 
-    const deleteOnSuccess = input.success && screenshot.retention === 'delete_on_success';
+    const deferSuccessfulDebugCleanup = input.success && screenshot.class === 'debug_frame';
+    const deleteOnSuccess = input.success && screenshot.retention === 'delete_on_success' && !deferSuccessfulDebugCleanup;
     const ttlDebug = screenshot.retention === 'ttl_24h' && !debugScreenshotRetentionEnabled() && isTtlEligible(screenshot);
     if (!deleteOnSuccess && !ttlDebug) {
       summary.skippedCount += 1;
@@ -264,6 +323,121 @@ export function runStartupScreenshotScavenger(input: {
   return summary;
 }
 
+export function schedulePostTaskScreenshotCleanup(input: {
+  repo?: SessionRepository;
+  sessionId: string;
+  workflowId: string;
+  screenshots: WorkflowScreenshotRecord[];
+  delayMs?: number;
+  rollingDir?: string;
+}): ReturnType<typeof setTimeout> {
+  const repo = input.repo ?? new SessionRepository();
+  const delayMs = input.delayMs ?? SUCCESSFUL_RUN_POST_TASK_TTL_MS;
+  const existingTimer = postTaskCleanupTimers.get(input.sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  telemetry.emit({
+    source: 'session',
+    name: 'session.screenshot.post_task_cleanup.scheduled',
+    sessionId: input.sessionId,
+    workflowId: input.workflowId,
+    details: {
+      delayMs,
+      rollingDir: input.rollingDir ?? rollingScreenshotDir(),
+      debugScreenshotCount: countDebugScreenshots(input.screenshots),
+    },
+  });
+
+  const timer = setTimeout(() => {
+    postTaskCleanupTimers.delete(input.sessionId);
+    void cleanupSuccessfulRunDebugScreenshots({
+      repo,
+      sessionId: input.sessionId,
+      workflowId: input.workflowId,
+      screenshots: input.screenshots,
+      rollingDir: input.rollingDir,
+      trigger: 'timer_expiry',
+    });
+  }, delayMs);
+  postTaskCleanupTimers.set(input.sessionId, timer);
+  return timer;
+}
+
+export async function runPostTaskScreenshotCleanupRecovery(input: {
+  repo?: SessionRepository;
+  nowMs?: number;
+  limit?: number;
+  rollingDir?: string;
+  wait?: (delayMs: number) => Promise<void>;
+} = {}): Promise<CleanupSummary> {
+  const repo = input.repo ?? new SessionRepository();
+  const nowMs = input.nowMs ?? Date.now();
+  const limit = input.limit ?? DEFAULT_BATCH_LIMIT;
+  const rollingDir = input.rollingDir ?? rollingScreenshotDir();
+  const wait = input.wait;
+  const summary = createCleanupSummary();
+  const retentionStateCache = new Map<string, ReturnType<SessionRepository['getWorkflowRunRetentionState']>>();
+
+  if (!fs.existsSync(rollingDir)) {
+    return summary;
+  }
+
+  const entries = fs
+    .readdirSync(rollingDir)
+    .filter(file => file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.png'))
+    .sort((a, b) => fs.statSync(path.join(rollingDir, a)).mtimeMs - fs.statSync(path.join(rollingDir, b)).mtimeMs)
+    .slice(0, limit);
+
+  for (const entry of entries) {
+    const screenshotPath = path.join(rollingDir, entry);
+    summary.scannedCount += 1;
+    const parsed = parseRollingScreenshotFilename(entry);
+    if (!parsed || parsed.sessionId === 'unknown') {
+      summary.skippedCount += 1;
+      continue;
+    }
+
+    let retentionState = retentionStateCache.get(parsed.sessionId);
+    if (retentionState === undefined) {
+      retentionState = repo.getWorkflowRunRetentionState(parsed.sessionId);
+      retentionStateCache.set(parsed.sessionId, retentionState);
+    }
+
+    if (!retentionState?.success) {
+      summary.skippedCount += 1;
+      continue;
+    }
+
+    const eligibleAt = Date.parse(retentionState.createdAt) + SUCCESSFUL_RUN_POST_TASK_TTL_MS;
+    if (!Number.isFinite(eligibleAt) || eligibleAt > nowMs) {
+      summary.skippedCount += 1;
+      continue;
+    }
+
+    const deleted = await deleteScreenshotFileWithRetry({
+      repo,
+      screenshotPath,
+      sessionId: parsed.sessionId,
+      workflowId: retentionState.workflowId,
+      class: 'debug_frame',
+      retention: 'delete_on_success',
+      action: 'startup_post_task_cleanup_recovery',
+      wait,
+    });
+    if (deleted) {
+      summary.deletedCount += 1;
+      summary.deletedFiles.push(screenshotPath);
+    } else {
+      summary.failedCount += 1;
+    }
+  }
+
+  emitPostTaskCleanupTelemetry('startup_recovery', undefined, undefined, summary);
+  return summary;
+}
+
 export function deleteEvidenceScreenshot(input: {
   repo: SessionRepository;
   evidenceId: string;
@@ -300,6 +474,137 @@ export function deleteEvidenceScreenshot(input: {
   });
 
   return { deleted, contentHash };
+}
+
+async function cleanupSuccessfulRunDebugScreenshots(input: {
+  repo: SessionRepository;
+  sessionId: string;
+  workflowId: string;
+  screenshots: WorkflowScreenshotRecord[];
+  rollingDir?: string;
+  trigger: 'timer_expiry' | 'startup_recovery';
+  wait?: (delayMs: number) => Promise<void>;
+}): Promise<CleanupSummary> {
+  const summary = createCleanupSummary();
+  const retentionState = input.repo.getWorkflowRunRetentionState(input.sessionId);
+  if (!retentionState?.success) {
+    summary.skippedCount += 1;
+    emitPostTaskCleanupTelemetry(input.trigger, input.sessionId, input.workflowId, summary);
+    return summary;
+  }
+
+  const screenshotPaths = collectSuccessfulRunDebugPaths({
+    sessionId: input.sessionId,
+    screenshots: input.screenshots,
+    rollingDir: input.rollingDir,
+  });
+
+  for (const screenshotPath of screenshotPaths) {
+    summary.scannedCount += 1;
+    const screenshot = input.screenshots.find(candidate => candidate.path === screenshotPath);
+    const deleted = await deleteScreenshotFileWithRetry({
+      repo: input.repo,
+      screenshotPath,
+      sessionId: input.sessionId,
+      workflowId: input.workflowId,
+      stepId: screenshot?.stepId,
+      class: screenshot?.class ?? 'debug_frame',
+      retention: screenshot?.retention ?? 'delete_on_success',
+      action: 'post_task_success_cleanup',
+      wait: input.wait,
+    });
+    if (deleted) {
+      summary.deletedCount += 1;
+      summary.deletedFiles.push(screenshotPath);
+    } else {
+      summary.failedCount += 1;
+    }
+  }
+
+  emitPostTaskCleanupTelemetry(input.trigger, input.sessionId, input.workflowId, summary);
+  return summary;
+}
+
+function collectSuccessfulRunDebugPaths(input: {
+  sessionId: string;
+  screenshots: WorkflowScreenshotRecord[];
+  rollingDir?: string;
+}): string[] {
+  const paths = new Set<string>();
+  for (const screenshot of input.screenshots) {
+    if (screenshot.class !== 'debug_frame' && screenshot.retention !== 'delete_on_success') {
+      continue;
+    }
+    if (screenshot.class === 'evidence' || screenshot.retention === 'keep_until_manual_review') {
+      continue;
+    }
+    paths.add(screenshot.path);
+  }
+
+  const resolvedRollingDir = input.rollingDir ?? rollingScreenshotDir();
+  if (!fs.existsSync(resolvedRollingDir)) {
+    return Array.from(paths);
+  }
+
+  for (const entry of fs.readdirSync(resolvedRollingDir)) {
+    const parsed = parseRollingScreenshotFilename(entry);
+    if (!parsed || parsed.sessionId !== input.sessionId) {
+      continue;
+    }
+    paths.add(path.join(resolvedRollingDir, entry));
+  }
+
+  return Array.from(paths).sort();
+}
+
+function parseRollingScreenshotFilename(fileName: string): { sessionId: string; timestamp: number } | null {
+  const match = /^frame-(.+)__([0-9]+)\.(?:jpg|jpeg|png)$/i.exec(fileName);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    sessionId: decodeURIComponent(match[1]),
+    timestamp: Number(match[2]),
+  };
+}
+
+function countDebugScreenshots(screenshots: WorkflowScreenshotRecord[]): number {
+  return screenshots.filter(screenshot => screenshot.class === 'debug_frame' || screenshot.retention === 'delete_on_success').length;
+}
+
+function createCleanupSummary(): CleanupSummary {
+  return {
+    scannedCount: 0,
+    deletedCount: 0,
+    failedCount: 0,
+    skippedCount: 0,
+    deletedFiles: [],
+  };
+}
+
+function emitPostTaskCleanupTelemetry(
+  trigger: 'timer_expiry' | 'startup_recovery',
+  sessionId: string | undefined,
+  workflowId: string | undefined,
+  summary: CleanupSummary,
+): void {
+  telemetry.emit({
+    source: 'session',
+    name: summary.failedCount > 0
+      ? 'session.screenshot.post_task_cleanup.failed'
+      : 'session.screenshot.post_task_cleanup.completed',
+    sessionId,
+    workflowId,
+    details: {
+      trigger,
+      scannedCount: summary.scannedCount,
+      deletedCount: summary.deletedCount,
+      failedCount: summary.failedCount,
+      skippedCount: summary.skippedCount,
+      deletedFiles: summary.deletedFiles,
+    },
+  });
 }
 
 function emitCleanupTelemetry(

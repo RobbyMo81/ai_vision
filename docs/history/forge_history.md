@@ -97,6 +97,47 @@ All existing US-026 through US-030 gates remain intact. `mode: agentic` routing 
 
 ---
 
+## H-042 — US-042 / RF-024: Post-Task Screenshot TTL Cleanup And Recovery
+
+**Date:** 2026-05-03
+**Story:** US-042 / RF-024
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Retention Follow-Through
+
+### Summary
+
+Implemented the missing successful-run retention follow-through for rolling/debug screenshots that were written directly to `sessions/rolling` and therefore sat outside the existing wrap-up cleanup list.
+
+`src/session/screenshot-retention.ts` now owns a success-only `120000ms` delayed cleanup scheduler, retry-with-backoff deletion for the delayed cleanup path, and startup recovery that consults durable SQLite `workflow_runs` success state before deleting expired successful-run rolling files after a lost timer. Evidence and `keep_until_manual_review` screenshots remain untouched, while failed or aborted run debug files continue to age out under the existing `ttl_24h` scavenger.
+
+`src/session/manager.ts` now writes rolling frames with session-bound filenames and runs the post-task cleanup recovery hook on startup before the legacy bounded scavenger. `src/workflow/engine.ts` now schedules the delayed cleanup only after the rolling timer has stopped, wrap-up has completed, and the workflow result is successful. `src/workflow/wrap-up.ts` still handles evidence audit and durable run persistence, but successful debug-frame cleanup is no longer immediate at wrap-up.
+
+Focused regression coverage now proves three critical behaviors: successful-run rolling/debug files survive wrap-up and are deleted after the delayed timer, startup recovery deletes expired successful-run rolling files without deleting failed-run debug files, and the engine only schedules the delayed cleanup path for successful runs after `stopScreenshotTimer()`.
+
+### Files Touched
+
+- `src/session/screenshot-retention.ts`
+- `src/session/manager.ts`
+- `src/db/repository.ts`
+- `src/workflow/engine.ts`
+- `src/session/manager.test.ts`
+- `src/workflow/wrap-up.test.ts`
+- `src/workflow/engine.test.ts`
+- `docs/architecture/as-built_execution_atlas.md`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` -> exit 0
+- `pnpm run typecheck` -> exit 0
+- `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts src/workflow/engine.test.ts` -> 3/3 suites, 91/91 tests passed
+
+---
+
 ## H-032 — US-032 / RF-014: agent_task Dominant Intent Classification Fix
 
 **Date:** 2026-04-28
@@ -484,5 +525,50 @@ The existing screenshot policy gate from US-038 remains the authority for allow/
 - `jq empty prd.json` → exit 0
 - `pnpm run typecheck` → exit 0
 - `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/engine.test.ts` → 4/4 suites, 114/114 tests passed
+
+---
+
+## H-043 — US-043 / RF-025: LLM Post-Action Review Evidence Contract
+
+**Date:** 2026-05-03
+**Story:** US-043 / RF-025
+**Status:** PASS
+**Gate Layer Phase:** LLM Post-Action Review Evidence
+
+### Summary
+
+Implemented a typed post-action review evidence contract for direct `agent_task` results and applied it to Reddit publish postcondition validation.
+
+`src/workflow/types.ts` now exposes `PostActionReviewEvidence`, and `StepResult` can carry both structured evidence and parse errors. `src/workflow/engine.ts` parses bounded evidence out of browser-use final output, including created id, canonical comments URL, current URL, visible title, visible body excerpt, confidence, risk flags, and success signals.
+
+The Reddit submit postcondition now accepts three safe success paths:
+
+1. The current browser URL is already a canonical Reddit `/comments/<id>` page.
+2. Reddit redirects through `?created=t3_<id>` and the parsed post-action evidence corroborates the canonical comments URL plus matching visible title/body.
+3. The browser lands off the composer and the parsed canonical comments evidence plus matching visible title/body corroborates the created post.
+
+Malformed post-action evidence fails closed and cannot bypass the deterministic gate. When the LLM/browser-use layer reports success but the deterministic postcondition still cannot corroborate it, the engine now reuses `hitl_qa:confirm_completion` to present the disagreement to the operator instead of recording a blind terminal failure.
+
+Byte-free telemetry now records `workflow.post_action_review.evidence_parsed`, `workflow.post_action_review.evidence_accepted`, `workflow.post_action_review.evidence_rejected`, and `workflow.post_action_review.evidence_escalated`.
+
+### Files Touched
+
+- `src/workflow/types.ts`
+- `src/workflow/engine.ts`
+- `src/workflow/engine.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-03-us043-rf025-llm-post-action-review-evidence-contract-forge-story.yaml`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/workflow/engine.test.ts` → 1/1 suites, 76/76 tests passed
+- `pnpm test -- --runInBand src/workflow/engine.test.ts src/ui/server.test.ts` → 2/2 suites, 106/106 tests passed
 
 ---

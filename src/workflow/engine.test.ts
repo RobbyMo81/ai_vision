@@ -66,6 +66,8 @@ const mockTelemetry = {
   emit: jest.fn(),
 };
 
+const mockSchedulePostTaskScreenshotCleanup = jest.fn();
+
 const mockShortTermMemory = {
   begin: jest.fn(),
   getContextPrompt: jest.fn(() => ''),
@@ -114,6 +116,14 @@ jest.mock('../telemetry', () => ({
   telemetry: mockTelemetry,
 }));
 
+jest.mock('../session/screenshot-retention', () => {
+  const actual = jest.requireActual('../session/screenshot-retention');
+  return {
+    ...actual,
+    schedulePostTaskScreenshotCleanup: (...args: unknown[]) => mockSchedulePostTaskScreenshotCleanup(...args),
+  };
+});
+
 jest.mock('./wrap-up', () => ({
   wrapUpWorkflowRun: jest.fn(async () => undefined),
 }));
@@ -148,6 +158,7 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSchedulePostTaskScreenshotCleanup.mockReset();
     mockWriter.writePost.mockReset();
     delete process.env.AI_VISION_UI_PORT;
     mockSessionManager.start.mockResolvedValue(undefined);
@@ -325,6 +336,58 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     expect(result.success).toBe(true);
     expect(mockWriter.writePost).not.toHaveBeenCalled();
     expect(mockHitlCoordinator.requestQaPause).not.toHaveBeenCalled();
+  });
+
+  it('schedules post-task screenshot cleanup only after a successful wrap-up', async () => {
+    const definition = {
+      id: 'us042-success-cleanup',
+      name: 'US-042 success cleanup scheduling',
+      mode: 'direct' as const,
+      params: {},
+      steps: [],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-us042-success');
+
+    expect(result.success).toBe(true);
+    expect(mockSessionManager.stopScreenshotTimer).toHaveBeenCalled();
+    expect(mockSchedulePostTaskScreenshotCleanup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-us042-success',
+        workflowId: 'us042-success-cleanup',
+      }),
+    );
+    expect(mockSessionManager.stopScreenshotTimer.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSchedulePostTaskScreenshotCleanup.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not schedule post-task screenshot cleanup after a failed run', async () => {
+    mockAutomationEngine.runTask.mockResolvedValueOnce({
+      success: false,
+      error: 'step failed',
+      screenshots: [],
+      durationMs: 5,
+    });
+
+    const definition = {
+      id: 'us042-failed-cleanup',
+      name: 'US-042 failed cleanup scheduling',
+      mode: 'agentic' as const,
+      params: {},
+      steps: [
+        {
+          type: 'agent_task' as const,
+          id: 'failing-step',
+          prompt: 'fail',
+        },
+      ],
+    };
+
+    const result = await workflowEngine.run(definition, {}, 'sess-us042-failed');
+
+    expect(result.success).toBe(false);
+    expect(mockSchedulePostTaskScreenshotCleanup).not.toHaveBeenCalled();
   });
 });
 
@@ -1997,7 +2060,7 @@ describe('workflowEngine US-029 browser postcondition gate', () => {
     expect(result.error).toContain('expected_url_missing');
   });
 
-  it('submit_reddit_post fails when output lacks comments URL evidence', async () => {
+  it('submit_reddit_post passes when current URL is already the canonical comments page even without output marker text', async () => {
     mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
       if (options?.stepId === 'check_duplicate_reddit_post') {
         return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
@@ -2019,8 +2082,158 @@ describe('workflowEngine US-029 browser postcondition gate', () => {
 
     const result = await workflowEngine.run(definition, { post_title: 'Test Title', subreddit: 'test' });
 
+    expect(result.success).toBe(true);
+  });
+
+  it('submit_reddit_post passes on created redirect when structured post-action evidence corroborates the published post', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/?created=t3_abc123';
+        return {
+          success: true,
+          output: [
+            'ACTION_TAKEN: clicked reddit post submit button',
+            'OBSERVED_SUCCESS: true',
+            'OBSERVED_SUCCESS_SIGNAL: canonical_comments_url',
+            'CREATED_ID: t3_abc123',
+            'CANONICAL_URL: https://www.reddit.com/r/test/comments/abc123/test-title/',
+            'CURRENT_URL: https://www.reddit.com/r/test/?created=t3_abc123',
+            'VISIBLE_TITLE: Test Title',
+            'VISIBLE_BODY_EXCERPT: body text for reddit publish validation',
+            'CONFIDENCE: high',
+          ].join('\n'),
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us043-submit-created-pass',
+      name: 'US-043 created redirect pass',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, {
+      post_title: 'Test Title',
+      post_text: 'body text for reddit publish validation',
+      subreddit: 'test',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.post_action_review.evidence_accepted', stepId: 'submit_reddit_post' }),
+    );
+  });
+
+  it('submit_reddit_post fails closed on malformed structured post-action evidence', async () => {
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/?created=t3_abc123';
+        return {
+          success: true,
+          output: [
+            'OBSERVED_SUCCESS: maybe',
+            'CANONICAL_URL: https://www.reddit.com/r/test/comments/abc123/test-title/',
+            'VISIBLE_TITLE: Test Title',
+            'VISIBLE_BODY_EXCERPT: body text for reddit publish validation',
+            'CONFIDENCE: extreme',
+          ].join('\n'),
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us043-submit-malformed-evidence',
+      name: 'US-043 malformed evidence fail closed',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, {
+      post_title: 'Test Title',
+      post_text: 'body text for reddit publish validation',
+      subreddit: 'test',
+    });
+
     expect(result.success).toBe(false);
-    expect(result.error).toContain('comments_url_output_missing');
+    expect(result.error).toContain('expected_url_missing');
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.post_action_review.evidence_rejected', stepId: 'submit_reddit_post' }),
+    );
+  });
+
+  it('submit_reddit_post enters HITL review when LLM success evidence disagrees with deterministic validation', async () => {
+    process.env.AI_VISION_UI_PORT = '30012';
+    mockHitlCoordinator.requestCompletionConfirmation.mockResolvedValueOnce({ confirmed: true });
+
+    mockAutomationEngine.runTask.mockImplementation(async (_prompt: string, options?: { stepId?: string }) => {
+      if (options?.stepId === 'check_duplicate_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return { success: true, output: VALID_DUPLICATE_EVIDENCE, screenshots: [], durationMs: 5 };
+      }
+      if (options?.stepId === 'submit_reddit_post') {
+        currentUrl = 'https://www.reddit.com/r/test/submit';
+        return {
+          success: true,
+          output: [
+            'OBSERVED_SUCCESS: true',
+            'OBSERVED_SUCCESS_SIGNAL: canonical_comments_url',
+            'CREATED_ID: t3_abc123',
+            'CANONICAL_URL: https://www.reddit.com/r/test/comments/abc123/test-title/',
+            'VISIBLE_TITLE: Different Title',
+            'VISIBLE_BODY_EXCERPT: unrelated body',
+            'CONFIDENCE: high',
+          ].join('\n'),
+          screenshots: [],
+          durationMs: 5,
+        };
+      }
+      return { success: true, output: 'ok', screenshots: [], durationMs: 5 };
+    });
+
+    const definition = {
+      id: 'us043-submit-hitl-review',
+      name: 'US-043 disagreement goes to HITL review',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, {
+      post_title: 'Test Title',
+      post_text: 'body text for reddit publish validation',
+      subreddit: 'test',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHitlCoordinator.requestCompletionConfirmation).toHaveBeenCalledTimes(1);
+    expect(mockHitlCoordinator.emit).toHaveBeenCalledWith(
+      'phase_changed',
+      expect.objectContaining({
+        phase: 'hitl_qa',
+        hitlAction: 'confirm_completion',
+        currentStep: 'submit_reddit_post',
+      }),
+    );
+    expect(mockTelemetry.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'workflow.post_action_review.evidence_escalated', stepId: 'submit_reddit_post' }),
+    );
   });
 
   it('prepare_and_focus_body passes when current URL stays on the subreddit submit page', async () => {

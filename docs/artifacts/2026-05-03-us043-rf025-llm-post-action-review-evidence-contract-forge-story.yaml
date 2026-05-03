@@ -2,7 +2,7 @@ story:
   id: US-043
   refactor: RF-025
   title: LLM Post-Action Review Evidence Contract
-  status: proposed
+  status: completed
   priority: P0
   owner: Core Workflow Team
   created: 2026-05-03
@@ -24,7 +24,7 @@ scope:
     - Preserve deterministic gates as final authority while allowing LLM evidence to corroborate messy UI success states.
     - Extend Reddit submit postcondition handling for /comments/ URLs and ?created=t3_... redirects.
     - Route LLM-success/deterministic-failure disagreements to HITL review with structured context.
-    - Emit byte-free telemetry for accepted, rejected, and HITL-escalated post-action evidence.
+    - Emit byte-free telemetry for parsed, accepted, rejected, and HITL-escalated post-action evidence.
     - Preserve duplicate-check, approval, screenshot, and existing browser postcondition gates.
   excludes:
     - Giving LLM output unchecked authority over irreversible-action success.
@@ -40,7 +40,7 @@ acceptance:
   - Malformed or missing LLM review evidence cannot bypass deterministic gates.
   - LLM-success/deterministic-failure disagreement enters HITL review instead of a blind terminal failure.
   - HITL review state includes step id, deterministic failure reason, LLM success signal, current URL, canonical URL, and match status where available.
-  - Telemetry is byte-free and records post-action evidence accepted, rejected, or escalated.
+  - Telemetry is byte-free and records post-action evidence parsed, accepted, rejected, or escalated.
   - Existing duplicate-check, approval, and postcondition tests continue to pass.
   - jq empty prd.json passes.
   - pnpm run typecheck passes.
