@@ -1,0 +1,77 @@
+story:
+  id: US-040
+  refactor: RF-022
+  title: Deterministic Reddit Duplicate Evidence Producer
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-03
+  forge_required: true
+
+problem: >
+  The direct post_to_reddit workflow stalls in check_duplicate_reddit_post
+  because duplicate evidence production is delegated to a broad browser-use
+  prompt. The submit gate works, but the evidence producer is not deterministic
+  enough for production posting.
+
+scope:
+  includes:
+    - Replace the direct check_duplicate_reddit_post evidence producer with a deterministic TypeScript/Playwright path.
+    - Navigate to /r/{subreddit}/new and collect bounded recent post titles.
+    - Use a[id^="post-title-"] as the primary selector with documented fallbacks.
+    - Compute word-level Jaccard scores in TypeScript.
+    - Preserve the existing four-line Reddit duplicate evidence contract.
+    - Keep DUPLICATE_RISK threshold at Jaccard >= 0.70.
+    - Treat 0.50 <= score < 0.70 as near-match metadata only.
+    - Fail closed when no usable titles are collected or navigation/DOM extraction fails.
+    - Keep submit_reddit_post duplicate evidence gate unchanged.
+    - Add focused tests for duplicate, near-match, no-duplicate, selector fallback, zero-title, parser compatibility, and submit blocking.
+  excludes:
+    - Screenshot capture scheduler or hung-step guardrail from US-041.
+    - Post-task screenshot TTL cleanup from US-042.
+    - Changes that weaken Reddit submit safety gates.
+    - Screenshot payload/persistence/capture-policy changes from US-036 through US-039.
+    - Retiring mode: agentic.
+    - Broad browser-use bridge changes except removing this direct duplicate-check dependency.
+
+acceptance:
+  - Direct post_to_reddit no longer uses browser-use for check_duplicate_reddit_post evidence production.
+  - The deterministic output passes the existing Reddit duplicate evidence parser.
+  - EXTRACTED_TITLES contains the bounded collected titles.
+  - OVERLAP_SCORES contains title/score objects for collected titles.
+  - Any score >= 0.70 yields DUPLICATE_CHECK_RESULT: DUPLICATE_RISK and MATCHING_TITLE.
+  - Scores >= 0.50 and < 0.70 remain visible but do not create a third canonical result.
+  - Scores < 0.50 yield DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND.
+  - Zero usable titles, selector drift, or navigation failure fails closed and blocks submit.
+  - Existing submit_reddit_post missing-evidence and duplicate-risk gates remain intact.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused workflow tests pass.
+
+definition_of_done: >
+  Done means the direct Reddit workflow can deterministically collect recent
+  subreddit titles, compute bounded Jaccard duplicate evidence, and feed the
+  existing submit gate without relying on browser-use for the duplicate-check
+  evidence producer.
+
+evidence_required:
+  - prd.json updated with US-040.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-022.
+  - workflows/post_to_reddit.yaml or direct engine dispatch updated so duplicate evidence is deterministic.
+  - Focused tests prove duplicate, near-match, no-duplicate, zero-title, selector fallback, and submit-gate behavior.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json passed
+    - pnpm run typecheck passed
+    - pnpm test -- --runInBand src/workflow/engine.test.ts passed
+  recommended:
+    - pnpm test when shared workflow engine behavior is touched broadly
+
+source_artifacts:
+  incident_debrief: docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md
+  story_plan: docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md
+  direct_workflow: workflows/post_to_reddit.yaml
+  related_agentic_workflow: workflows/write_and_post_to_reddit.yaml

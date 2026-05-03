@@ -1,7 +1,7 @@
 # Reddit And Screenshot Recovery Implementation Story Plan
 
 Date: 2026-05-03
-Status: Planning document for next Forge story promotion
+Status: Planning document for Forge story promotion
 
 ## Purpose
 
@@ -15,8 +15,8 @@ This is not yet a Forge handoff package. Each story below still needs the four m
 
 ## Implementation Sequence
 
-1. `US-040 / RF-022` - Deterministic Reddit Duplicate Evidence Producer
-2. `US-041 / RF-023` - Screenshot Capture Scheduler And Hung-Step Guardrail
+1. `US-040 / RF-022` - Deterministic Reddit Duplicate Evidence Producer - promoted to Forge handoff on 2026-05-03
+2. `US-041 / RF-023` - Screenshot Capture Scheduler And Hung-Step Guardrail - promoted to Forge handoff on 2026-05-03
 3. `US-042 / RF-024` - Post-Task Screenshot TTL Cleanup And Recovery
 
 The stories should be built in this order. `US-040` fixes the direct production workflow blocker. `US-041` reduces capture pressure during stalled or long-running steps. `US-042` finishes the retention timing change so successful runs keep debug frames briefly, then clean them without burdening wrap-up.
@@ -204,4 +204,18 @@ Before implementation, each story must be promoted into a complete Forge handoff
 3. AI agent implementation prompt.
 4. Explicit definition of done.
 
-The first story to promote should be `US-040 / RF-022`.
+`US-040 / RF-022` has been promoted to a complete Forge handoff package:
+
+- `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-storyline.md`
+- `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-forge-story.yaml`
+- `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-implementation-handoff.md`
+- `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-definition-of-done.md`
+
+`US-041 / RF-023` has been promoted to a complete Forge handoff package:
+
+- `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-storyline.md`
+- `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-forge-story.yaml`
+- `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-implementation-handoff.md`
+- `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-definition-of-done.md`
+
+The next story to promote after `US-041` is `US-042 / RF-024`.

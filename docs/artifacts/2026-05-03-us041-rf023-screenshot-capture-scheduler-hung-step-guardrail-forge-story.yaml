@@ -1,0 +1,78 @@
+story:
+  id: US-041
+  refactor: RF-023
+  title: Screenshot Capture Scheduler And Hung-Step Guardrail
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-03
+  forge_required: true
+
+problem: >
+  Screenshot capture paths can overlap during workflow execution. The HITL UI
+  live push loop, rolling debug timer, on-demand UI/MCP captures, workflow
+  evidence screenshots, and browser-use action screenshots can create Playwright
+  encoding contention and rolling debug growth during a stalled workflow step.
+
+scope:
+  includes:
+    - Add a shared screenshot capture scheduler for Node runtime screenshot paths.
+    - Collapse duplicate UI live-frame requests while a capture is already in flight.
+    - Prioritize explicit workflow evidence screenshots above UI live frames and rolling debug frames.
+    - Route MCP screenshots through the scheduler while preserving existing policy gates.
+    - Route rolling debug captures through the scheduler.
+    - Add hung-step guardrail for rolling debug capture.
+    - Pause or sharply throttle rolling debug frames after the same step exceeds a bounded duration.
+    - Reset the hung-step guardrail on workflow step advance.
+    - Preserve US-038 sensitive-phase blocking and redaction.
+    - Emit byte-free scheduler telemetry for queued, collapsed, executed, throttled, and skipped captures.
+    - Set top-level stepId on screenshot telemetry where current workflow step is known.
+  excludes:
+    - US-040 deterministic Reddit duplicate evidence implementation.
+    - US-042 post-task 120s screenshot TTL cleanup.
+    - Screenshot payload shape changes from US-036.
+    - Durable base64 sanitization changes from US-037.
+    - Evidence audit schema changes from US-039 except tiny additive telemetry/context fields if required.
+    - Broad browser-use Python bridge refactors.
+    - Encryption-at-rest or historical migration.
+
+acceptance:
+  - Concurrent UI live-frame requests do not launch duplicate page.screenshot calls.
+  - Collapsed UI requests preserve stable UI behavior.
+  - Workflow evidence screenshot requests are not starved by UI or rolling captures.
+  - MCP screenshot requests use the same scheduler and existing screenshot policy gate.
+  - Rolling debug capture is paused or throttled after the same step exceeds the hung threshold.
+  - Step advance resets the hung-step rolling guardrail.
+  - Sensitive-phase blocking/redaction behavior from US-038 remains compatible.
+  - Screenshot telemetry includes top-level stepId where the current workflow step is known.
+  - Scheduler telemetry is byte-free and records queued/collapsed/executed/throttled/skipped decisions.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused session/UI/MCP/workflow tests pass.
+
+definition_of_done: >
+  Done means screenshot capture is coordinated so redundant live/debug captures
+  collapse or yield to higher-priority evidence, rolling debug capture cannot
+  grow unchecked during hung steps, and telemetry reflects scheduler decisions
+  without leaking image bytes.
+
+evidence_required:
+  - prd.json updated with US-041.
+  - docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md updated with RF-023.
+  - Focused tests for UI collapse, priority ordering, MCP scheduling, rolling hung-step throttle, step-advance reset, and top-level stepId telemetry.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json passed
+    - pnpm run typecheck passed
+    - pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/engine.test.ts passed
+  recommended:
+    - pnpm test when shared session or workflow contracts are touched broadly
+
+source_artifacts:
+  incident_debrief: docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md
+  story_plan: docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md
+  capture_gate_story: docs/artifacts/2026-05-02-us038-rf020-screenshot-capture-policy-gate-storyline.md
+  retention_story: docs/artifacts/2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-storyline.md

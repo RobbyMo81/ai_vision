@@ -411,3 +411,78 @@ Evidence deletion now records `pending_deletion`, verifies filesystem unlink, th
 - `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts` → 2/2 suites, 7/7 tests passed
 
 ---
+
+## H-040 — US-040 / RF-022: Deterministic Reddit Duplicate Evidence Producer
+
+**Date:** 2026-05-03
+**Story:** US-040 / RF-022
+**Status:** PASS
+**Gate Layer Phase:** Direct Reddit Duplicate Evidence
+
+### Summary
+
+Implemented a deterministic duplicate-evidence producer for the direct `post_to_reddit` workflow.
+
+The direct engine now special-cases `check_duplicate_reddit_post` for the canonical direct Reddit workflow, navigates to `/r/{subreddit}/new`, collects bounded visible titles with selector fallback, computes word-level Jaccard scores in TypeScript, renders the existing four-line evidence contract, and navigates back to `/r/{subreddit}/submit` before downstream steps continue. The existing parser and `submit_reddit_post` gate remain unchanged, so missing evidence and duplicate risk still fail closed.
+
+The agentic Reddit workflow remains untouched in this story. The new direct-path helper keeps near-match scores visible in `OVERLAP_SCORES` without creating a third canonical result value.
+
+### Files Touched
+
+- `src/workflow/reddit-duplicate.ts`
+- `src/workflow/engine.ts`
+- `src/workflow/engine.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-forge-story.yaml`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/workflow/engine.test.ts` → 1/1 suites, 73/73 tests passed
+
+---
+
+## H-041 — US-041 / RF-023: Screenshot Capture Scheduler And Hung-Step Guardrail
+
+**Date:** 2026-05-03
+**Story:** US-041 / RF-023
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Session Runtime Coordination
+
+### Summary
+
+Implemented a session-owned screenshot scheduler and rolling hung-step guardrail for Node-side screenshot capture paths.
+
+`SessionManager.captureScreenshot(...)` now routes UI, MCP, workflow, and rolling captures through a shared in-memory scheduler that serializes capture work, collapses duplicate UI live-frame requests while a live capture is already in flight, and preserves priority for explicit workflow evidence screenshots over queued lower-priority requests. Rolling debug capture now tracks the active workflow step and throttles when the same step remains active beyond the hung threshold, then resets when the workflow advances.
+
+The existing screenshot policy gate from US-038 remains the authority for allow/redact/block/evidence decisions. Scheduler telemetry is byte-free, and screenshot telemetry now sets top-level `stepId` when the active step is known.
+
+### Files Touched
+
+- `src/session/screenshot-scheduler.ts`
+- `src/session/manager.ts`
+- `src/session/manager.test.ts`
+- `src/ui/server.ts`
+- `src/ui/server.test.ts`
+- `src/mcp/server.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-forge-story.yaml`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/engine.test.ts` → 4/4 suites, 114/114 tests passed
+
+---

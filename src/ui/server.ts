@@ -693,6 +693,7 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
           source: 'session_manager',
           accessPath: 'ui',
           state,
+          requestKind: 'ui_live',
         });
         broadcast({
           type: 'screenshot',
@@ -885,6 +886,7 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
         source: 'session_manager',
         accessPath: 'ui',
         state: current,
+        requestKind: 'ui_on_demand',
       })
         .then((screenshot) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });

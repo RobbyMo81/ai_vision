@@ -67,6 +67,10 @@ describe('captureBrowserScreenshotForMcp', () => {
 
     const result = await captureBrowserScreenshotForMcp();
 
+    expect(sessionManager.captureScreenshot).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'mcp',
+      accessPath: 'mcp',
+    }));
     expect(result.content).toHaveLength(1);
     expect(result.content[0]).toMatchObject({ type: 'text' });
     expect(String(result.content[0].text)).toContain('sensitive_blocked');

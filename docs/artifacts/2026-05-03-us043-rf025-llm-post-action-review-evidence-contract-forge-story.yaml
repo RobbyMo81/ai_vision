@@ -1,0 +1,76 @@
+story:
+  id: US-043
+  refactor: RF-025
+  title: LLM Post-Action Review Evidence Contract
+  status: proposed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-03
+  forge_required: true
+  hitl_review_required: true
+
+problem: >
+  A live Reddit workflow on 2026-05-03 successfully published a post, and
+  browser-use correctly interpreted the created post id and canonical comments
+  URL, but the deterministic browser postcondition marked the workflow failed
+  because Reddit redirected to r/test with ?created=t3_... instead of leaving
+  the browser on /comments/. The system is not yet using LLM post-action review
+  as structured evidence for deterministic gates.
+
+scope:
+  includes:
+    - Define a typed post-action review evidence contract for side-effecting LLM/browser-use steps.
+    - Parse browser-use final output into structured post-action evidence when available.
+    - Preserve deterministic gates as final authority while allowing LLM evidence to corroborate messy UI success states.
+    - Extend Reddit submit postcondition handling for /comments/ URLs and ?created=t3_... redirects.
+    - Route LLM-success/deterministic-failure disagreements to HITL review with structured context.
+    - Emit byte-free telemetry for accepted, rejected, and HITL-escalated post-action evidence.
+    - Preserve duplicate-check, approval, screenshot, and existing browser postcondition gates.
+  excludes:
+    - Giving LLM output unchecked authority over irreversible-action success.
+    - Removing deterministic browser postconditions.
+    - Broad rewrites for non-Reddit platforms.
+    - US-042 post-task screenshot TTL cleanup.
+    - Browser-use dependency upgrades.
+
+acceptance:
+  - Side-effecting agent_task results can carry structured post-action review evidence.
+  - Reddit submit accepts current /comments/<id> URLs as success.
+  - Reddit submit accepts ?created=t3_<id> redirects only when matching title/body or canonical URL evidence corroborates creation.
+  - Malformed or missing LLM review evidence cannot bypass deterministic gates.
+  - LLM-success/deterministic-failure disagreement enters HITL review instead of a blind terminal failure.
+  - HITL review state includes step id, deterministic failure reason, LLM success signal, current URL, canonical URL, and match status where available.
+  - Telemetry is byte-free and records post-action evidence accepted, rejected, or escalated.
+  - Existing duplicate-check, approval, and postcondition tests continue to pass.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused workflow/UI tests pass.
+
+definition_of_done: >
+  Done means LLM/browser-use post-action reasoning is captured as typed,
+  auditable evidence that deterministic postcondition gates can corroborate,
+  reject, or escalate to HITL without treating the LLM as unchecked authority.
+
+evidence_required:
+  - Runtime contract and parser code for post-action review evidence.
+  - Reddit submit postcondition tests for /comments/, ?created=t3_..., missing evidence, malformed evidence, and HITL escalation.
+  - HITL review state or telemetry proving disagreements are surfaced to operators.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - pnpm test -- --runInBand src/workflow/engine.test.ts src/ui/server.test.ts
+  recommended:
+    - pnpm test when shared workflow or HITL contracts are touched broadly
+
+source_evidence:
+  live_run_date: 2026-05-03
+  workflow: post_to_reddit
+  observed_post_id: t3_1t2zy4d
+  observed_canonical_url: https://www.reddit.com/r/test/comments/1t2zy4d/
+  false_failure: "Browser postcondition failed for step 'submit_reddit_post': expected_url_missing"
+  current_url_after_submit: https://www.reddit.com/r/test/
+

@@ -913,3 +913,71 @@ Validation:
 - Files touched: `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md`, `progress.txt`.
 - Acceptance criteria: define which stories will be implemented; specify scope, required behavior, acceptance criteria, out-of-scope boundaries, and Forge promotion checklist; save the plan as a new document.
 - Final validation result: documentation-only planning update; no runtime code changed, so `pnpm run typecheck` and test suites were not run.
+
+[2026-05-03] US-040 / RF-022 - Forge Workflow Seed Created - Deterministic Reddit Duplicate Evidence Producer
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-storyline.md`
+  - `2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-forge-story.yaml`
+  - `2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-implementation-handoff.md`
+  - `2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-definition-of-done.md`
+- Added `US-040` to `prd.json` with `passes: false`.
+- Added `RF-022` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Updated `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md` to mark `US-040 / RF-022` promoted and point to the handoff package.
+- Summary of Work: converted the deterministic Reddit duplicate evidence producer into a Forge-ready implementation handoff covering bounded Reddit title extraction, selector fallback, word-level Jaccard scoring, duplicate-risk threshold `>= 0.70`, near-match metadata, fail-closed DOM drift behavior, existing parser compatibility, and preservation of the `submit_reddit_post` duplicate evidence gate.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; story plan points to the promoted package; the handoff includes an explicit Forge directive, AI agent prompt, YAML story card, and definition of done; runtime behavior remains unchanged in this seeding step.
+- Final validation result: documentation/governance seed only; `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] US-040 / RF-022 — PASS — Deterministic Reddit Duplicate Evidence Producer
+- What changed: added `src/workflow/reddit-duplicate.ts` for bounded Reddit title filtering, normalization, Jaccard scoring, and evidence rendering; updated `src/workflow/engine.ts` so the canonical direct `post_to_reddit` `check_duplicate_reddit_post` step now runs deterministically through TypeScript/Playwright instead of dispatching to `browser-use`; added focused regression coverage in `src/workflow/engine.test.ts` for normalization, duplicate threshold, near-match behavior, selector fallback, zero-title fail-closed behavior, and direct-path worker bypass.
+- Files touched: `src/workflow/reddit-duplicate.ts`, `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-03-us040-rf022-deterministic-reddit-duplicate-evidence-forge-story.yaml`, `docs/architecture/as-built_execution_atlas.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: direct `post_to_reddit` no longer uses `browser-use` for `check_duplicate_reddit_post`; deterministic output still passes the existing parser; titles are bounded and filtered through the documented selector strategy; `score >= 0.70` yields `DUPLICATE_RISK` plus `MATCHING_TITLE`; `0.50 <= score < 0.70` remains visible only as score metadata; zero usable titles fail closed; existing missing-evidence and duplicate-risk submit gates remain intact.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; `pnpm test -- --runInBand src/workflow/engine.test.ts` passed 1/1 suites and 73/73 tests.
+
+[2026-05-03] US-040 / RF-022 Independent Verification
+- What changed: independently inspected `src/workflow/reddit-duplicate.ts`, the `src/workflow/engine.ts` deterministic hook, focused tests, PRD/tracker/history/progress governance surfaces, Forge memory story state/discoveries, and the reported repo-memory note.
+- Files touched: `progress.txt`.
+- Acceptance criteria: verify whether the reported US-040 implementation and closeout are materially correct; identify any residual risks or cleanup issues before moving to US-041.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; `pnpm test -- --runInBand src/workflow/engine.test.ts` passed 1/1 suites and 73/73 tests, but emitted a stray `console.log` from `src/workflow/engine.test.ts`; residual findings recorded in the final investigation response.
+
+[2026-05-03] US-040 / RF-022 Cleanup - Deterministic Bypass Before Routing
+- What changed: moved the direct `post_to_reddit` deterministic `check_duplicate_reddit_post` bypass ahead of `routeAgentTask(...)` in `src/workflow/engine.ts` so the engine no longer emits `workflow.agent_task.routed` or publishes `check_duplicate_reddit_post -> browser-use` state for the deterministic path; removed the stray telemetry `console.log` from `src/workflow/engine.test.ts`; added a focused regression assertion that the deterministic duplicate-check step never emits browser-use routing telemetry.
+- Files touched: `src/workflow/engine.ts`, `src/workflow/engine.test.ts`, `progress.txt`.
+- Acceptance criteria: deterministic duplicate evidence bypass occurs before worker routing state is derived; UI/telemetry no longer report `browser-use` for the direct deterministic duplicate-check step; focused tests remain green without noisy debug output.
+- Final validation result: `pnpm test -- --runInBand src/workflow/engine.test.ts` passed 1/1 suites and 73/73 tests.
+
+[2026-05-03] US-040 / RF-022 Cleanup Confirmation
+- What changed: independently confirmed the build agent cleanup report for the deterministic Reddit duplicate-check follow-up.
+- Files touched: `progress.txt`.
+- Acceptance criteria: verify the bypass now occurs before `routeAgentTask(...)`; verify the stray telemetry `console.log` is removed; verify the regression assertion prevents browser-use routing telemetry for the deterministic direct path; verify focused tests pass cleanly.
+- Final validation result: `pnpm test -- --runInBand src/workflow/engine.test.ts` passed 1/1 suites and 73/73 tests with no debug telemetry dump.
+
+[2026-05-03] US-041 / RF-023 - Forge Workflow Seed Created - Screenshot Capture Scheduler And Hung-Step Guardrail
+- Created four Forge artifacts under `docs/artifacts/`:
+  - `2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-storyline.md`
+  - `2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-forge-story.yaml`
+  - `2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-implementation-handoff.md`
+  - `2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-definition-of-done.md`
+- Added `US-041` to `prd.json` with `passes: false`.
+- Added `RF-023` to `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md` with status `Proposed`.
+- Updated `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md` to mark `US-041 / RF-023` promoted and point to the handoff package.
+- Summary of Work: converted the screenshot capture scheduler and hung-step guardrail plan into a Forge-ready implementation handoff covering UI live-frame request collapse, capture priority, MCP/rolling scheduler routing, US-038 policy compatibility, rolling debug throttle/pause after a hung-step threshold, step-advance reset, byte-free scheduler telemetry, and top-level screenshot telemetry step ids.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; story plan points to the promoted package; the handoff includes an explicit Forge directive, AI agent prompt, YAML story card, and definition of done; runtime behavior remains unchanged in this seeding step.
+- Final validation result: documentation/governance seed only; `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] US-041 / RF-023 — PASS — Screenshot Capture Scheduler And Hung-Step Guardrail
+- What changed: added `src/session/screenshot-scheduler.ts` to serialize Node-side screenshot capture with priority ordering and UI live-frame collapse; updated `src/session/manager.ts` so UI, MCP, workflow evidence, and rolling debug captures all route through the scheduler while the existing screenshot policy gate remains authoritative; added a rolling hung-step guardrail that throttles rolling debug capture after the same step exceeds the threshold and resets on step advance; updated `src/ui/server.ts` so live push and on-demand UI requests declare their scheduler intent; added focused regressions in `src/session/manager.test.ts`, `src/ui/server.test.ts`, and `src/mcp/server.test.ts` for live-frame collapse, workflow-evidence priority, rolling hung-step throttling, top-level screenshot `stepId` telemetry, and UI/MCP scheduler routing.
+- Files touched: `src/session/screenshot-scheduler.ts`, `src/session/manager.ts`, `src/session/manager.test.ts`, `src/ui/server.ts`, `src/ui/server.test.ts`, `src/mcp/server.test.ts`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-forge-story.yaml`, `docs/architecture/as-built_execution_atlas.md`, `docs/history/forge_history.md`, `docs/history/history_index.md`, `progress.txt`.
+- Acceptance criteria: concurrent UI live-frame requests no longer launch duplicate `page.screenshot()` calls; collapsed UI requests keep stable behavior by sharing the in-flight capture result; workflow evidence captures are prioritized over queued lower-priority requests; MCP screenshots continue through the same gate path; rolling debug capture throttles after the hung-step threshold and resets on step advance; sensitive blocking/redaction behavior remains compatible; screenshot telemetry now sets top-level `stepId` where known; scheduler telemetry is byte-free and records queued, collapsed, executed, throttled, and skipped decisions.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/engine.test.ts` passed 4/4 suites and 114/114 tests.
+
+[2026-05-03] US-041 / RF-023 Independent Verification
+- What changed: independently verified the completed US-041 implementation against the Forge story, definition of done, PRD closeout, tracker/history entries, source wiring, regression tests, and focused validation commands. No corrective code change was required.
+- Files touched: `progress.txt`.
+- Acceptance criteria: confirmed the shared scheduler serializes Node screenshot work, collapses concurrent UI live captures, prioritizes workflow evidence over queued lower-priority captures, routes UI/MCP/workflow/rolling through `SessionManager.captureScreenshot(...)`, throttles rolling debug after the hung-step threshold, resets on step advance, preserves US-038 policy decisions, emits byte-free scheduler telemetry with top-level `stepId`, and leaves US-042 post-task TTL cleanup out of scope.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; `pnpm test -- --runInBand src/session/manager.test.ts src/ui/server.test.ts src/mcp/server.test.ts src/workflow/engine.test.ts` passed 4/4 suites and 114/114 tests.
+
+[2026-05-03] US-043 / RF-025 - Forge Workflow Seed Created - LLM Post-Action Review Evidence Contract
+- What changed: created a separate Forge handoff package for HITL review of LLM post-action evidence. The story captures the 2026-05-03 Reddit false-negative outcome where browser-use correctly identified a successful post and canonical URL, but the deterministic postcondition rejected Reddit's `?created=t3_...` redirect. `US-042 / RF-024` remains reserved for post-task screenshot TTL cleanup.
+- Files touched: `docs/artifacts/2026-05-03-us043-rf025-llm-post-action-review-evidence-contract-storyline.md`, `docs/artifacts/2026-05-03-us043-rf025-llm-post-action-review-evidence-contract-forge-story.yaml`, `docs/artifacts/2026-05-03-us043-rf025-llm-post-action-review-evidence-contract-implementation-handoff.md`, `docs/artifacts/2026-05-03-us043-rf025-llm-post-action-review-evidence-contract-definition-of-done.md`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `progress.txt`.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; story explicitly requires HITL review, structured LLM post-action evidence, deterministic corroboration, Reddit `?created=t3_<id>` handling, disagreement escalation to HITL, and byte-free telemetry; runtime behavior remains unchanged in this seeding step.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.

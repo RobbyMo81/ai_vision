@@ -40,6 +40,12 @@ import {
   StepResult,
   AgentTaskStep,
 } from './types';
+import {
+  buildRedditOverlapScores,
+  collectUsableRedditTitles,
+  REDDIT_DUPLICATE_TITLE_SELECTORS,
+  renderRedditDuplicateEvidence,
+} from './reddit-duplicate';
 import { getGeminiWriter } from '../content/gemini-writer';
 import type { SocialPublishOutcome } from '../session/types';
 import { registry } from '../engines/registry';
@@ -420,6 +426,86 @@ function parseRedditDuplicateEvidence(output: string): RedditDuplicateEvidence {
   }
 
   return { result, extractedTitles, overlapScores, matchingTitle, errors };
+}
+
+async function collectRedditTitlesFromSelector(
+  page: import('playwright-core').Page,
+  selector: string,
+): Promise<string[]> {
+  const rawTitles = await page.evaluate((activeSelector) => {
+    return Array.from(document.querySelectorAll(activeSelector))
+      .map(node => node.textContent ?? '')
+      .map(text => text.trim())
+      .filter(Boolean);
+  }, selector);
+
+  return collectUsableRedditTitles(rawTitles);
+}
+
+async function executeDeterministicRedditDuplicateCheck(params: Record<string, unknown>): Promise<{
+  success: boolean;
+  output?: string;
+  error?: string;
+}> {
+  const subreddit = String(params['subreddit'] ?? '').trim();
+  const candidateTitle = String(params['post_title'] ?? '').trim();
+
+  if (!subreddit) {
+    return {
+      success: false,
+      error: 'Deterministic Reddit duplicate check requires subreddit parameter.',
+    };
+  }
+
+  if (!candidateTitle) {
+    return {
+      success: false,
+      error: 'Deterministic Reddit duplicate check requires post_title parameter.',
+    };
+  }
+
+  const newUrl = `https://www.reddit.com/r/${subreddit}/new`;
+  const submitUrl = `https://www.reddit.com/r/${subreddit}/submit`;
+  await sessionManager.navigate(newUrl, 'domcontentloaded');
+
+  const page = await sessionManager.getPage();
+  let collectedTitles: string[] = [];
+
+  for (const selector of REDDIT_DUPLICATE_TITLE_SELECTORS) {
+    collectedTitles = await collectRedditTitlesFromSelector(page, selector);
+    if (collectedTitles.length > 0) break;
+  }
+
+  if (collectedTitles.length === 0) {
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+
+    for (const selector of REDDIT_DUPLICATE_TITLE_SELECTORS) {
+      collectedTitles = await collectRedditTitlesFromSelector(page, selector);
+      if (collectedTitles.length > 0) break;
+    }
+  }
+
+  if (collectedTitles.length === 0) {
+    await sessionManager.navigate(submitUrl, 'domcontentloaded').catch(() => undefined);
+    return {
+      success: false,
+      error: 'Deterministic Reddit duplicate check failed closed: no usable titles collected.',
+    };
+  }
+
+  const overlapScores = buildRedditOverlapScores(candidateTitle, collectedTitles);
+  const output = renderRedditDuplicateEvidence({
+    extractedTitles: collectedTitles,
+    overlapScores,
+  });
+
+  await sessionManager.navigate(submitUrl, 'domcontentloaded');
+  return {
+    success: true,
+    output,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1396,6 +1482,35 @@ async function executeStep(
           );
         }
 
+        // Fail loudly if any {{key}} placeholders survived substitution —
+        // this means a required upstream output was never produced.
+        const unresolvedVars = sub.prompt.match(/\{\{(\w+)\}\}/g);
+        if (unresolvedVars && unresolvedVars.length > 0) {
+          const missingKeys = unresolvedVars.map(v => v.replace(/\{\{|\}\}/g, ''));
+          const lossMsg = `agent_task step '${sub.id}' has unresolved template variables: ${missingKeys.join(', ')}. Payload was lost before this step.`;
+          telemetry.emit({
+            source: 'workflow',
+            name: 'workflow.llm_layer.payload_loss',
+            level: 'error',
+            sessionId: telemetryContext.sessionId,
+            workflowId: telemetryContext.workflowId,
+            stepId: sub.id,
+            details: { missingKeys, prompt: sub.prompt.slice(0, 300) },
+          });
+          return { stepId: sub.id, success: false, error: lossMsg, durationMs: Date.now() - start };
+        }
+
+        if (telemetryContext.workflowId === 'post_to_reddit' && sub.id === 'check_duplicate_reddit_post') {
+          const duplicateCheckResult = await executeDeterministicRedditDuplicateCheck(params);
+          return {
+            stepId: sub.id,
+            success: duplicateCheckResult.success,
+            output: duplicateCheckResult.output,
+            error: duplicateCheckResult.error,
+            durationMs: Date.now() - start,
+          };
+        }
+
         const engineId = await routeAgentTask(sub.prompt, sub.engine);
         telemetry.emit({
           source: 'engine',
@@ -1419,24 +1534,6 @@ async function executeStep(
         const enhancedPrompt = useRawPrompt
           ? sub.prompt
           : buildEnhancedPrompt(sub.prompt, memorySection, guardedFields);
-
-        // Fail loudly if any {{key}} placeholders survived substitution —
-        // this means a required upstream output was never produced.
-        const unresolvedVars = sub.prompt.match(/\{\{(\w+)\}\}/g);
-        if (unresolvedVars && unresolvedVars.length > 0) {
-          const missingKeys = unresolvedVars.map(v => v.replace(/\{\{|\}\}/g, ''));
-          const lossMsg = `agent_task step '${sub.id}' has unresolved template variables: ${missingKeys.join(', ')}. Payload was lost before this step.`;
-          telemetry.emit({
-            source: 'workflow',
-            name: 'workflow.llm_layer.payload_loss',
-            level: 'error',
-            sessionId: telemetryContext.sessionId,
-            workflowId: telemetryContext.workflowId,
-            stepId: sub.id,
-            details: { missingKeys, prompt: sub.prompt.slice(0, 300) },
-          });
-          return { stepId: sub.id, success: false, error: lossMsg, durationMs: Date.now() - start };
-        }
 
         // US-031 / RF-013 — agent_task side-effect safety boundary.
         // Classify the resolved prompt intent before worker dispatch.  Only

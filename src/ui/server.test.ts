@@ -544,6 +544,13 @@ describe('GET /api/screenshot — binding and policy gate', () => {
     const result = await makeGetRequest(port, '/api/screenshot?sessionId=sess-shot&clientId=');
     expect(result.status).toBe(200);
     expect((result.data as { base64?: string }).base64).toBeUndefined();
+    const sessionModule = jest.requireMock('../session/manager') as {
+      sessionManager: { captureScreenshot: jest.Mock };
+    };
+    expect(sessionModule.sessionManager.captureScreenshot).toHaveBeenCalledWith(expect.objectContaining({
+      accessPath: 'ui',
+      requestKind: 'ui_on_demand',
+    }));
     expect((result.data as { screenshot: { class: string; blockedReason: string; nextAction: string } }).screenshot).toMatchObject({
       class: 'sensitive_blocked',
       blockedReason: 'pii_wait_active',

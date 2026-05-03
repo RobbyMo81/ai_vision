@@ -646,6 +646,83 @@
       "definitionOfDone": "Done means non-evidence screenshot files are cleaned up according to retention policy, cleanup failures are durable and retryable, and retained evidence screenshots have stable identity plus verified who/what/when/why audit trails.",
       "technicalNotes": "Derived from docs/debriefs/2026-05-02-screenshot-retention-cleanup-evidence-audit-scratch-pad.md and the edge-case reconciliation findings. Keep this story scoped to retention cleanup, scavenger, failed-deletion retry, and evidence audit. Do not reopen US-036, US-037, or US-038 behavior.",
       "safetyGates": []
+    },
+    {
+      "id": "US-040",
+      "title": "Deterministic Reddit Duplicate Evidence Producer",
+      "priority": 1,
+      "passes": true,
+      "description": "Replace the direct Reddit duplicate-check browser-use producer with deterministic TypeScript/Playwright title collection and bounded Jaccard scoring while preserving the existing evidence contract and submit gate.",
+      "acceptance": [
+        "Direct post_to_reddit no longer uses browser-use for check_duplicate_reddit_post evidence production",
+        "The deterministic output passes the existing Reddit duplicate evidence parser",
+        "EXTRACTED_TITLES contains the bounded collected titles",
+        "OVERLAP_SCORES contains title and score objects for collected titles",
+        "Any score >= 0.70 yields DUPLICATE_CHECK_RESULT: DUPLICATE_RISK and MATCHING_TITLE",
+        "Scores >= 0.50 and < 0.70 remain visible but do not create a third canonical result",
+        "Scores < 0.50 yield DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND",
+        "Zero usable titles, selector drift, or navigation failure fails closed and blocks submit",
+        "Existing submit_reddit_post missing-evidence and duplicate-risk gates remain intact",
+        "Screenshot capture scheduler and post-task TTL cleanup remain out of scope",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused workflow tests pass"
+      ],
+      "exitCriteria": "Exit only when direct post_to_reddit produces deterministic duplicate-check evidence without browser-use for check_duplicate_reddit_post, the existing parser and submit gate still enforce duplicate safety, DOM drift fails closed, and focused validation passes.",
+      "definitionOfDone": "Done means the direct Reddit workflow can deterministically collect recent subreddit titles, compute bounded Jaccard duplicate evidence, and feed the existing submit gate without relying on browser-use for the duplicate-check evidence producer.",
+      "technicalNotes": "Derived from docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md and docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md. Keep this story scoped to deterministic Reddit duplicate evidence production; do not implement the screenshot capture scheduler, post-task TTL cleanup, or agentic retirement here.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-041",
+      "title": "Screenshot Capture Scheduler And Hung-Step Guardrail",
+      "priority": 1,
+      "passes": true,
+      "description": "Coordinate screenshot capture requests through a scheduler so UI live frames, MCP requests, workflow evidence screenshots, and rolling debug frames do not create avoidable capture contention or unbounded debug growth during stalled workflow steps.",
+      "acceptance": [
+        "Concurrent UI live-frame requests do not launch duplicate page.screenshot calls",
+        "Collapsed UI requests preserve stable UI behavior",
+        "Workflow evidence screenshot requests are not starved by UI or rolling captures",
+        "MCP screenshot requests use the same scheduler and existing screenshot policy gate",
+        "Rolling debug capture is paused or throttled after the same step exceeds the hung threshold",
+        "Step advance resets the hung-step rolling guardrail",
+        "Sensitive-phase blocking and redaction behavior from US-038 remains compatible",
+        "Screenshot telemetry includes top-level stepId where the current workflow step is known",
+        "Scheduler telemetry is byte-free and records queued, collapsed, executed, throttled, and skipped decisions",
+        "Post-task 120s screenshot TTL cleanup remains out of scope",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused session/UI/MCP/workflow tests pass"
+      ],
+      "exitCriteria": "Exit only when screenshot capture requests are coordinated through a scheduler, duplicate live/debug captures collapse or yield to higher-priority evidence, rolling debug capture is paused or throttled during hung steps, telemetry reflects scheduler decisions without screenshot bytes, and focused validation passes.",
+      "definitionOfDone": "Done means screenshot capture is coordinated so redundant live/debug captures no longer create avoidable contention, evidence screenshots are prioritized, rolling debug capture cannot grow unchecked during hung steps, and existing screenshot policy behavior remains intact.",
+      "technicalNotes": "Derived from docs/debriefs/2026-05-03-reddit-duplicate-check-stall-blast-radius.md and docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md. Keep this story scoped to capture scheduling and hung-step rolling guardrails; do not implement US-042 post-task TTL cleanup here.",
+      "safetyGates": []
+    },
+    {
+      "id": "US-043",
+      "title": "LLM Post-Action Review Evidence Contract",
+      "priority": 1,
+      "passes": false,
+      "description": "Capture LLM/browser-use post-action reasoning as structured evidence that deterministic workflow gates can corroborate, reject, or escalate to HITL review after irreversible browser side effects.",
+      "acceptance": [
+        "Side-effecting agent_task results can carry structured post-action review evidence",
+        "Reddit submit accepts current /comments/<id> URLs as success",
+        "Reddit submit accepts ?created=t3_<id> redirects only when matching title/body or canonical URL evidence corroborates creation",
+        "Malformed or missing LLM review evidence cannot bypass deterministic gates",
+        "LLM-success/deterministic-failure disagreement enters HITL review instead of a blind terminal failure",
+        "HITL review state includes step id, deterministic failure reason, LLM success signal, current URL, canonical URL, and match status where available",
+        "Telemetry is byte-free and records post-action evidence accepted, rejected, or escalated",
+        "Existing duplicate-check, approval, and postcondition tests continue to pass",
+        "US-042 post-task screenshot TTL cleanup remains out of scope",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused workflow/UI tests pass"
+      ],
+      "exitCriteria": "Exit only when the workflow kernel can use structured LLM post-action review as corroborating evidence for Reddit submit outcomes, false failures caused by Reddit created-post redirects are eliminated, and disagreements route to HITL review with enough context for an operator to decide.",
+      "definitionOfDone": "Done means LLM/browser-use post-action reasoning is captured as typed, auditable evidence that deterministic postcondition gates can corroborate, reject, or escalate to HITL without treating the LLM as unchecked authority.",
+      "technicalNotes": "Created after the 2026-05-03 live r/test status-update run posted successfully but failed the workflow because Reddit redirected to /r/test/?created=t3_1t2zy4d instead of leaving the browser on /comments/. Keep US-042 reserved for post-task screenshot TTL cleanup.",
+      "safetyGates": []
     }
   ]
 }

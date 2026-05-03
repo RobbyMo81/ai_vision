@@ -13,6 +13,22 @@ jest.mock('../telemetry', () => ({
   },
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(times = 2): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+}
+
 function makeState(overrides: Partial<SessionState> = {}): SessionState {
   return {
     id: 'sess-test',
@@ -118,6 +134,174 @@ describe('SessionManager screenshot policy', () => {
     for (const [event] of (telemetry.emit as jest.Mock).mock.calls) {
       expect(JSON.stringify(event.details ?? {})).not.toContain(payload.base64 ?? '');
     }
+  });
+
+  it('collapses concurrent UI live-frame requests onto one screenshot capture', async () => {
+    const screenshotDeferred = deferred<Buffer>();
+    const page = {
+      url: jest.fn(() => 'https://example.test/live'),
+      screenshot: jest.fn().mockImplementation(() => screenshotDeferred.promise),
+      locator: jest.fn(),
+    };
+    jest.spyOn(manager, 'getPage').mockResolvedValue(page as never);
+    jest.spyOn(manager, 'currentUrl').mockResolvedValue('https://example.test/live');
+
+    const firstPromise = manager.captureScreenshot({
+      source: 'session_manager',
+      accessPath: 'ui',
+      requestKind: 'ui_live',
+      state: makeState({ currentStep: 'step-live' }),
+    });
+    const secondPromise = manager.captureScreenshot({
+      source: 'session_manager',
+      accessPath: 'ui',
+      requestKind: 'ui_live',
+      state: makeState({ currentStep: 'step-live' }),
+    });
+
+    await flushMicrotasks();
+    expect(page.screenshot).toHaveBeenCalledTimes(1);
+
+    screenshotDeferred.resolve(Buffer.from('live-frame'));
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(first.base64).toBe(Buffer.from('live-frame').toString('base64'));
+    expect(second.base64).toBe(first.base64);
+    expect((telemetry.emit as jest.Mock).mock.calls).toContainEqual([
+      expect.objectContaining({
+        name: 'session.screenshot.scheduler',
+        stepId: 'step-live',
+        details: expect.objectContaining({ action: 'collapsed', accessPath: 'ui' }),
+      }),
+    ]);
+  });
+
+  it('prioritizes workflow evidence ahead of queued rolling captures', async () => {
+    const firstDeferred = deferred<Buffer>();
+    const secondDeferred = deferred<Buffer>();
+    const thirdDeferred = deferred<Buffer>();
+    const page = {
+      url: jest.fn(() => 'https://example.test/priority'),
+      screenshot: jest.fn()
+        .mockImplementationOnce(() => firstDeferred.promise)
+        .mockImplementationOnce(() => secondDeferred.promise)
+        .mockImplementationOnce(() => thirdDeferred.promise),
+      locator: jest.fn(),
+    };
+    jest.spyOn(manager, 'getPage').mockResolvedValue(page as never);
+    jest.spyOn(manager, 'currentUrl').mockResolvedValue('https://example.test/priority');
+
+    const uiPromise = manager.captureScreenshot({
+      source: 'session_manager',
+      accessPath: 'ui',
+      requestKind: 'ui_live',
+      state: makeState({ currentStep: 'step-priority' }),
+    });
+    const rollingPromise = manager.captureScreenshot({
+      source: 'rolling',
+      accessPath: 'rolling',
+      state: makeState({ currentStep: 'step-priority' }),
+    });
+    const evidencePromise = manager.captureScreenshot({
+      source: 'workflow_step',
+      accessPath: 'workflow',
+      evidenceRequested: true,
+      state: makeState({ currentStep: 'capture-evidence' }),
+    });
+
+    await flushMicrotasks();
+    expect(page.screenshot).toHaveBeenCalledTimes(1);
+
+    firstDeferred.resolve(Buffer.from('ui-frame'));
+    await uiPromise;
+    await flushMicrotasks();
+    expect(page.screenshot).toHaveBeenCalledTimes(2);
+
+    secondDeferred.resolve(Buffer.from('evidence-frame'));
+    const evidence = await evidencePromise;
+    expect(evidence.class).toBe('evidence');
+    await flushMicrotasks();
+    expect(page.screenshot).toHaveBeenCalledTimes(3);
+
+    thirdDeferred.resolve(Buffer.from('rolling-frame'));
+    const rolling = await rollingPromise;
+    expect(rolling.class).toBe('debug_frame');
+  });
+
+  it('throttles rolling debug capture after a step is hung and resets on step advance', async () => {
+    const page = {
+      url: jest.fn(() => 'https://example.test/stuck'),
+      screenshot: jest.fn().mockResolvedValue(Buffer.from('debug-frame')),
+      locator: jest.fn(),
+    };
+    jest.spyOn(manager, 'getPage').mockResolvedValue(page as never);
+    jest.spyOn(manager, 'currentUrl').mockResolvedValue('https://example.test/stuck');
+    const nowSpy = jest.spyOn(Date, 'now');
+
+    nowSpy.mockReturnValue(0);
+    manager.syncSessionState(makeState({ currentStep: 'step-a' }));
+
+    nowSpy.mockReturnValue(1000);
+    const first = await manager.captureScreenshot({
+      source: 'rolling',
+      accessPath: 'rolling',
+      state: makeState({ currentStep: 'step-a' }),
+    });
+    expect(first.base64).toBeDefined();
+
+    nowSpy.mockReturnValue(35000);
+    const throttled = await manager.captureScreenshot({
+      source: 'rolling',
+      accessPath: 'rolling',
+      state: makeState({ currentStep: 'step-a' }),
+    });
+    expect(throttled.base64).toBeUndefined();
+    expect(page.screenshot).toHaveBeenCalledTimes(1);
+
+    manager.handleStepAdvance('step-b');
+
+    nowSpy.mockReturnValue(36000);
+    const resumed = await manager.captureScreenshot({
+      source: 'rolling',
+      accessPath: 'rolling',
+      state: makeState({ currentStep: 'step-b' }),
+    });
+    expect(resumed.base64).toBeDefined();
+    expect(page.screenshot).toHaveBeenCalledTimes(2);
+
+    expect((telemetry.emit as jest.Mock).mock.calls).toContainEqual([
+      expect.objectContaining({
+        name: 'session.screenshot.scheduler',
+        stepId: 'step-a',
+        details: expect.objectContaining({ action: 'throttled', reason: 'hung_step_guardrail' }),
+      }),
+    ]);
+
+    nowSpy.mockRestore();
+  });
+
+  it('emits top-level stepId on screenshot telemetry when the active step is known', async () => {
+    const page = {
+      url: jest.fn(() => 'https://example.test/evidence'),
+      screenshot: jest.fn().mockResolvedValue(Buffer.from('evidence-frame')),
+      locator: jest.fn(),
+    };
+    jest.spyOn(manager, 'getPage').mockResolvedValue(page as never);
+    jest.spyOn(manager, 'currentUrl').mockResolvedValue('https://example.test/evidence');
+
+    await manager.captureScreenshot({
+      source: 'workflow_step',
+      accessPath: 'workflow',
+      evidenceRequested: true,
+      state: makeState({ currentStep: 'capture-step' }),
+    });
+
+    expect((telemetry.emit as jest.Mock).mock.calls).toContainEqual([
+      expect.objectContaining({
+        name: 'session.screenshot.allowed',
+        stepId: 'capture-step',
+      }),
+    ]);
   });
 
   it('records pending and verified deletion audit rows before broadcasting evidence invalidation', () => {

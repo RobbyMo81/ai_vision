@@ -25,6 +25,14 @@ import {
   deleteEvidenceScreenshot,
   runStartupScreenshotScavenger,
 } from './screenshot-retention';
+import { ScreenshotRequestPriority, ScreenshotScheduler } from './screenshot-scheduler';
+
+const DEFAULT_ROLLING_INTERVAL_MS = 5000;
+const DEFAULT_HUNG_STEP_THRESHOLD_MS = 30000;
+const DEFAULT_HUNG_STEP_THROTTLE_MS = 60000;
+
+type ScreenshotAccessPath = 'ui' | 'mcp' | 'workflow' | 'rolling';
+type ScreenshotRequestKind = 'ui_on_demand' | 'ui_live' | 'default';
 
 export interface SessionManagerOptions {
   /** Show the browser window (required for HITL so the user can interact). */
@@ -48,6 +56,11 @@ export class SessionManager extends EventEmitter {
   private _lastSessionState: SessionState | null = null;
   private _sensitiveScreenshotContext: SensitiveScreenshotContext | null = null;
   private readonly _stepScopedFiles = new Map<string, Set<string>>();
+  private readonly _screenshotScheduler = new ScreenshotScheduler();
+  private _rollingStepId: string | null = null;
+  private _rollingStepStartedAt = 0;
+  private _lastRollingCaptureAt = 0;
+  private _rollingIntervalMs = DEFAULT_ROLLING_INTERVAL_MS;
 
   constructor(opts: SessionManagerOptions = {}) {
     super();
@@ -291,7 +304,11 @@ export class SessionManager extends EventEmitter {
   }
 
   syncSessionState(state: SessionState | null): void {
+    const previousStep = this._lastSessionState?.currentStep;
     this._lastSessionState = state;
+    if (state?.currentStep && state.currentStep !== previousStep) {
+      this.resetRollingGuardForStep(state.currentStep);
+    }
   }
 
   setSensitiveScreenshotContext(context: SensitiveScreenshotContext | null): void {
@@ -304,9 +321,10 @@ export class SessionManager extends EventEmitter {
 
   async captureScreenshot(request: {
     source: ScreenshotSource;
-    accessPath: 'ui' | 'mcp' | 'workflow' | 'rolling';
+    accessPath: ScreenshotAccessPath;
     state?: SessionState | null;
     evidenceRequested?: boolean;
+    requestKind?: ScreenshotRequestKind;
   }): Promise<ScreenshotPayload> {
     const state = request.state ?? this._lastSessionState;
     const decision = decideScreenshotPolicy({
@@ -316,8 +334,6 @@ export class SessionManager extends EventEmitter {
       sensitiveContext: this._sensitiveScreenshotContext,
       evidenceRequested: request.evidenceRequested,
     });
-    const page = await this.getPage();
-    const url = await this.currentUrl().catch(() => page.url());
     const basePayload: ScreenshotPayload = {
       id: `${request.source}-${Date.now()}`,
       source: request.source,
@@ -326,10 +342,10 @@ export class SessionManager extends EventEmitter {
       takenAt: new Date().toISOString(),
       sessionId: state?.id,
       stepId: state?.currentStep,
-      url,
       sensitivity: decision.sensitivity,
       retention: decision.retention,
       persistBase64: false,
+      url: state?.currentUrl,
       blockedReason: decision.blockedReason,
       nextAction: decision.nextAction,
       expiresOnStepAdvance: decision.expiresOnStepAdvance,
@@ -337,12 +353,28 @@ export class SessionManager extends EventEmitter {
       redactedSelectors: decision.redactSelectors,
     };
 
+    const priority = this.resolveScreenshotPriority(request);
+    const schedulerContext = {
+      accessPath: request.accessPath,
+      source: request.source,
+      priority,
+      requestKind: request.requestKind ?? 'default',
+      sessionId: state?.id,
+      stepId: state?.currentStep,
+      phase: state?.phase,
+    };
+
     if (!decision.allowed) {
+      this.emitSchedulerDecision('skipped', schedulerContext, {
+        reason: 'policy_blocked',
+        class: decision.class,
+      });
       telemetry.emit({
         source: 'session',
         name: 'session.screenshot.blocked',
         level: 'warn',
         sessionId: state?.id,
+        stepId: state?.currentStep,
         details: {
           accessPath: request.accessPath,
           class: decision.class,
@@ -356,75 +388,116 @@ export class SessionManager extends EventEmitter {
       return basePayload;
     }
 
-    const screenshotOptions: import('playwright-core').PageScreenshotOptions = {
-      type: 'jpeg',
-      quality: request.accessPath === 'rolling' ? 70 : 80,
-    };
+    if (request.accessPath === 'rolling' && this.shouldThrottleRollingCapture(state)) {
+      this.emitSchedulerDecision('throttled', schedulerContext, {
+        reason: 'hung_step_guardrail',
+        hungThresholdMs: DEFAULT_HUNG_STEP_THRESHOLD_MS,
+        throttleMs: DEFAULT_HUNG_STEP_THROTTLE_MS,
+      });
+      return basePayload;
+    }
 
-    if ((decision.redactSelectors ?? []).length > 0) {
-      const maskLocators: Array<import('playwright-core').Locator> = [];
-      for (const selector of decision.redactSelectors ?? []) {
-        const locator = page.locator(selector);
-        const count = await locator.count();
-        if (count === 0) {
-          telemetry.emit({
-            source: 'session',
-            name: 'session.screenshot.redaction_unavailable',
-            level: 'warn',
-            sessionId: state?.id,
-            details: {
-              accessPath: request.accessPath,
-              selector,
-              stepId: state?.currentStep ?? '',
-              source: request.source,
-            },
-          });
-          return {
-            ...basePayload,
-            class: 'sensitive_blocked',
-            sensitivity: 'blocked',
-            retention: 'ephemeral',
-            blockedReason: 'redaction_unavailable',
-            nextAction: 'complete_sensitive_step_via_hitl',
-            expiresOnStepAdvance: undefined,
-            redactionApplied: undefined,
-            redactedSelectors: undefined,
-          };
+    const collapseKey = request.accessPath === 'ui' && request.requestKind === 'ui_live'
+      ? 'ui-live-frame'
+      : undefined;
+
+    return this._screenshotScheduler.schedule({
+      priority,
+      collapseKey,
+      onQueued: (queueDepth) => {
+        this.emitSchedulerDecision('queued', schedulerContext, { queueDepth });
+      },
+      onCollapsed: (queueDepth) => {
+        this.emitSchedulerDecision('collapsed', schedulerContext, { queueDepth, collapseKey });
+      },
+      onExecuted: (queueDepth) => {
+        this.emitSchedulerDecision('executed', schedulerContext, { queueDepth });
+      },
+      run: async () => {
+        const page = await this.getPage();
+        const url = await this.currentUrl().catch(() => page.url());
+        const payload: ScreenshotPayload = {
+          ...basePayload,
+          url,
+        };
+
+        const screenshotOptions: import('playwright-core').PageScreenshotOptions = {
+          type: 'jpeg',
+          quality: request.accessPath === 'rolling' ? 70 : 80,
+        };
+
+        if ((decision.redactSelectors ?? []).length > 0) {
+          const maskLocators: Array<import('playwright-core').Locator> = [];
+          for (const selector of decision.redactSelectors ?? []) {
+            const locator = page.locator(selector);
+            const count = await locator.count();
+            if (count === 0) {
+              this.emitSchedulerDecision('skipped', schedulerContext, {
+                reason: 'redaction_unavailable',
+                selector,
+              });
+              telemetry.emit({
+                source: 'session',
+                name: 'session.screenshot.redaction_unavailable',
+                level: 'warn',
+                sessionId: state?.id,
+                stepId: state?.currentStep,
+                details: {
+                  accessPath: request.accessPath,
+                  selector,
+                  stepId: state?.currentStep ?? '',
+                  source: request.source,
+                },
+              });
+              return {
+                ...payload,
+                class: 'sensitive_blocked',
+                sensitivity: 'blocked',
+                retention: 'ephemeral',
+                blockedReason: 'redaction_unavailable',
+                nextAction: 'complete_sensitive_step_via_hitl',
+                expiresOnStepAdvance: undefined,
+                redactionApplied: undefined,
+                redactedSelectors: undefined,
+              };
+            }
+            maskLocators.push(locator.first());
+          }
+          screenshotOptions.mask = maskLocators;
+          screenshotOptions.maskColor = '#000000';
         }
-        maskLocators.push(locator.first());
-      }
-      screenshotOptions.mask = maskLocators;
-      screenshotOptions.maskColor = '#000000';
-    }
 
-    const buf = await page.screenshot(screenshotOptions);
-    const payload: ScreenshotPayload = {
-      ...basePayload,
-      base64: buf.toString('base64'),
-    };
+        const buf = await page.screenshot(screenshotOptions);
+        payload.base64 = buf.toString('base64');
 
-    if (decision.expiresOnStepAdvance) {
-      payload.path = this.writeStepScopedScreenshot(buf, state?.currentStep);
-    }
+        if (decision.expiresOnStepAdvance) {
+          payload.path = this.writeStepScopedScreenshot(buf, state?.currentStep);
+        }
+        if (request.accessPath === 'rolling') {
+          this._lastRollingCaptureAt = Date.now();
+        }
 
-    telemetry.emit({
-      source: 'session',
-      name: decision.redactionApplied ? 'session.screenshot.redacted' : 'session.screenshot.allowed',
-      sessionId: state?.id,
-      details: {
-        accessPath: request.accessPath,
-        class: decision.class,
-        stepId: state?.currentStep ?? '',
-        phase: state?.phase ?? 'idle',
-        source: request.source,
-        retention: decision.retention,
-        redactionApplied: decision.redactionApplied === true,
-        expiresOnStepAdvance: decision.expiresOnStepAdvance === true,
-        path: payload.path ?? '',
+        telemetry.emit({
+          source: 'session',
+          name: decision.redactionApplied ? 'session.screenshot.redacted' : 'session.screenshot.allowed',
+          sessionId: state?.id,
+          stepId: state?.currentStep,
+          details: {
+            accessPath: request.accessPath,
+            class: decision.class,
+            stepId: state?.currentStep ?? '',
+            phase: state?.phase ?? 'idle',
+            source: request.source,
+            retention: decision.retention,
+            redactionApplied: decision.redactionApplied === true,
+            expiresOnStepAdvance: decision.expiresOnStepAdvance === true,
+            path: payload.path ?? '',
+          },
+        });
+
+        return payload;
       },
     });
-
-    return payload;
   }
 
   async currentUrl(): Promise<string> {
@@ -469,6 +542,7 @@ export class SessionManager extends EventEmitter {
    */
   startScreenshotTimer(intervalMs = 5000): void {
     this.stopScreenshotTimer();
+    this._rollingIntervalMs = intervalMs;
     fs.mkdirSync(this._screenshotDir, { recursive: true });
     this._screenshotTimer = setInterval(async () => {
       if (!this._page || !this._started) return;
@@ -491,6 +565,8 @@ export class SessionManager extends EventEmitter {
         telemetry.emit({
           source: 'session',
           name: 'session.screenshot.rolling',
+          sessionId: payload.sessionId,
+          stepId: payload.stepId,
           details: {
             url,
             file: filepath,
@@ -543,6 +619,7 @@ export class SessionManager extends EventEmitter {
   }
 
   handleStepAdvance(nextStepId?: string): void {
+    this.resetRollingGuardForStep(nextStepId);
     const deletedFiles: string[] = [];
     const failedFiles: string[] = [];
     const repo = new SessionRepository();
@@ -632,6 +709,77 @@ export class SessionManager extends EventEmitter {
     files.add(filepath);
     this._stepScopedFiles.set(resolvedStepId, files);
     return filepath;
+  }
+
+  private resolveScreenshotPriority(request: {
+    accessPath: ScreenshotAccessPath;
+    requestKind?: ScreenshotRequestKind;
+    evidenceRequested?: boolean;
+  }): ScreenshotRequestPriority {
+    if (request.accessPath === 'workflow' || request.evidenceRequested) return 'workflow_evidence';
+    if (request.accessPath === 'mcp') return 'mcp';
+    if (request.accessPath === 'rolling') return 'rolling_debug';
+    if (request.requestKind === 'ui_live') return 'ui_live';
+    return 'ui_on_demand';
+  }
+
+  private emitSchedulerDecision(
+    action: 'queued' | 'collapsed' | 'executed' | 'throttled' | 'skipped',
+    context: {
+      accessPath: ScreenshotAccessPath;
+      source: ScreenshotSource;
+      priority: ScreenshotRequestPriority;
+      requestKind: ScreenshotRequestKind;
+      sessionId?: string;
+      stepId?: string;
+      phase?: SessionState['phase'];
+    },
+    extra: Record<string, unknown> = {},
+  ): void {
+    telemetry.emit({
+      source: 'session',
+      name: 'session.screenshot.scheduler',
+      sessionId: context.sessionId,
+      stepId: context.stepId,
+      details: {
+        action,
+        accessPath: context.accessPath,
+        source: context.source,
+        priority: context.priority,
+        requestKind: context.requestKind,
+        phase: context.phase ?? 'idle',
+        ...extra,
+      },
+    });
+  }
+
+  private shouldThrottleRollingCapture(state?: SessionState | null): boolean {
+    const stepId = state?.currentStep;
+    if (!stepId) return false;
+
+    const now = Date.now();
+    if (this._rollingStepId !== stepId) {
+      this.resetRollingGuardForStep(stepId);
+      return false;
+    }
+
+    if (this._rollingStepStartedAt === 0) {
+      this._rollingStepStartedAt = now;
+      return false;
+    }
+
+    const hungDuration = now - this._rollingStepStartedAt;
+    if (hungDuration < DEFAULT_HUNG_STEP_THRESHOLD_MS) {
+      return false;
+    }
+
+    return now - this._lastRollingCaptureAt < Math.max(DEFAULT_HUNG_STEP_THROTTLE_MS, this._rollingIntervalMs);
+  }
+
+  private resetRollingGuardForStep(stepId?: string): void {
+    this._rollingStepId = stepId && stepId.length > 0 ? stepId : null;
+    this._rollingStepStartedAt = Date.now();
+    this._lastRollingCaptureAt = 0;
   }
 }
 

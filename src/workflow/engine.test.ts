@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const {
+  buildRedditOverlapScores,
+  collectUsableRedditTitles,
+  normalizeRedditTitle,
+  renderRedditDuplicateEvidence,
+} = require('./reddit-duplicate');
 
 let workflowEngine: import('./engine').WorkflowEngine;
 
@@ -27,6 +33,9 @@ const mockSessionManager = {
   currentUrl: jest.fn(),
   getPage: jest.fn(),
   navigate: jest.fn(),
+  syncSessionState: jest.fn(),
+  handleStepAdvance: jest.fn(),
+  setSensitiveScreenshotContext: jest.fn(),
   click: jest.fn(),
   type: jest.fn(),
   extractCookies: jest.fn(),
@@ -1418,6 +1427,56 @@ function loadLiveWorkflowPrompt(stepId: string): string {
 const LIVE_CHECK_DUPLICATE_REDDIT_PROMPT = loadLiveWorkflowPrompt('check_duplicate_reddit_post');
 const LIVE_SUBMIT_REDDIT_PROMPT = loadLiveWorkflowPrompt('submit_reddit_post');
 
+describe('reddit duplicate helper functions', () => {
+  it('normalizes titles into lowercase deduplicated tokens', () => {
+    expect(normalizeRedditTitle('  Hello, HELLO   world!! ')).toEqual(['hello', 'world']);
+  });
+
+  it('drops empty strings, UI labels, and case-insensitive duplicates while preserving first-seen titles', () => {
+    expect(collectUsableRedditTitles([
+      '',
+      'Comment',
+      'Useful Reddit Title',
+      'useful reddit title',
+      'Share',
+      'Another Title',
+    ])).toEqual(['Useful Reddit Title', 'Another Title']);
+  });
+
+  it('renders duplicate risk at jaccard >= 0.70', () => {
+    const overlapScores = buildRedditOverlapScores(
+      'AI vision duplicate guard',
+      ['AI vision duplicate guard', 'Completely unrelated post'],
+    );
+
+    const rendered = renderRedditDuplicateEvidence({
+      extractedTitles: ['AI vision duplicate guard', 'Completely unrelated post'],
+      overlapScores,
+    });
+
+    expect(rendered).toContain('DUPLICATE_CHECK_RESULT: DUPLICATE_RISK');
+    expect(rendered).toContain('MATCHING_TITLE: AI vision duplicate guard');
+  });
+
+  it('keeps near-match scores visible without creating a third canonical result', () => {
+    const overlapScores = buildRedditOverlapScores(
+      'ai vision release roadmap',
+      ['ai vision release notes', 'something fully different'],
+    );
+
+    expect(overlapScores[0].score).toBeGreaterThanOrEqual(0.5);
+    expect(overlapScores[0].score).toBeLessThan(0.7);
+
+    const rendered = renderRedditDuplicateEvidence({
+      extractedTitles: ['ai vision release notes', 'something fully different'],
+      overlapScores,
+    });
+
+    expect(rendered).toContain('DUPLICATE_CHECK_RESULT: NO_DUPLICATE_FOUND');
+    expect(rendered).not.toContain('NEAR_MATCH_REVIEW');
+  });
+});
+
 describe('workflowEngine US-028 Reddit duplicate-check evidence gate', () => {
   let currentUrl = 'https://www.reddit.com/r/test/submit';
 
@@ -1431,6 +1490,9 @@ describe('workflowEngine US-028 Reddit duplicate-check evidence gate', () => {
     mockSessionManager.start.mockResolvedValue(undefined);
     currentUrl = 'https://www.reddit.com/r/test/submit';
     mockSessionManager.currentUrl.mockImplementation(async () => currentUrl);
+    mockSessionManager.navigate.mockImplementation(async (url: string) => {
+      currentUrl = url;
+    });
     mockSessionManager.getPage.mockResolvedValue(mockPage);
     mockSessionManager.click.mockResolvedValue(undefined);
     mockSessionManager.extractCookies.mockResolvedValue([]);
@@ -1746,6 +1808,96 @@ describe('workflowEngine US-028 Reddit duplicate-check evidence gate', () => {
         stepId: 'check_duplicate_reddit_post',
       }),
     );
+  });
+
+  it('direct post_to_reddit uses deterministic duplicate evidence instead of browser-use dispatch', async () => {
+    mockPage.evaluate
+      .mockResolvedValueOnce([
+        'Useful Existing Post',
+        'Another Existing Post',
+      ]);
+
+    mockAutomationEngine.runTask.mockImplementationOnce(async () => {
+      currentUrl = 'https://www.reddit.com/r/test/comments/abc123/new-post/';
+      return {
+        success: true,
+        output: 'Final URL: https://www.reddit.com/r/test/comments/abc123/new-post/',
+        screenshots: [],
+        durationMs: 10,
+      };
+    });
+
+    const definition = {
+      id: 'post_to_reddit',
+      name: 'Direct post_to_reddit deterministic duplicate check',
+      mode: 'direct' as const,
+      params: {},
+      steps: DUPLICATE_CHECK_THEN_SUBMIT_STEPS,
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Fresh Reddit Idea', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    expect(mockRegistry.getReady).toHaveBeenCalledTimes(1);
+    expect(mockSessionManager.navigate).toHaveBeenCalledWith('https://www.reddit.com/r/test/new', 'domcontentloaded');
+    expect(mockSessionManager.navigate).toHaveBeenCalledWith('https://www.reddit.com/r/test/submit', 'domcontentloaded');
+    expect(result.outputs['reddit_duplicate_check_evidence']).toContain('EXTRACTED_TITLES: ["Useful Existing Post","Another Existing Post"]');
+    expect(mockTelemetry.emit).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'workflow.agent_task.routed',
+        stepId: 'check_duplicate_reddit_post',
+        details: expect.objectContaining({ engineId: 'browser-use' }),
+      }),
+    );
+  });
+
+  it('selector fallback works when the primary selector has no usable titles', async () => {
+    mockPage.evaluate
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(['Recovered Title From Fallback']);
+
+    const definition = {
+      id: 'post_to_reddit',
+      name: 'Direct fallback duplicate check',
+      mode: 'direct' as const,
+      params: {},
+      steps: [DUPLICATE_CHECK_THEN_SUBMIT_STEPS[0]],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Fresh Reddit Idea', subreddit: 'test' });
+
+    expect(result.success).toBe(true);
+    expect(result.outputs['reddit_duplicate_check_evidence']).toContain('Recovered Title From Fallback');
+    expect(mockRegistry.getReady).not.toHaveBeenCalled();
+  });
+
+  it('zero usable titles fails closed for direct post_to_reddit', async () => {
+    mockPage.evaluate
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const definition = {
+      id: 'post_to_reddit',
+      name: 'Direct zero-title duplicate check',
+      mode: 'direct' as const,
+      params: {},
+      steps: [DUPLICATE_CHECK_THEN_SUBMIT_STEPS[0]],
+    };
+
+    const result = await workflowEngine.run(definition, { post_title: 'Fresh Reddit Idea', subreddit: 'test' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('no usable titles collected');
+    expect(mockRegistry.getReady).not.toHaveBeenCalled();
   });
 });
 
@@ -2265,7 +2417,6 @@ describe('workflowEngine US-031 agent_task side-effect safety gate', () => {
     expect(result.success).toBe(true);
     expect(mockAutomationEngine.runTask).toHaveBeenCalledTimes(1);
     expect(result.outputs['reddit_duplicate_check_evidence']).toContain('EXTRACTED_TITLES');
-console.log("TELEMETRY_CALLS:", JSON.stringify(mockTelemetry.emit.mock.calls, null, 2));
     expect(result.outputs['reddit_duplicate_check_result']).toBe('NO_DUPLICATE_FOUND');
     expect(mockAutomationEngine.runTask).toHaveBeenCalledWith(
       expect.any(String),
