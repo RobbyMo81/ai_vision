@@ -749,6 +749,34 @@
       "definitionOfDone": "Done means LLM/browser-use post-action reasoning is captured as typed, auditable evidence that deterministic postcondition gates can corroborate, reject, or escalate to HITL without treating the LLM as unchecked authority.",
       "technicalNotes": "Created after the 2026-05-03 live r/test status-update run posted successfully but failed the workflow because Reddit redirected to /r/test/?created=t3_1t2zy4d instead of leaving the browser on /comments/. Keep US-042 reserved for post-task screenshot TTL cleanup.",
       "safetyGates": []
+    },
+    {
+      "id": "US-044",
+      "title": "Served Terminal State Reset And Graceful Closeout Handler",
+      "priority": 1,
+      "passes": true,
+      "description": "Add a complete terminal-state reset and graceful closeout handler for the long-running ai-vision served process so failed or completed workflow states can be acknowledged and cleared to idle without restarting the app.",
+      "acceptance": [
+        "Served terminal complete and error states can be acknowledged and reset to idle without restarting the process",
+        "Terminal reset works when the browser has already been closed",
+        "Terminal reset does not call hitlCoordinator.returnControl when no active wait exists",
+        "Active non-terminal HITL waits still require the existing HITL control APIs",
+        "/api/status returns idle after terminal reset",
+        "Connected UI clients receive an idle websocket state after terminal reset",
+        "Screenshot polling after reset does not keep rendering stale workflow context",
+        "Mismatched session reset attempts are rejected",
+        "Active non-terminal reset attempts are rejected",
+        "Served SIGINT and SIGTERM close servers and browser/session resources best-effort",
+        "Telemetry is byte-free and records reset requested, completed, rejected, and shutdown events",
+        "Existing wrap-up, US-042, and US-043 tests remain compatible",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused workflow/UI tests pass"
+      ],
+      "exitCriteria": "Exit only when the served ai-vision UI can recover from a terminal failed or completed workflow without process restart, and the next workflow can start from clean idle state while durable workflow history remains intact.",
+      "definitionOfDone": "Done means a terminal served workflow can be reviewed, acknowledged, cleared to idle, and followed by another workflow without restarting ai-vision serve, while active HITL waits and durable workflow history remain protected.",
+      "technicalNotes": "Created after the 2026-05-03 served app retained terminal phase=error for submit_reddit_post while the browser was already closed and /api/screenshot returned Browser not started. Keep this story scoped to served terminal reset and shutdown handling; do not alter Reddit postconditions, US-042 screenshot TTL cleanup, or US-043 LLM evidence.",
+      "safetyGates": []
     }
   ]
 }

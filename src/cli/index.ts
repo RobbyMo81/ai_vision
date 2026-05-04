@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { telemetry } from '../telemetry';
 import { EngineId } from '../engines/interface';
 import { registry } from '../engines/registry';
 
@@ -29,6 +30,86 @@ const WORKFLOW_UI_SHUTDOWN_GRACE_MS = parseInt(
   10,
 );
 const WORKFLOW_LOCK_FILE = path.join(PROJECT_ROOT, '.workflow-run.lock');
+
+export interface ServeShutdownResources {
+  uiServer?: httpServerLike | null;
+  webhookServer?: httpServerLike | null;
+  closeRegistry?: () => Promise<void>;
+  closeSessionManager?: () => Promise<void>;
+}
+
+interface httpServerLike {
+  close(callback: (error?: Error | undefined) => void): void;
+}
+
+async function closeServer(server: httpServerLike | null | undefined): Promise<void> {
+  if (!server) return;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error?: Error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+export async function gracefulServeShutdown(resources: ServeShutdownResources): Promise<void> {
+  telemetry.emit({
+    source: 'ui',
+    name: 'serve.shutdown.started',
+    details: {},
+  });
+
+  const failures: string[] = [];
+
+  try {
+    await closeServer(resources.uiServer);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    await closeServer(resources.webhookServer);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    await (resources.closeRegistry ?? (() => registry.closeAll()))();
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    const closeSessionManager = resources.closeSessionManager ?? (async () => {
+      const { sessionManager } = await import('../session/manager');
+      await sessionManager.close();
+    });
+    await closeSessionManager();
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
+
+  if (failures.length > 0) {
+    telemetry.emit({
+      source: 'ui',
+      name: 'serve.shutdown.failed',
+      level: 'warn',
+      details: {
+        failures,
+      },
+    });
+    return;
+  }
+
+  telemetry.emit({
+    source: 'ui',
+    name: 'serve.shutdown.completed',
+    details: {},
+  });
+}
 
 function acquireWorkflowLock(): (() => void) {
   const pid = process.pid;
@@ -202,11 +283,28 @@ program
     if (opts.headed) process.env.AI_VISION_HEADED = 'true';
 
     const { startUiServer } = await import('../ui/server');
-    await startUiServer(uiPort);
-
     const webhookPort = parseInt(process.env.AI_VISION_WEBHOOK_PORT ?? '3001', 10);
     const { startWebhookServer } = await import('../webhooks/server');
-    await startWebhookServer(webhookPort);
+    const uiServer = await startUiServer(uiPort);
+    const webhookServer = await startWebhookServer(webhookPort);
+
+    let shutdownInProgress = false;
+    const shutdown = async (exitCode: number) => {
+      if (shutdownInProgress) return;
+      shutdownInProgress = true;
+      await gracefulServeShutdown({
+        uiServer,
+        webhookServer,
+      });
+      process.exit(exitCode);
+    };
+
+    process.once('SIGINT', () => {
+      void shutdown(130);
+    });
+    process.once('SIGTERM', () => {
+      void shutdown(143);
+    });
 
     const { createMcpServer } = await import('../mcp/server');
     await createMcpServer();
@@ -360,7 +458,11 @@ program
     }
   });
 
-program.parseAsync(process.argv).catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+export { program };
+
+if (require.main === module) {
+  program.parseAsync(process.argv).catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

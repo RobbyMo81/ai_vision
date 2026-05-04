@@ -389,6 +389,61 @@ describe('workflowEngine RF-001 runtime output substitution', () => {
     expect(result.success).toBe(false);
     expect(mockSchedulePostTaskScreenshotCleanup).not.toHaveBeenCalled();
   });
+
+  it('resets a terminal workflow state to idle and clears public state', () => {
+    (workflowEngine as unknown as { _currentState: Record<string, unknown> | null })._currentState = {
+      id: 'sess-terminal',
+      phase: 'error',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+      currentStep: 'submit_reddit_post',
+      error: 'failed',
+    };
+
+    const result = workflowEngine.resetTerminalState({
+      sessionId: 'sess-terminal',
+      comments: 'reviewed',
+    });
+
+    expect(result.reset).toBe(true);
+    expect(result.state).toMatchObject({ id: 'sess-terminal', phase: 'idle' });
+    expect(workflowEngine.currentState).toBeNull();
+    expect(mockSessionManager.syncSessionState).toHaveBeenCalledWith(null);
+    expect(mockHitlCoordinator.syncPhase).toHaveBeenCalledWith('idle');
+    expect(mockHitlCoordinator.emit).toHaveBeenCalledWith(
+      'phase_changed',
+      expect.objectContaining({ id: 'sess-terminal', phase: 'idle' }),
+    );
+  });
+
+  it('rejects terminal reset for non-terminal workflow state', () => {
+    (workflowEngine as unknown as { _currentState: Record<string, unknown> | null })._currentState = {
+      id: 'sess-running',
+      phase: 'running',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    const result = workflowEngine.resetTerminalState({ sessionId: 'sess-running' });
+
+    expect(result.reset).toBe(false);
+    expect(result.reason).toBe('non_terminal_state');
+    expect(workflowEngine.currentState).toMatchObject({ id: 'sess-running', phase: 'running' });
+  });
+
+  it('rejects terminal reset for session mismatch', () => {
+    (workflowEngine as unknown as { _currentState: Record<string, unknown> | null })._currentState = {
+      id: 'sess-terminal',
+      phase: 'complete',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    const result = workflowEngine.resetTerminalState({ sessionId: 'wrong-session' });
+
+    expect(result.reset).toBe(false);
+    expect(result.reason).toBe('session_mismatch');
+  });
 });
 
 describe('workflowEngine US-009 orchestrator loop delegation', () => {

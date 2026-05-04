@@ -2572,6 +2572,70 @@ export class WorkflowEngine {
     return this._currentState;
   }
 
+  resetTerminalState(input: {
+    sessionId?: string;
+    dod?: string;
+    comments?: string;
+    acknowledgedAt?: string;
+  } = {}): { reset: boolean; reason?: string; state: SessionState } {
+    const current = this._currentState;
+    const now = new Date();
+
+    if (!current) {
+      const idleState: SessionState = {
+        id: input.sessionId?.trim() || 'idle',
+        phase: 'idle',
+        startedAt: now,
+        lastUpdatedAt: now,
+      };
+      hitlCoordinator.syncPhase('idle');
+      sessionManager.syncSessionState(null);
+      hitlCoordinator.emit('phase_changed', idleState);
+      return { reset: true, state: idleState };
+    }
+
+    if (input.sessionId && input.sessionId !== current.id) {
+      return { reset: false, reason: 'session_mismatch', state: current };
+    }
+
+    if (!['complete', 'error'].includes(current.phase)) {
+      return { reset: false, reason: 'non_terminal_state', state: current };
+    }
+
+    if (input.dod !== undefined) {
+      current.hitlDod = input.dod;
+    }
+    if (input.comments !== undefined) {
+      current.hitlComments = input.comments;
+    }
+    current.hitlAckAt = input.acknowledgedAt ?? new Date().toISOString();
+
+    this._currentState = null;
+    hitlCoordinator.syncPhase('idle');
+    sessionManager.syncSessionState(null);
+
+    const idleState: SessionState = {
+      id: current.id,
+      phase: 'idle',
+      startedAt: current.startedAt,
+      lastUpdatedAt: now,
+    };
+
+    hitlCoordinator.emit('phase_changed', idleState);
+    telemetry.emit({
+      source: 'workflow',
+      name: 'workflow.state.reset_to_idle',
+      sessionId: current.id,
+      details: {
+        priorPhase: current.phase,
+        hadDod: Boolean(input.dod?.trim()),
+        hadComments: Boolean(input.comments?.trim()),
+      },
+    });
+
+    return { reset: true, state: idleState };
+  }
+
   async run(
     definition: WorkflowDefinition,
     params: Record<string, unknown> = {},

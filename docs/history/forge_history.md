@@ -97,47 +97,6 @@ All existing US-026 through US-030 gates remain intact. `mode: agentic` routing 
 
 ---
 
-## H-042 — US-042 / RF-024: Post-Task Screenshot TTL Cleanup And Recovery
-
-**Date:** 2026-05-03
-**Story:** US-042 / RF-024
-**Status:** PASS
-**Gate Layer Phase:** Screenshot Retention Follow-Through
-
-### Summary
-
-Implemented the missing successful-run retention follow-through for rolling/debug screenshots that were written directly to `sessions/rolling` and therefore sat outside the existing wrap-up cleanup list.
-
-`src/session/screenshot-retention.ts` now owns a success-only `120000ms` delayed cleanup scheduler, retry-with-backoff deletion for the delayed cleanup path, and startup recovery that consults durable SQLite `workflow_runs` success state before deleting expired successful-run rolling files after a lost timer. Evidence and `keep_until_manual_review` screenshots remain untouched, while failed or aborted run debug files continue to age out under the existing `ttl_24h` scavenger.
-
-`src/session/manager.ts` now writes rolling frames with session-bound filenames and runs the post-task cleanup recovery hook on startup before the legacy bounded scavenger. `src/workflow/engine.ts` now schedules the delayed cleanup only after the rolling timer has stopped, wrap-up has completed, and the workflow result is successful. `src/workflow/wrap-up.ts` still handles evidence audit and durable run persistence, but successful debug-frame cleanup is no longer immediate at wrap-up.
-
-Focused regression coverage now proves three critical behaviors: successful-run rolling/debug files survive wrap-up and are deleted after the delayed timer, startup recovery deletes expired successful-run rolling files without deleting failed-run debug files, and the engine only schedules the delayed cleanup path for successful runs after `stopScreenshotTimer()`.
-
-### Files Touched
-
-- `src/session/screenshot-retention.ts`
-- `src/session/manager.ts`
-- `src/db/repository.ts`
-- `src/workflow/engine.ts`
-- `src/session/manager.test.ts`
-- `src/workflow/wrap-up.test.ts`
-- `src/workflow/engine.test.ts`
-- `docs/architecture/as-built_execution_atlas.md`
-- `prd.json`
-- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
-- `docs/history/forge_history.md`
-- `docs/history/history_index.md`
-- `progress.txt`
-
-### Validation
-
-- `jq empty prd.json` -> exit 0
-- `pnpm run typecheck` -> exit 0
-- `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts src/workflow/engine.test.ts` -> 3/3 suites, 91/91 tests passed
-
----
-
 ## H-032 — US-032 / RF-014: agent_task Dominant Intent Classification Fix
 
 **Date:** 2026-04-28
@@ -570,5 +529,87 @@ Byte-free telemetry now records `workflow.post_action_review.evidence_parsed`, `
 - `pnpm run typecheck` → exit 0
 - `pnpm test -- --runInBand src/workflow/engine.test.ts` → 1/1 suites, 76/76 tests passed
 - `pnpm test -- --runInBand src/workflow/engine.test.ts src/ui/server.test.ts` → 2/2 suites, 106/106 tests passed
+
+## H-042 — US-042 / RF-024: Post-Task Screenshot TTL Cleanup And Recovery
+
+**Date:** 2026-05-03
+**Story:** US-042 / RF-024
+**Status:** PASS
+**Gate Layer Phase:** Screenshot Retention Follow-Through
+
+### Summary
+
+Implemented the missing successful-run retention follow-through for rolling/debug screenshots that were written directly to `sessions/rolling` and therefore sat outside the existing wrap-up cleanup list.
+
+`src/session/screenshot-retention.ts` now owns a success-only `120000ms` delayed cleanup scheduler, retry-with-backoff deletion for the delayed cleanup path, and startup recovery that consults durable SQLite `workflow_runs` success state before deleting expired successful-run rolling files after a lost timer. Evidence and `keep_until_manual_review` screenshots remain untouched, while failed or aborted run debug files continue to age out under the existing `ttl_24h` scavenger.
+
+`src/session/manager.ts` now writes rolling frames with session-bound filenames and runs the post-task cleanup recovery hook on startup before the legacy bounded scavenger. `src/workflow/engine.ts` now schedules the delayed cleanup only after the rolling timer has stopped, wrap-up has completed, and the workflow result is successful. `src/workflow/wrap-up.ts` still handles evidence audit and durable run persistence, but successful debug-frame cleanup is no longer immediate at wrap-up.
+
+Focused regression coverage now proves three critical behaviors: successful-run rolling/debug files survive wrap-up and are deleted after the delayed timer, startup recovery deletes expired successful-run rolling files without deleting failed-run debug files, and the engine only schedules the delayed cleanup path for successful runs after `stopScreenshotTimer()`.
+
+### Files Touched
+
+- `src/session/screenshot-retention.ts`
+- `src/session/manager.ts`
+- `src/db/repository.ts`
+- `src/workflow/engine.ts`
+- `src/session/manager.test.ts`
+- `src/workflow/wrap-up.test.ts`
+- `src/workflow/engine.test.ts`
+- `docs/architecture/as-built_execution_atlas.md`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts src/workflow/engine.test.ts` → 3/3 suites, 91/91 tests passed
+
+---
+
+## H-044 — US-044 / RF-026: Served Terminal State Reset And Graceful Closeout Handler
+
+**Date:** 2026-05-04
+**Story:** US-044 / RF-026
+**Status:** PASS
+**Gate Layer Phase:** Served Runtime Lifecycle
+
+### Summary
+
+Implemented the served-process recovery path for stale terminal workflow state without moving ownership away from the workflow engine.
+
+`src/workflow/engine.ts` now exposes `resetTerminalState(...)`, which accepts terminal served-state acknowledgements, rejects session mismatches and active non-terminal phases, clears the canonical public state, syncs HITL/session projections back to idle, and republishes idle over the existing state channel. That keeps terminal reset in the same owner that already publishes workflow state instead of letting the UI mutate stale terminal state directly.
+
+`src/ui/server.ts` now exposes `POST /api/workflow/reset-terminal` for served complete/error states, wires terminal `Dismiss & Close` through that path, preserves the existing `/api/return-control` and `/api/confirm-final-step` APIs for active waits, broadcasts idle to connected websocket clients after reset, and returns idle-safe screenshot payloads when the browser has already closed so the UI no longer presents stale workflow context as an active browser failure.
+
+`src/cli/index.ts` now keeps references to served runtime resources and runs `gracefulServeShutdown(...)` on SIGINT and SIGTERM, closing UI/webhook servers plus exposed registry and browser/session resources best-effort while emitting byte-free shutdown telemetry.
+
+Focused regression tests now cover terminal error reset, terminal complete reset, mismatched-session rejection, active non-terminal rejection, websocket idle rebroadcast, engine-owned reset behavior, and served graceful shutdown.
+
+### Files Touched
+
+- `src/workflow/engine.ts`
+- `src/workflow/engine.test.ts`
+- `src/ui/server.ts`
+- `src/ui/server.test.ts`
+- `src/cli/index.ts`
+- `src/cli/index.test.ts`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-forge-story.yaml`
+- `docs/architecture/as-built_execution_atlas.md`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/ui/server.test.ts src/workflow/engine.test.ts src/cli/index.test.ts` → 3/3 suites, 120/120 tests passed
 
 ---

@@ -2,7 +2,7 @@ story:
   id: US-042
   refactor: RF-024
   title: Post-Task Screenshot TTL Cleanup And Recovery
-  status: proposed
+  status: completed
   priority: P0
   owner: Core Workflow Team
   created: 2026-05-03
@@ -76,4 +76,3 @@ source_artifacts:
   story_plan: docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md
   retention_story: docs/artifacts/2026-05-02-us039-rf021-screenshot-retention-cleanup-scavenger-evidence-audit-storyline.md
   scheduler_story: docs/artifacts/2026-05-03-us041-rf023-screenshot-capture-scheduler-hung-step-guardrail-storyline.md
-

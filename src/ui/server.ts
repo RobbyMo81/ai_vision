@@ -353,7 +353,20 @@ function updateState(state) {
     secureInputBox.classList.remove('visible');
   }
 
-  if ((phase === 'awaiting_human' || phase === 'hitl_qa') && state.hitlReason) {
+  if (isTerminalState && !isAwaiting) {
+    document.getElementById('hitlReason').textContent =
+      phase === 'error'
+        ? (state.error || 'Workflow ended with an error.')
+        : 'Workflow completed.';
+    document.getElementById('hitlInstructions').textContent =
+      'Review the final state, then dismiss and reset the served app to idle.';
+    hitlBox.classList.add('visible');
+    returnBtn.disabled = false;
+    returnBtn.textContent = 'Dismiss & Close';
+    returnBtn.onclick = () => resetTerminalState();
+    rejectBtn.style.display = 'none';
+    document.getElementById('rejectHint').style.display = 'none';
+  } else if ((phase === 'awaiting_human' || phase === 'hitl_qa') && state.hitlReason) {
     document.getElementById('hitlReason').textContent = state.hitlReason;
     document.getElementById('hitlInstructions').textContent = state.hitlInstructions ?? '';
     hitlBox.classList.add('visible');
@@ -390,6 +403,23 @@ function updateState(state) {
   if (isTerminalState && !isAwaiting) {
     clearInterval(autoRefreshTimer);
     clearInterval(telemetryRefreshTimer);
+    autoRefreshTimer = null;
+    telemetryRefreshTimer = null;
+  }
+
+  if (phase === 'idle') {
+    currentSessionId = '';
+    document.getElementById('currentUrl').textContent = '—';
+    document.getElementById('urlBarDisplay').textContent = 'about:blank';
+    document.getElementById('currentStep').textContent = '—';
+    document.getElementById('progress').textContent = '—';
+    hideScreenshot();
+    if (document.getElementById('autoRefresh').checked && !autoRefreshTimer) {
+      toggleAutoRefresh(true);
+    }
+    if (!telemetryRefreshTimer) {
+      telemetryRefreshTimer = setInterval(fetchTelemetry, 5000);
+    }
   }
 }
 
@@ -452,12 +482,48 @@ async function fetchScreenshot() {
     });
     if (!resp.ok) return;
     const data = await resp.json();
+    if (data.phase === 'idle' || data.idle === true) {
+      hideScreenshot();
+      return;
+    }
     if (data.base64) showScreenshot(data.base64);
     if (data.screenshot && data.screenshot.base64) {
       showScreenshot(data.screenshot.base64, data.screenshot.mimeType);
     }
     if (data.url) document.getElementById('urlBarDisplay').textContent = data.url;
   } catch (e) { /* browser not started */ }
+}
+
+async function resetTerminalState() {
+  document.getElementById('returnBtn').disabled = true;
+  document.getElementById('returnBtn').textContent = 'Resetting to idle...';
+  try {
+    const requestId = nextRequestId();
+    const dod = document.getElementById('dodInput').value ?? '';
+    const comments = document.getElementById('commentsInput').value ?? '';
+    const resp = await fetch('/api/workflow/reset-terminal', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AiVision-Client-Id': pageClientId,
+      },
+      body: JSON.stringify({
+        sessionId: currentSessionId,
+        requestId,
+        clientId: pageClientId,
+        dod,
+        comments,
+      }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    hideScreenshot();
+    clearAck();
+    log('Served workflow reset to idle', 'ok');
+  } catch (e) {
+    log('Failed to reset terminal workflow: ' + e.message, 'err');
+    document.getElementById('returnBtn').disabled = false;
+    document.getElementById('returnBtn').textContent = 'Dismiss & Close';
+  }
 }
 
 function toggleAutoRefresh(enabled) {
@@ -829,12 +895,21 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
     }
 
     if (req.method === 'GET' && pathname === '/api/screenshot') {
+      const current = workflowEngine.currentState;
       if (!sessionManager.isStarted) {
+        if (!current || current.phase === 'idle' || current.phase === 'complete' || current.phase === 'error') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            idle: !current || current.phase === 'idle',
+            phase: current?.phase ?? 'idle',
+            url: current?.currentUrl ?? '',
+          }));
+          return;
+        }
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Browser not started' }));
         return;
       }
-      const current = workflowEngine.currentState;
       const requestSessionId = typeof parsed.query.sessionId === 'string' ? parsed.query.sessionId.trim() : '';
       const requestClientId = typeof parsed.query.clientId === 'string' ? parsed.query.clientId.trim() : '';
       const headerClientId = headerValue(req.headers['x-aivision-client-id']).trim();
@@ -1094,6 +1169,123 @@ export async function startUiServer(port = 3000): Promise<http.Server> {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/workflow/reset-terminal') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as {
+            sessionId?: string;
+            requestId?: string;
+            clientId?: string;
+            dod?: string;
+            comments?: string;
+          };
+          const current = workflowEngine.currentState;
+          const requestSessionId = parsed.sessionId?.trim() ?? '';
+          const requestClientId = parsed.clientId?.trim() ?? '';
+          const headerClientId = headerValue(req.headers['x-aivision-client-id']).trim();
+          const resolvedClientId = requestClientId || headerClientId;
+          const matchingSocketIds = socketsForPage(resolvedClientId);
+          const caller = callerMetadata(req);
+
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.workflow_terminal_reset.requested',
+            level: 'info',
+            sessionId: current?.id,
+            details: {
+              requestId: parsed.requestId ?? '',
+              requestSessionId,
+              activeSessionId: current?.id ?? '',
+              requestClientId,
+              headerClientId,
+              resolvedClientId,
+              matchingWsClientCount: matchingSocketIds.length,
+              currentPhase: current?.phase ?? 'idle',
+              currentHitlAction: current?.hitlAction ?? '',
+              hasDod: Boolean(parsed.dod?.trim()),
+              hasComments: Boolean(parsed.comments?.trim()),
+              ...caller,
+            },
+          });
+
+          const emitTerminalResetRejection = (gate: string, reason: string): void => {
+            telemetry.emit({
+              source: 'ui',
+              name: 'ui.workflow_terminal_reset.rejected',
+              level: 'warn',
+              sessionId: current?.id,
+              details: {
+                gate,
+                reason,
+                requestId: parsed.requestId ?? '',
+                requestSessionId,
+                activeSessionId: current?.id ?? '',
+                resolvedClientId,
+                matchingWsClientCount: matchingSocketIds.length,
+                currentPhase: current?.phase ?? 'idle',
+                currentHitlAction: current?.hitlAction ?? '',
+                ...caller,
+              },
+            });
+          };
+
+          if (!current || (current.phase !== 'complete' && current.phase !== 'error')) {
+            emitTerminalResetRejection('terminal_phase_gate', 'No active terminal workflow state to reset');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'No active terminal workflow state to reset' }));
+            return;
+          }
+
+          if (requestSessionId.length > 0 && requestSessionId !== current.id) {
+            emitTerminalResetRejection('session_binding_gate', 'Session ID mismatch');
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Session ID mismatch' }));
+            return;
+          }
+
+          stopScreenshotPush();
+          const result = workflowEngine.resetTerminalState({
+            sessionId: requestSessionId || current.id,
+            dod: parsed.dod,
+            comments: parsed.comments,
+            acknowledgedAt: new Date().toISOString(),
+          });
+
+          if (!result.reset) {
+            emitTerminalResetRejection(result.reason ?? 'reset_failed', 'Terminal reset failed');
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Terminal reset failed' }));
+            return;
+          }
+
+          telemetry.emit({
+            source: 'ui',
+            name: 'ui.workflow_terminal_reset.completed',
+            level: 'info',
+            sessionId: current.id,
+            details: {
+              requestId: parsed.requestId ?? '',
+              requestSessionId,
+              activeSessionId: current.id,
+              resolvedClientId,
+              matchingWsClientCount: matchingSocketIds.length,
+              finalPhase: result.state.phase,
+              ...caller,
+            },
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, state: result.state }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+        }
       });
       return;
     }

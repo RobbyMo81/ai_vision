@@ -10,6 +10,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EventEmitter } from 'events';
 
 // ---------------------------------------------------------------------------
 // Module mocks (must be declared before any import of the module under test)
@@ -18,13 +19,46 @@ import * as path from 'path';
 // Provide a stub SessionState-like object on workflowEngine.currentState that
 // individual tests can mutate between requests.
 const mockCurrentState: Record<string, unknown> | null = null;
-const mockEngine = { currentState: mockCurrentState as Record<string, unknown> | null };
+const mockEngine = {
+  currentState: mockCurrentState as Record<string, unknown> | null,
+  resetTerminalState: jest.fn((input: { sessionId?: string; dod?: string; comments?: string; acknowledgedAt?: string }) => {
+    const current = mockEngine.currentState as Record<string, unknown> | null;
+    if (!current) {
+      return {
+        reset: false,
+        reason: 'non_terminal_state',
+        state: { id: input.sessionId ?? 'idle', phase: 'idle' },
+      };
+    }
+    if (input.sessionId && input.sessionId !== current.id) {
+      return { reset: false, reason: 'session_mismatch', state: current };
+    }
+    if (current.phase !== 'complete' && current.phase !== 'error') {
+      return { reset: false, reason: 'non_terminal_state', state: current };
+    }
+
+    const idleState = {
+      id: String(current.id ?? input.sessionId ?? 'idle'),
+      phase: 'idle',
+      startedAt: current.startedAt,
+      lastUpdatedAt: new Date(input.acknowledgedAt ?? '2026-05-03T00:02:00.000Z'),
+    };
+    mockEngine.currentState = null;
+    mockHitlCoordinator.emit('phase_changed', idleState);
+    return { reset: true, state: idleState };
+  }),
+};
 
 jest.mock('../workflow/engine', () => ({ workflowEngine: mockEngine }));
 
+const hitlEventBus = new EventEmitter();
 const mockHitlCoordinator = {
-  on: jest.fn(),
-  emit: jest.fn(),
+  on: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
+    hitlEventBus.on(event, listener);
+  }),
+  emit: jest.fn((event: string, payload: unknown) => {
+    hitlEventBus.emit(event, payload);
+  }),
   returnControl: jest.fn(),
   confirmCompletion: jest.fn(),
   submitSensitiveValue: jest.fn(),
@@ -168,6 +202,7 @@ describe('POST /api/confirm-final-step — pre-flight gates', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWssClients.clear();
     mockEngine.currentState = null;
   });
 
@@ -294,6 +329,7 @@ describe('POST /api/return-control — pre-flight gates + attribution telemetry'
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWssClients.clear();
     mockEngine.currentState = { phase: 'idle', id: 'sess-rc', hitlAction: null, currentStep: 'step-a' };
   });
 
@@ -503,6 +539,7 @@ describe('GET /api/screenshot — binding and policy gate', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockWssClients.clear();
     mockEngine.currentState = { phase: 'running', id: 'sess-shot', currentStep: 'step-a' };
     const sessionModule = jest.requireMock('../session/manager') as {
       sessionManager: {
@@ -557,4 +594,166 @@ describe('GET /api/screenshot — binding and policy gate', () => {
       nextAction: 'retry_after_sensitive_phase',
     });
   });
+
+  it('returns idle-safe payload when browser is not started and workflow is idle', async () => {
+    const sessionModule = jest.requireMock('../session/manager') as {
+      sessionManager: {
+        isStarted: boolean;
+      };
+    };
+    sessionModule.sessionManager.isStarted = false;
+    mockEngine.currentState = null;
+
+    const result = await makeGetRequest(port, '/api/screenshot?clientId=');
+    expect(result.status).toBe(200);
+    expect(result.data).toMatchObject({ idle: true, phase: 'idle' });
+  });
 });
+
+describe('POST /api/workflow/reset-terminal — terminal reset', () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeAll(async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { startUiServer } = jest.requireActual('./server') as typeof import('./server');
+    server = await startUiServer(0);
+    port = (server.address() as { port: number }).port;
+  });
+
+  afterAll((done) => {
+    server.close(done);
+    (console.error as jest.Mock).mockRestore?.();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWssClients.clear();
+    const sessionModule = jest.requireMock('../session/manager') as {
+      sessionManager: {
+        isStarted: boolean;
+      };
+    };
+    sessionModule.sessionManager.isStarted = false;
+    mockEngine.currentState = null;
+  });
+
+  it('resets terminal error state to idle without using returnControl', async () => {
+    mockEngine.currentState = {
+      id: 'sess-error',
+      phase: 'error',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+      currentStep: 'submit_reddit_post',
+      error: 'submit failed',
+    };
+
+    const result = await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'sess-error', comments: 'reviewed' }),
+    );
+
+    expect(result.status).toBe(200);
+    expect(mockEngine.currentState).toBeNull();
+    expect(mockHitlCoordinator.returnControl).not.toHaveBeenCalled();
+    const status = await makeGetRequest(port, '/api/status');
+    expect(status.status).toBe(200);
+    expect(status.data).toMatchObject({ phase: 'idle' });
+  });
+
+  it('resets terminal complete state to idle', async () => {
+    mockEngine.currentState = {
+      id: 'sess-complete',
+      phase: 'complete',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+      currentStep: 'done',
+    };
+
+    const result = await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'sess-complete', dod: 'done' }),
+    );
+
+    expect(result.status).toBe(200);
+    expect(statusOf(result.data)).toMatchObject({ phase: 'idle' });
+  });
+
+  it('rejects mismatched session id', async () => {
+    mockEngine.currentState = {
+      id: 'sess-active',
+      phase: 'error',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    const result = await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'wrong-session' }),
+    );
+
+    expect(result.status).toBe(400);
+  });
+
+  it('rejects active non-terminal workflow state', async () => {
+    mockEngine.currentState = {
+      id: 'sess-running',
+      phase: 'running',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    const result = await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'sess-running' }),
+    );
+
+    expect(result.status).toBe(409);
+  });
+
+  it('broadcasts idle state to connected websocket clients after reset', async () => {
+    const wsClient = { readyState: 1, send: jest.fn() };
+    mockWssClients.add(wsClient);
+    mockEngine.currentState = {
+      id: 'sess-ws',
+      phase: 'error',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    const result = await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'sess-ws' }),
+    );
+
+    expect(result.status).toBe(200);
+    expect(wsClient.send).toHaveBeenCalledWith(expect.stringContaining('"phase":"idle"'));
+  });
+
+  it('emits terminal reset requested and completed telemetry', async () => {
+    mockEngine.currentState = {
+      id: 'sess-telemetry',
+      phase: 'error',
+      startedAt: new Date('2026-05-03T00:00:00.000Z'),
+      lastUpdatedAt: new Date('2026-05-03T00:01:00.000Z'),
+    };
+
+    await makeRequest(
+      port,
+      '/api/workflow/reset-terminal',
+      JSON.stringify({ sessionId: 'sess-telemetry', requestId: 'req-1' }),
+    );
+
+    expect(mockTelemetryEmit.mock.calls.find(([e]) => e.name === 'ui.workflow_terminal_reset.requested')).toBeDefined();
+    expect(mockTelemetryEmit.mock.calls.find(([e]) => e.name === 'ui.workflow_terminal_reset.completed')).toBeDefined();
+  });
+});
+
+function statusOf(data: unknown): Record<string, unknown> {
+  return (data as { state: Record<string, unknown> }).state;
+}

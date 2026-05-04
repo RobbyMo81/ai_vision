@@ -1,0 +1,79 @@
+story:
+  id: US-044
+  refactor: RF-026
+  title: Served Terminal State Reset And Graceful Closeout Handler
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-03
+  forge_required: true
+  hitl_review_required: true
+
+problem: >
+  The long-running ai-vision served process can retain a terminal workflow
+  error state after the browser has already closed. The UI can still show HITL
+  QA and stale workflow context, while /api/screenshot returns Browser not
+  started. Operators currently recover by restarting ai-vision serve.
+
+scope:
+  includes:
+    - Add a served-process terminal reset API for complete and error workflow states.
+    - Make terminal Dismiss & Close use reset when no active HITL wait is pending.
+    - Preserve existing return-control and final-confirmation gates for active HITL waits.
+    - Clear public active workflow state and broadcast idle after terminal acknowledgement.
+    - Make screenshot polling terminal/idle aware after reset.
+    - Reject reset attempts for mismatched sessions and active non-terminal runs.
+    - Add served SIGINT/SIGTERM best-effort shutdown handling for servers, engines, and browser/session resources.
+    - Emit byte-free telemetry for reset and shutdown decisions.
+    - Add focused UI/workflow regression tests.
+  excludes:
+    - Reddit submit postcondition changes.
+    - LLM post-action evidence changes from US-043.
+    - Screenshot retention TTL changes from US-042.
+    - Removing failed-workflow HITL review.
+    - Broad process supervision or service-manager work.
+
+acceptance:
+  - Served terminal complete and error states can be acknowledged and reset to idle without restarting the process.
+  - Terminal reset works when the browser has already been closed.
+  - Terminal reset does not call hitlCoordinator.returnControl when no active wait exists.
+  - Active non-terminal HITL waits still require the existing HITL control APIs.
+  - /api/status returns idle after terminal reset.
+  - Connected UI clients receive an idle websocket state after terminal reset.
+  - Screenshot polling after reset does not keep rendering stale workflow context.
+  - Mismatched session reset attempts are rejected.
+  - Active non-terminal reset attempts are rejected.
+  - Served SIGINT and SIGTERM close servers and browser/session resources best-effort.
+  - Telemetry is byte-free and records reset requested, completed, rejected, and shutdown events.
+  - Existing wrap-up, US-042, and US-043 tests remain compatible.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused workflow/UI tests pass.
+
+definition_of_done: >
+  Done means a terminal served workflow can be reviewed, acknowledged, cleared
+  to idle, and followed by another workflow without restarting ai-vision serve,
+  while active HITL waits and durable workflow history remain protected.
+
+evidence_required:
+  - Runtime reset API and UI wiring.
+  - Regression tests for terminal error reset, terminal complete reset, mismatched session rejection, active run rejection, and browser-closed reset.
+  - Shutdown handler tests or focused source evidence for served SIGINT/SIGTERM cleanup.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - pnpm test -- --runInBand src/ui/server.test.ts src/workflow/engine.test.ts
+  recommended:
+    - pnpm test when reset touches shared session, webhook, or MCP lifecycle code
+
+source_evidence:
+  observed_date: 2026-05-03
+  command: ai-vision serve --headed
+  stale_status: "phase=error, currentStep=submit_reddit_post -> browser-use"
+  screenshot_endpoint: "Browser not started"
+  recovery_used: "restart served process"
+

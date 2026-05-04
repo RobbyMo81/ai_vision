@@ -638,6 +638,41 @@
 [2026-04-28] Lesson Learned — US-031 Production-Run Pre-Flight Drift
 - Trigger: user requested a full supervised Reddit `r/test` production run using the US-031 implementation summary as the post seed.
 - Pre-flight selected `workflows/post_to_reddit.yaml`, verified no workflow lock, checked listeners, ran `pnpm run typecheck`, and ran focused workflow tests successfully.
+
+[2026-05-04] US-044 / RF-026 PASS — Served Terminal State Reset And Graceful Closeout Handler
+- What changed:
+  - Added `workflowEngine.resetTerminalState(...)` so terminal served-state reset is owned by the workflow kernel, clears public state, syncs HITL/session projections back to idle, and rejects session mismatches or active non-terminal phases.
+  - Added `POST /api/workflow/reset-terminal` plus terminal `Dismiss & Close` UI wiring in `src/ui/server.ts`, kept active HITL waits on the existing control APIs, and made idle/terminal screenshot polling return safe non-error payloads after browser shutdown.
+  - Added served best-effort SIGINT/SIGTERM closeout in `src/cli/index.ts` via `gracefulServeShutdown(...)` for UI/webhook servers, engine registry, and browser/session resources.
+  - Added focused regression coverage in `src/ui/server.test.ts`, `src/workflow/engine.test.ts`, and `src/cli/index.test.ts`.
+- Files touched:
+  - `src/workflow/engine.ts`
+  - `src/workflow/engine.test.ts`
+  - `src/ui/server.ts`
+  - `src/ui/server.test.ts`
+  - `src/cli/index.ts`
+  - `src/cli/index.test.ts`
+  - `prd.json`
+  - `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+  - `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-forge-story.yaml`
+  - `docs/architecture/as-built_execution_atlas.md`
+  - `docs/history/forge_history.md`
+  - `docs/history/history_index.md`
+  - `progress.txt`
+- Acceptance criteria:
+  - Served terminal complete/error states now reset to idle without restarting the process.
+  - Reset works after the browser/session has already closed.
+  - Terminal reset does not call `hitlCoordinator.returnControl()` when no active wait exists.
+  - Active non-terminal HITL waits still require the existing control APIs.
+  - `/api/status` returns idle after reset and connected websocket clients receive the idle projection.
+  - Screenshot polling no longer keeps stale workflow context after reset.
+  - Mismatched session resets and active non-terminal resets are rejected.
+  - Served SIGINT/SIGTERM now run best-effort closeout for exposed runtime resources.
+  - Reset/shutdown telemetry is byte-free.
+- Final validation result:
+  - `jq empty prd.json` -> exit 0
+  - `pnpm run typecheck` -> exit 0
+  - `pnpm test -- --runInBand src/ui/server.test.ts src/workflow/engine.test.ts src/cli/index.test.ts` -> 3/3 suites, 120/120 tests passed
 - Static pre-flight then found a likely drift: the live `submit_reddit_post` prompt contains both fallback fill wording and primary submit wording.
 - The US-031 classifier is deterministic but first-match based; it classifies `fill` before `submit`, so the live submit step can be treated as a fill intent instead of dominant submit intent.
 - The process error was attempting to work around the issue with a temporary workflow approval change. That would have made the run pass for the wrong reason.
@@ -1007,4 +1042,16 @@ Validation:
 - What changed: promoted the planned post-task screenshot TTL cleanup work into a complete Forge handoff package. The story defines a success-only 120 second cleanup window for rolling/debug screenshots, startup recovery for lost timers, failed/aborted fallback to `ttl_24h`, explicit rolling-directory cleanup, evidence/manual-review preservation, retry-with-backoff deletion, cleanup failure recording, and byte-free cleanup telemetry.
 - Files touched: `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-storyline.md`, `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-forge-story.yaml`, `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-implementation-handoff.md`, `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-definition-of-done.md`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `docs/debriefs/2026-05-03-reddit-screenshot-recovery-implementation-story-plan.md`, `progress.txt`.
 - Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; implementation handoff explicitly directs the build agent to use the Forge build loop; story covers success timer scheduling, pre-expiry retention, post-expiry deletion, failed-run fallback, startup recovery, rolling-directory cleanup, evidence preservation, retry failure recording, and telemetry; runtime behavior remains unchanged in this seeding step.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
+
+[2026-05-03] US-042 / RF-024 Independent Verification
+- What changed: independently verified the completed US-042 implementation against the Forge story, PRD, tracker, runtime source, focused tests, history, and validation commands. Corrected the story card status from `proposed` to `completed` and moved the H-042 history record to the append position after H-043.
+- Files touched: `docs/artifacts/2026-05-03-us042-rf024-post-task-screenshot-ttl-cleanup-recovery-forge-story.yaml`, `docs/history/forge_history.md`, `progress.txt`.
+- Acceptance criteria: confirmed successful runs schedule a 120000ms post-task cleanup only after `stopScreenshotTimer()` and successful wrap-up; pre-expiry rolling/debug files are retained; post-expiry rolling/debug files are deleted through retry-with-backoff; failed/aborted runs stay off the success cleanup path; startup recovery uses durable workflow success state; evidence and manual-review screenshots are preserved; cleanup telemetry remains byte-free.
+- Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` exit `0`; `pnpm test -- --runInBand src/session/manager.test.ts src/workflow/wrap-up.test.ts src/workflow/engine.test.ts` passed 3/3 suites and 91/91 tests.
+
+[2026-05-03] US-044 / RF-026 - Forge Workflow Seed Created - Served Terminal State Reset And Graceful Closeout Handler
+- What changed: promoted the served app terminal-state/reset gap into a complete Forge handoff package. The story covers terminal complete/error acknowledgement, stale failed-state reset without process restart, browser-closed reset behavior, active HITL wait protection, idle websocket/status publication, screenshot polling cleanup, served SIGINT/SIGTERM best-effort shutdown, and byte-free reset/shutdown telemetry.
+- Files touched: `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-storyline.md`, `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-forge-story.yaml`, `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-implementation-handoff.md`, `docs/artifacts/2026-05-03-us044-rf026-served-terminal-state-reset-graceful-closeout-definition-of-done.md`, `prd.json`, `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`, `progress.txt`.
+- Acceptance criteria: four-part Forge package exists; PRD and tracker entries exist; implementation handoff explicitly directs the build agent to use the Forge build loop; story covers terminal reset, stale-state recovery, active-wait protection, served shutdown cleanup, telemetry, and validation requirements; runtime behavior remains unchanged in this seeding step.
 - Final validation result: `jq empty prd.json` exit `0`; `pnpm run typecheck` and test suites were not run because no runtime code changed.
