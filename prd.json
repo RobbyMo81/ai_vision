@@ -1,8 +1,8 @@
 {
   "projectName": "AI-Vision Browser Automation",
   "branchName": "forge/mvp-setup",
-  "description": "Build an AI-driven browser automation platform integrating Browser-use and Stagehand with a unified interface.",
-  "techStack": ["TypeScript", "Node.js 24 (node:sqlite)", "Python", "Playwright", "Browser-use", "Stagehand", "SQLite"],
+  "description": "Build an AI-driven browser automation platform with multi-engine support and a unified interface.",
+  "techStack": ["TypeScript", "Node.js 24 (node:sqlite)", "Python", "Playwright", "Browser-use", "SQLite"],
   "qualityGates": ["npx tsc --noEmit", "npm test"],
   "userStories": [
     {

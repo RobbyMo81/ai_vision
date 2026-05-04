@@ -32,7 +32,6 @@ Traditional browser automation (Selenium, Puppeteer) breaks every time a website
 ai-vision CLI
      │
      ├── browser-use engine   ← Python/LangChain, headless Chromium (default)
-     ├── stagehand engine     ← TypeScript/Playwright SDK
      └── skyvern engine       ← Computer-vision-centric automation
 ```
 
@@ -103,10 +102,10 @@ node dist/cli/index.js run "Go to news.ycombinator.com and list the top 5 storie
 ### Specify an engine
 
 ```bash
-node dist/cli/index.js run "Fill in the contact form on example.com" --engine stagehand
+node dist/cli/index.js run "Fill in the contact form on example.com" --engine skyvern
 ```
 
-Available engines: `browser-use` (default), `stagehand`, `skyvern`
+Available engines: `browser-use` (default), `skyvern`
 
 ### Take a screenshot after the task
 
@@ -148,7 +147,6 @@ ai-vision/
 │   │   ├── browser-use/
 │   │   │   ├── engine.ts              # BrowserUseEngine (TypeScript wrapper)
 │   │   │   └── server/main.py         # FastAPI bridge server
-│   │   ├── stagehand/engine.ts        # StagehandEngine
 │   │   └── skyvern/
 │   │       ├── engine.ts              # SkyvernEngine (TypeScript wrapper)
 │   │       └── server/main.py         # FastAPI bridge server
@@ -171,18 +169,18 @@ All runtime config lives in `.env`. Edit manually or use `node dist/cli/index.js
 
 ```env
 # LLM Provider: "anthropic" | "openai"
-STAGEHAND_LLM_PROVIDER=anthropic
+BROWSER_USE_LLM_PROVIDER=anthropic
 
 # Model (must match provider)
-STAGEHAND_LLM_MODEL=claude-sonnet-4-6
+BROWSER_USE_LLM_MODEL=claude-sonnet-4-6
 
 # Optional provider-specific model overrides (recommended with fallback)
-# STAGEHAND_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
-# STAGEHAND_LLM_MODEL_OPENAI=gpt-4o
+# BROWSER_USE_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+# BROWSER_USE_LLM_MODEL_OPENAI=gpt-4o
 
 # Optional fallback provider for browser-use agent tasks
 # If primary provider fails (quota/auth/rate limit), bridge retries once on fallback
-# STAGEHAND_LLM_FALLBACK_PROVIDER=openai
+# BROWSER_USE_LLM_FALLBACK_PROVIDER=openai
 
 # API Keys (only the active provider's key is required)
 ANTHROPIC_API_KEY=sk-ant-...
@@ -281,11 +279,11 @@ Defaults:
 export ANTHROPIC_API_KEY=...
 export OPENAI_API_KEY=...
 export GEMINI_API_KEY=...
-export STAGEHAND_LLM_PROVIDER=openai
-export STAGEHAND_LLM_MODEL=gpt-4o
-export STAGEHAND_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
-export STAGEHAND_LLM_MODEL_OPENAI=gpt-4o
-export STAGEHAND_LLM_FALLBACK_PROVIDER=anthropic
+export BROWSER_USE_LLM_PROVIDER=openai
+export BROWSER_USE_LLM_MODEL=gpt-4o
+export BROWSER_USE_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+export BROWSER_USE_LLM_MODEL_OPENAI=gpt-4o
+export BROWSER_USE_LLM_FALLBACK_PROVIDER=anthropic
 pnpm run vault:init
 ```
 
