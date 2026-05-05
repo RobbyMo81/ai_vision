@@ -777,6 +777,32 @@
       "definitionOfDone": "Done means a terminal served workflow can be reviewed, acknowledged, cleared to idle, and followed by another workflow without restarting ai-vision serve, while active HITL waits and durable workflow history remain protected.",
       "technicalNotes": "Created after the 2026-05-03 served app retained terminal phase=error for submit_reddit_post while the browser was already closed and /api/screenshot returned Browser not started. Keep this story scoped to served terminal reset and shutdown handling; do not alter Reddit postconditions, US-042 screenshot TTL cleanup, or US-043 LLM evidence.",
       "safetyGates": []
+    },
+    {
+      "id": "US-045",
+      "title": "Stagehand Blast-Radius Release Cleanup",
+      "priority": 1,
+      "passes": true,
+      "description": "Clean up the release and contributor blast radius from historical Stagehand logic now that Stagehand is no longer an active runtime engine.",
+      "acceptance": [
+        "prd.json and progress.txt preserve history and indicate Stagehand was removed by US-005",
+        "Historical reports with active Stagehand claims have clear historical banners",
+        "Root-level stale Stagehand docs are archived, marked historical, or removed if redundant",
+        "Active config tooling no longer writes STAGEHAND_LLM_* as primary names",
+        "Runtime provider/model resolution reads neutral env vars first",
+        "Legacy STAGEHAND_LLM_* behavior is either backward-compatible or explicitly documented as removed",
+        ".env.example, README, Vault scripts, Rust config GUI, and LLM config docs use aligned neutral names",
+        "package-lock.json no longer preserves stale Stagehand dependency metadata or documents why it remains",
+        "Current engine inventory still reports only browser-use and skyvern",
+        "Release-facing docs do not claim stagehand, 3 engines, or --engine stagehand",
+        "jq empty prd.json passes",
+        "pnpm run typecheck passes",
+        "Focused config/engine tests pass"
+      ],
+      "exitCriteria": "Exit only when Stagehand can no longer be mistaken for an active runtime feature by release copy, config tooling, package metadata, or contributor-facing docs, while historical records still explain why it was removed.",
+      "definitionOfDone": "Done means Stagehand cannot be mistaken for an active runtime feature by release copy, contributor docs, config tooling, or package metadata, while historical records still explain why it was removed.",
+      "technicalNotes": "Created from the 2026-05-04 Stagehand blast-radius review. Keep this story scoped to release cleanup, config-name neutralization, stale lockfile handling, and historical-document banners. Stagehand was removed by US-005 because it caused dual-browser/session drift; current runtime engines are browser-use and skyvern. Do not re-add Stagehand or design a shared-CDP Stagehand adapter here.",
+      "safetyGates": []
     }
   ]
 }

@@ -93,18 +93,29 @@ impl App {
     fn new(env_path: PathBuf) -> Self {
         let existing = load_env(&env_path);
 
-        let provider_idx = match existing
-            .get("STAGEHAND_LLM_PROVIDER")
-            .map(|s| s.as_str())
+        let provider_idx = match first_env(
+            &existing,
+            &[
+                "AI_VISION_LLM_PROVIDER",
+                "BROWSER_USE_LLM_PROVIDER",
+                "STAGEHAND_LLM_PROVIDER",
+            ],
+        )
+        .as_deref()
         {
             Some("openai") => 1,
             _ => 0,
         };
 
-        let current_model = existing
-            .get("STAGEHAND_LLM_MODEL")
-            .cloned()
-            .unwrap_or_default();
+        let current_model = first_env(
+            &existing,
+            &[
+                "AI_VISION_LLM_MODEL",
+                "BROWSER_USE_LLM_MODEL",
+                "STAGEHAND_LLM_MODEL",
+            ],
+        )
+        .unwrap_or_default();
 
         let models = if provider_idx == 0 {
             ANTHROPIC_MODELS
@@ -176,11 +187,11 @@ impl App {
     fn save(&mut self) {
         let updates: Vec<(&str, String)> = vec![
             (
-                "STAGEHAND_LLM_PROVIDER",
+                "AI_VISION_LLM_PROVIDER",
                 self.provider_name().to_string(),
             ),
             (
-                "STAGEHAND_LLM_MODEL",
+                "AI_VISION_LLM_MODEL",
                 self.selected_model().id.to_string(),
             ),
             (self.api_key_var(), self.api_key.clone()),
@@ -222,6 +233,13 @@ fn load_env(path: &PathBuf) -> HashMap<String, String> {
         }
     }
     map
+}
+
+fn first_env(existing: &HashMap<String, String>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| existing.get(*key))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Rewrite .env in-place: update matching keys, append new ones, preserve comments.

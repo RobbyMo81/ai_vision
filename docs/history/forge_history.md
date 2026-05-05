@@ -613,3 +613,62 @@ Focused regression tests now cover terminal error reset, terminal complete reset
 - `pnpm test -- --runInBand src/ui/server.test.ts src/workflow/engine.test.ts src/cli/index.test.ts` → 3/3 suites, 120/120 tests passed
 
 ---
+
+## H-045 — US-045 / RF-027: Stagehand Blast-Radius Release Cleanup
+
+**Date:** 2026-05-04
+**Story:** US-045 / RF-027
+**Status:** PASS
+
+### Summary
+
+Cleaned the remaining release and contributor blast radius from the removed Stagehand engine without deleting legitimate history. The active runtime surface was already correct (`browser-use`, `skyvern`), so the implementation focused on the confusing residue: stale env names, stale Stagehand-era docs, and stale lock metadata.
+
+The browser-use bridge now resolves neutral `AI_VISION_LLM_*` names first, then falls back to legacy `BROWSER_USE_LLM_*` and `STAGEHAND_LLM_*` values for one transition window. The Rust config GUI and Vault init script now write neutral names, and the human-facing config docs (`.env.example`, `README.md`, `LLM_MODEL_IMPACT.md`) now describe the neutral surface instead of the removed Stagehand naming.
+
+Historical documents that still describe Stagehand as active were preserved but clearly marked as historical snapshots. The internal promo-claim cleanup draft was moved out of `docs/reports/` so release-facing scans stay clean. The stale `package-lock.json` was removed because `pnpm-lock.yaml` is the canonical lockfile and the npm lock still advertised `@browserbasehq/stagehand`.
+
+### Pattern
+
+When a removed subsystem still leaks through config names and archived docs, prefer a narrow release-cleanup pass: neutralize the active config surface, keep one safe legacy-read window, mark old docs as historical instead of rewriting them, and remove stale package metadata that can resurrect the wrong product story.
+
+### Gotcha
+
+`rg` exits with code `1` when no matches are found, so the required stale-claim scan must be wrapped or interpreted carefully. In this story, `rg` returning no output was the success case for `README.md` and `docs/reports`.
+
+### Files Touched
+
+- `src/engines/browser-use/server/main.py`
+- `src/engines/browser-use/server/test_config_resolution.py`
+- `tools/config-gui/src/main.rs`
+- `scripts/secrets/vault-init.sh`
+- `.env.example`
+- `README.md`
+- `LLM_MODEL_IMPACT.md`
+- `src/engines/registry.test.ts`
+- `src/cli/index.test.ts`
+- `Application_Test.md`
+- `Application_Fixes.md`
+- `CONFIG_GUI_TODO.md`
+- `docs/debriefs/CTO Technical Report.md`
+- `docs/debriefs/AI_VISION_V2_BLUEPRINT.md`
+- `docs/debriefs/2026-05-04-promo-claim-cleanup-and-enhancement-draft.md`
+- `prd.json`
+- `docs/SIC_REFACTOR_ENHANCEMENT_TRACKER.md`
+- `docs/artifacts/2026-05-04-us045-rf027-stagehand-blast-radius-release-cleanup-forge-story.yaml`
+- `docs/history/forge_history.md`
+- `docs/history/history_index.md`
+- `progress.txt`
+- deleted `docs/reports/2026-05-04-promo-claim-cleanup-and-enhancement-draft.md`
+- deleted `package-lock.json`
+
+### Validation
+
+- `jq empty prd.json` → exit 0
+- `pnpm run typecheck` → exit 0
+- `pnpm test -- --runInBand src/engines/registry.test.ts src/cli/index.test.ts` → 2/2 suites, 9/9 tests passed
+- `python -m unittest src.engines.browser-use.server.test_config_resolution` → 2/2 tests passed
+- `cargo check --manifest-path tools/config-gui/Cargo.toml` → exit 0
+- release-facing stale-claim scan → `NO_RELEASE_FACING_STAGEHAND_CLAIMS`
+
+---

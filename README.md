@@ -1,28 +1,30 @@
 # ai-vision
 
-AI-driven browser automation platform. Give it a URL and a plain-English instruction — it navigates, clicks, types, and extracts information using a real browser controlled by an LLM.
+ai-vision is a human-supervised browser workflow platform for safely automating real web tasks. It combines LLM-driven browser control with HITL approval gates, persistent session state, telemetry, and workflow hardening.
+
+Today it proves the pattern on social publishing workflows, and it is ready to expand into read-only research, QA smoke tests, internal dashboards, and structured form workflows.
 
 ---
 
 ## Use Case
 
-Traditional browser automation (Selenium, Puppeteer) breaks every time a website changes its HTML structure. **ai-vision** replaces fragile CSS selectors with language-model reasoning: the agent _reads_ the page visually and semantically, decides what to do next, and adapts when things look different than expected.
+Traditional browser automation (Selenium, Puppeteer) breaks every time a website changes its HTML structure. **ai-vision** takes a natural-language-first approach: the agent reads the page visually and semantically, while deterministic workflow gates, selectors, telemetry, and HITL checks provide guardrails where reliability or safety matters.
 
-**What you can do with it:**
+**What it is useful for today:**
 
-- **Web research** — navigate to any URL, read the content, and return a structured summary
-- **Form automation** — fill out multi-step forms using natural language descriptions of the fields
-- **Data extraction** — scrape information from sites with dynamic or obfuscated UIs
-- **UI testing** — run natural language test cases against live web apps without brittle selectors
-- **Dashboard interaction** — log into internal tools and perform actions described in plain English
-- **Process automation** — chain browser actions into end-to-end workflows (e.g. "search, filter, download, summarize")
+- **Supervised social publishing** — draft, review, approve, publish, and verify posts with HITL gates
+- **Read-only research** — navigate public pages, extract information, and return structured summaries
+- **QA smoke tests** — run repeatable browser checks with telemetry and durable history
+- **Dashboard interaction** — inspect internal tools with persistent browser session state
+- **Structured form workflows** — fill and review multi-step forms with explicit human approval boundaries
+- **Workflow hardening** — turn live failures into governed implementation stories, tests, and release evidence
 
 **Who it is for:**
 
 - Developers automating repetitive web workflows
-- QA engineers writing human-readable browser tests
+- QA engineers writing human-readable smoke tests
 - Data teams extracting information from sites that block conventional scrapers
-- Anyone who needs a browser agent they can talk to in plain English
+- Teams that need a browser agent with human approval, traceability, and release hardening
 
 ---
 
@@ -169,18 +171,18 @@ All runtime config lives in `.env`. Edit manually or use `node dist/cli/index.js
 
 ```env
 # LLM Provider: "anthropic" | "openai"
-BROWSER_USE_LLM_PROVIDER=anthropic
+AI_VISION_LLM_PROVIDER=anthropic
 
 # Model (must match provider)
-BROWSER_USE_LLM_MODEL=claude-sonnet-4-6
+AI_VISION_LLM_MODEL=claude-sonnet-4-6
 
 # Optional provider-specific model overrides (recommended with fallback)
-# BROWSER_USE_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
-# BROWSER_USE_LLM_MODEL_OPENAI=gpt-4o
+# AI_VISION_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+# AI_VISION_LLM_MODEL_OPENAI=gpt-4o
 
 # Optional fallback provider for browser-use agent tasks
 # If primary provider fails (quota/auth/rate limit), bridge retries once on fallback
-# BROWSER_USE_LLM_FALLBACK_PROVIDER=openai
+# AI_VISION_LLM_FALLBACK_PROVIDER=openai
 
 # API Keys (only the active provider's key is required)
 ANTHROPIC_API_KEY=sk-ant-...
@@ -198,6 +200,8 @@ DB_PATH=./ai-vision.db
 AI_VISION_SIC_FORGE_STRICT=true
 # FORGE_MEMORY_DB_PATH=./forge-memory.db
 ```
+
+Legacy `BROWSER_USE_LLM_*` and `STAGEHAND_LLM_*` names are still read as transition fallbacks, but new configuration should use `AI_VISION_LLM_*`.
 
 ---
 

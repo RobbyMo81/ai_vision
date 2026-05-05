@@ -1,5 +1,7 @@
 # AI-VISION v2 — Architecture Blueprint
 ## Single Source of Truth · Build Handoff Document
+> Historical blueprint snapshot, not the current runtime source of truth. It preserves design context from the pre-`US-005` multi-engine phase. Current runtime engines are `browser-use` and `skyvern`.
+
 **Status:** ACTIVE BLUEPRINT — do not modify without updating the task checklist  
 **Branch target:** `forge/v2-orchestrator`  
 **Last updated:** 2026-04-20

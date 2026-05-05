@@ -1,0 +1,72 @@
+story:
+  id: US-045
+  refactor: RF-027
+  title: Stagehand Blast-Radius Release Cleanup
+  status: completed
+  priority: P0
+  owner: Core Workflow Team
+  created: 2026-05-04
+  forge_required: true
+
+problem: >
+  Stagehand is no longer an active runtime engine, but stale Stagehand
+  references remain in root docs, historical reports, config naming, and
+  package metadata. The runtime is safe because only browser-use and skyvern
+  are registered, but release copy and contributors can still be misled into
+  treating Stagehand as active.
+
+scope:
+  includes:
+    - Preserve prd.json and progress.txt historical entries while clearly indicating US-005 removed Stagehand.
+    - Add historical/not-current-source banners to old reports that still describe Stagehand as active.
+    - Archive, mark historical, or remove root-level stale Stagehand docs that are not release-facing.
+    - Rename active STAGEHAND_LLM_* config surfaces to neutral AI_VISION_LLM_* or BROWSER_USE_LLM_* names.
+    - Preserve or document legacy STAGEHAND_LLM_* fallback behavior for one transition window.
+    - Update .env.example, README, Rust config GUI, Vault scripts, LLM config docs, and provider resolution.
+    - Regenerate or remove stale package-lock.json if pnpm-lock.yaml is the actual lockfile.
+    - Add validation that release-facing docs do not claim Stagehand runtime support.
+    - Add focused config/engine tests.
+  excludes:
+    - Re-adding Stagehand.
+    - Designing a Stagehand shared-CDP adapter.
+    - Broad browser-use or skyvern runtime changes.
+    - Rewriting every historical artifact.
+    - Deleting legitimate Forge or PRD history.
+
+acceptance:
+  - prd.json and progress.txt preserve history and indicate Stagehand was removed by US-005.
+  - Historical reports with active Stagehand claims have clear historical banners.
+  - Root-level stale Stagehand docs are archived, marked historical, or removed if redundant.
+  - Active config tooling no longer writes STAGEHAND_LLM_* as primary names.
+  - Runtime provider/model resolution reads neutral env vars first.
+  - Legacy STAGEHAND_LLM_* behavior is either backward-compatible or explicitly documented as removed.
+  - .env.example, README, Vault scripts, Rust config GUI, and LLM config docs use aligned neutral names.
+  - package-lock.json no longer preserves stale Stagehand dependency metadata or documents why it remains.
+  - Current engine inventory still reports only browser-use and skyvern.
+  - Release-facing docs do not claim stagehand, 3 engines, or --engine stagehand.
+  - jq empty prd.json passes.
+  - pnpm run typecheck passes.
+  - Focused config/engine tests pass.
+
+definition_of_done: >
+  Done means Stagehand cannot be mistaken for an active runtime feature by
+  release copy, contributor docs, config tooling, or package metadata, while
+  historical records still explain why it was removed.
+
+evidence_required:
+  - Source/config diffs for neutral LLM env names and any legacy fallback.
+  - Documentation diffs marking historical Stagehand references.
+  - package-lock cleanup decision.
+  - Validation output for PRD JSON, typecheck, focused tests, and stale-claim scan.
+  - progress.txt Summary of Work with files touched, acceptance criteria, and validation.
+  - docs/history/forge_history.md and docs/history/history_index.md updated after implementation completion.
+
+validation:
+  required:
+    - jq empty prd.json
+    - pnpm run typecheck
+    - pnpm test -- --runInBand src/engines/registry.test.ts src/cli/index.test.ts
+    - rg -n "stagehand|Stagehand|3 engines|3 swappable engines|--engine stagehand" README.md docs/reports
+  recommended:
+    - pnpm test when config loading or shared engine interfaces change broadly
+

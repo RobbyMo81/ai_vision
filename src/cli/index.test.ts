@@ -2,12 +2,12 @@ jest.mock('../telemetry', () => ({ telemetry: { emit: jest.fn() } }));
 jest.mock('../engines/registry', () => ({
   registry: {
     closeAll: jest.fn().mockResolvedValue(undefined),
-    availableEngines: jest.fn(() => []),
+    availableEngines: jest.fn(() => ['browser-use', 'skyvern']),
     get: jest.fn(),
   },
 }));
 
-import { gracefulServeShutdown } from './index';
+import { gracefulServeShutdown, program } from './index';
 import { telemetry } from '../telemetry';
 
 const mockTelemetryEmit = telemetry.emit as jest.Mock;
@@ -54,5 +54,25 @@ describe('gracefulServeShutdown', () => {
     })).resolves.toBeUndefined();
 
     expect(mockTelemetryEmit).toHaveBeenCalledWith(expect.objectContaining({ name: 'serve.shutdown.failed' }));
+  });
+
+  it('rejects the removed stagehand engine from the CLI surface', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const exitSpy = jest
+      .spyOn(process, 'exit')
+      .mockImplementation(((code?: number) => {
+        throw new Error(`process.exit:${code ?? 0}`);
+      }) as never);
+
+    await expect(
+      program.parseAsync(['node', 'ai-vision', 'run', 'test prompt', '--engine', 'stagehand'])
+    ).rejects.toThrow('process.exit:1');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Unknown engine 'stagehand'. Available: browser-use, skyvern"
+    );
+
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

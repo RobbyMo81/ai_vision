@@ -1,5 +1,7 @@
 # Application_Fixes.md — Error Corrections & Improvement Log
 
+> Historical remediation log. Much of this file records the pre-`US-005` Stagehand era. Current runtime engines are `browser-use` and `skyvern`; do not treat this file as a current release/source-of-truth document.
+
 > **Authored for Claude** — This document is the companion to `Application_Test.md`. Every fix applied to the codebase is recorded here with the exact change made, the file and line affected, before/after behavior, and verified test results. Fixes were applied in priority order: P0 (critical) → P1 (high) → P2 (quality/robustness). Future Claude sessions should read this alongside `Application_Test.md` to understand the full change history and rationale.
 
 ---

@@ -1,5 +1,7 @@
 # Config GUI — Task Plan
 
+> Historical implementation plan. This checklist predates the `US-045` naming cleanup and still references removed Stagehand-era surfaces. Current runtime engines are `browser-use` and `skyvern`; current config should use `AI_VISION_LLM_*`.
+
 ## Objective
 Build a Rust TUI (terminal GUI) that users launch via `ai-vision config` to change LLM provider/model/API keys without manually editing `.env`.
 

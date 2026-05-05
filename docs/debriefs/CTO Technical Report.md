@@ -2,6 +2,8 @@
 
 # CTO Technical Report — ai-vision
 
+> Historical snapshot, not current runtime source of truth. This report predates `US-005`; Stagehand was removed because it caused dual-browser/session drift. Current runtime engines are `browser-use` and `skyvern`.
+
 Date: April 18, 2026
 Branch: forge/mvp-setup
 Author: Engineering Assessment (Claude Code)

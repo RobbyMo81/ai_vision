@@ -99,6 +99,14 @@ def _normalize_provider(provider: str | None) -> str:
     return lowered if lowered in ("anthropic", "openai") else "anthropic"
 
 
+def _first_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip():
+            return value.strip()
+    return ""
+
+
 def _provider_has_credentials(provider: str) -> bool:
     if provider == "anthropic":
         return bool(os.getenv("ANTHROPIC_API_KEY"))
@@ -106,21 +114,47 @@ def _provider_has_credentials(provider: str) -> bool:
 
 
 def _resolve_model(provider: str) -> str:
-    generic = os.getenv("BROWSER_USE_LLM_MODEL", "").strip()
+    generic = _first_env(
+        "AI_VISION_LLM_MODEL",
+        "BROWSER_USE_LLM_MODEL",
+        "STAGEHAND_LLM_MODEL",
+    )
     if provider == "anthropic":
         return (
-            os.getenv("BROWSER_USE_LLM_MODEL_ANTHROPIC")
+            _first_env(
+                "AI_VISION_LLM_MODEL_ANTHROPIC",
+                "BROWSER_USE_LLM_MODEL_ANTHROPIC",
+                "STAGEHAND_LLM_MODEL_ANTHROPIC",
+            )
             or (generic if generic and not generic.startswith("gpt") and generic != "o3" else "claude-sonnet-4-6")
         )
     return (
-        os.getenv("BROWSER_USE_LLM_MODEL_OPENAI")
+        _first_env(
+            "AI_VISION_LLM_MODEL_OPENAI",
+            "BROWSER_USE_LLM_MODEL_OPENAI",
+            "STAGEHAND_LLM_MODEL_OPENAI",
+        )
         or (generic if generic and (generic.startswith("gpt") or generic == "o3") else "gpt-4o")
     )
 
 
 def _provider_candidates(primary_override: str | None = None) -> list[str]:
-    primary = _normalize_provider(primary_override or os.getenv("BROWSER_USE_LLM_PROVIDER", "anthropic"))
-    configured_fallback = _normalize_provider(os.getenv("BROWSER_USE_LLM_FALLBACK_PROVIDER", ""))
+    primary = _normalize_provider(
+        primary_override
+        or _first_env(
+            "AI_VISION_LLM_PROVIDER",
+            "BROWSER_USE_LLM_PROVIDER",
+            "STAGEHAND_LLM_PROVIDER",
+        )
+        or "anthropic"
+    )
+    configured_fallback = _normalize_provider(
+        _first_env(
+            "AI_VISION_LLM_FALLBACK_PROVIDER",
+            "BROWSER_USE_LLM_FALLBACK_PROVIDER",
+            "STAGEHAND_LLM_FALLBACK_PROVIDER",
+        )
+    )
     default_fallback = "openai" if primary == "anthropic" else "anthropic"
 
     candidates: list[str] = [primary]

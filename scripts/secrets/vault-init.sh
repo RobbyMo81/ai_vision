@@ -18,21 +18,21 @@ payload="$(jq -n \
   --arg anthropic "${ANTHROPIC_API_KEY:-}" \
   --arg openai "${OPENAI_API_KEY:-}" \
   --arg gemini "${GEMINI_API_KEY:-}" \
-  --arg provider "${STAGEHAND_LLM_PROVIDER:-openai}" \
-  --arg model "${STAGEHAND_LLM_MODEL:-gpt-4o}" \
-  --arg modelAnthropic "${STAGEHAND_LLM_MODEL_ANTHROPIC:-claude-sonnet-4-6}" \
-  --arg modelOpenai "${STAGEHAND_LLM_MODEL_OPENAI:-gpt-4o}" \
-  --arg fallback "${STAGEHAND_LLM_FALLBACK_PROVIDER:-anthropic}" \
+  --arg provider "${AI_VISION_LLM_PROVIDER:-${BROWSER_USE_LLM_PROVIDER:-${STAGEHAND_LLM_PROVIDER:-anthropic}}}" \
+  --arg model "${AI_VISION_LLM_MODEL:-${BROWSER_USE_LLM_MODEL:-${STAGEHAND_LLM_MODEL:-claude-sonnet-4-6}}}" \
+  --arg modelAnthropic "${AI_VISION_LLM_MODEL_ANTHROPIC:-${BROWSER_USE_LLM_MODEL_ANTHROPIC:-${STAGEHAND_LLM_MODEL_ANTHROPIC:-claude-sonnet-4-6}}}" \
+  --arg modelOpenai "${AI_VISION_LLM_MODEL_OPENAI:-${BROWSER_USE_LLM_MODEL_OPENAI:-${STAGEHAND_LLM_MODEL_OPENAI:-gpt-4o}}}" \
+  --arg fallback "${AI_VISION_LLM_FALLBACK_PROVIDER:-${BROWSER_USE_LLM_FALLBACK_PROVIDER:-${STAGEHAND_LLM_FALLBACK_PROVIDER:-openai}}}" \
   '{
     data: {
       ANTHROPIC_API_KEY: $anthropic,
       OPENAI_API_KEY: $openai,
       GEMINI_API_KEY: $gemini,
-      STAGEHAND_LLM_PROVIDER: $provider,
-      STAGEHAND_LLM_MODEL: $model,
-      STAGEHAND_LLM_MODEL_ANTHROPIC: $modelAnthropic,
-      STAGEHAND_LLM_MODEL_OPENAI: $modelOpenai,
-      STAGEHAND_LLM_FALLBACK_PROVIDER: $fallback
+      AI_VISION_LLM_PROVIDER: $provider,
+      AI_VISION_LLM_MODEL: $model,
+      AI_VISION_LLM_MODEL_ANTHROPIC: $modelAnthropic,
+      AI_VISION_LLM_MODEL_OPENAI: $modelOpenai,
+      AI_VISION_LLM_FALLBACK_PROVIDER: $fallback
     }
   }')"
 

@@ -1,5 +1,7 @@
 # Application_Test.md — AI-Vision Full Audit & Test Report
 
+> Historical audit snapshot. Stagehand was removed by `US-005`; current runtime engines are `browser-use` and `skyvern`. Do not use this file as a current release/source-of-truth document.
+
 > **Authored for Claude** — This document is structured so a future Claude session can read it cold and immediately understand: what was tested, what broke, why it broke, how it can be fixed, and what the recommended improvement path is. Every finding is linked to a specific file and line number. Severity ratings guide triage priority.
 
 ---

@@ -8,10 +8,10 @@ impact_manifest:
   version: "1.0"
   project: "ai-vision"
   env_vars:
-    - name: STAGEHAND_LLM_PROVIDER
+    - name: AI_VISION_LLM_PROVIDER
       values: ["anthropic", "openai"]
-      default: "openai"
-    - name: STAGEHAND_LLM_MODEL
+      default: "anthropic"
+    - name: AI_VISION_LLM_MODEL
       values:
         anthropic: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6"]
         openai:    ["gpt-4o-mini", "gpt-4o", "o3"]
@@ -19,9 +19,11 @@ impact_manifest:
         anthropic: "claude-sonnet-4-6"
         openai:    "gpt-4o"
     - name: ANTHROPIC_API_KEY
-      required_when: "STAGEHAND_LLM_PROVIDER == anthropic"
+      required_when: "AI_VISION_LLM_PROVIDER == anthropic"
     - name: OPENAI_API_KEY
-      required_when: "STAGEHAND_LLM_PROVIDER == openai"
+      required_when: "AI_VISION_LLM_PROVIDER == openai"
+    - name: BROWSER_USE_LLM_* / STAGEHAND_LLM_*
+      required_when: "legacy transition fallback only"
 
   impacted_files:
 
@@ -33,31 +35,23 @@ impact_manifest:
     - path: ".env"
       lines: [all]
       description: >
-        Runtime config. STAGEHAND_LLM_PROVIDER, STAGEHAND_LLM_MODEL,
+        Runtime config. AI_VISION_LLM_PROVIDER, AI_VISION_LLM_MODEL,
         ANTHROPIC_API_KEY, OPENAI_API_KEY must be set here.
+        Legacy BROWSER_USE_LLM_* and STAGEHAND_LLM_* names are fallback-only.
         Written by the Rust GUI config tool.
       owned_by: "rust-gui"
 
     - path: "src/engines/browser-use/server/main.py"
       lines:
-        - line: 84
-          content: 'provider = os.getenv("STAGEHAND_LLM_PROVIDER", "openai")'
-          risk: "default fallback — must match GUI default"
-        - line: 85
-          content: 'if provider == "anthropic":'
+        - line: 92
+          content: 'primary = _normalize_provider(primary_override or _first_env("AI_VISION_LLM_PROVIDER", "BROWSER_USE_LLM_PROVIDER", "STAGEHAND_LLM_PROVIDER") or "anthropic")'
+          risk: "neutral env must stay primary; legacy names are fallback only"
+        - line: 112
+          content: '_first_env("AI_VISION_LLM_MODEL_ANTHROPIC", "BROWSER_USE_LLM_MODEL_ANTHROPIC", "STAGEHAND_LLM_MODEL_ANTHROPIC")'
           risk: "branch gating — must enumerate all supported providers"
-        - line: 88
-          content: 'model=os.getenv("STAGEHAND_LLM_MODEL", "claude-sonnet-4-6")'
-          risk: "anthropic default — update when default changes"
-        - line: 89
-          content: 'api_key=os.getenv("ANTHROPIC_API_KEY")'
-          risk: "key selection — tied to provider branch"
-        - line: 94
-          content: 'model=os.getenv("STAGEHAND_LLM_MODEL", "gpt-4o")'
+        - line: 117
+          content: '_first_env("AI_VISION_LLM_MODEL_OPENAI", "BROWSER_USE_LLM_MODEL_OPENAI", "STAGEHAND_LLM_MODEL_OPENAI")'
           risk: "openai default — update when default changes"
-        - line: 95
-          content: 'api_key=os.getenv("OPENAI_API_KEY")'
-          risk: "key selection — tied to provider branch"
       owned_by: "python-bridge"
 
     - path: "src/engines/skyvern/server/main.py"
@@ -69,22 +63,6 @@ impact_manifest:
           content: 'anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")'
           risk: "always passes both keys; model selected internally by Skyvern"
       owned_by: "python-bridge"
-
-    - path: "src/engines/stagehand/engine.ts"
-      lines:
-        - line: 37
-          content: "const provider = (process.env.STAGEHAND_LLM_PROVIDER ?? 'openai') as 'openai' | 'anthropic'"
-          risk: "default fallback — must match GUI default"
-        - line: 38
-          content: "const model = (process.env.STAGEHAND_LLM_MODEL ?? 'gpt-4o') as AvailableModel"
-          risk: "default fallback — update when default changes"
-        - line: 42
-          content: "modelName: model"
-          risk: "passes resolved model to Stagehand — must be a valid AvailableModel value"
-        - line: 44
-          content: "apiKey: provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY"
-          risk: "key routing — must cover all supported providers"
-      owned_by: "stagehand-engine"
 
     - path: "src/engines/browser-use/server/requirements.txt"
       lines:
@@ -106,12 +84,12 @@ impact_manifest:
       description: "Rust crate manifest"
 
   verification_checklist:
-    - "GUI writes STAGEHAND_LLM_PROVIDER and STAGEHAND_LLM_MODEL atomically to .env"
+    - "GUI writes AI_VISION_LLM_PROVIDER and AI_VISION_LLM_MODEL atomically to .env"
     - "GUI validates ANTHROPIC_API_KEY present when provider=anthropic"
     - "GUI validates OPENAI_API_KEY present when provider=openai"
     - "Python bridge re-reads .env on each server start (load_dotenv already does this)"
-    - "Stagehand engine re-reads process.env — requires server restart after .env change"
+    - "Legacy BROWSER_USE_LLM_* and STAGEHAND_LLM_* names remain fallback-only during the transition window"
     - "CLI command `ai-vision config` launches the GUI"
     - "Default models in Python bridge match defaults in GUI"
-    - "Default models in Stagehand engine match defaults in GUI"
+    - "Release docs and templates use AI_VISION_LLM_* as the primary naming surface"
 ```

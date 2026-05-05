@@ -2,7 +2,15 @@
 **Repo:** https://github.com/RobbyMo81/ai_vision  
 **Goal:** Recruit builders to test and help enhance the project  
 **Platforms:** X (Twitter), Reddit, LinkedIn  
-**Date:** 2026-05-03
+**Date:** 2026-05-04
+
+## Core Positioning
+
+**ai-vision is a human-supervised browser workflow platform for safely automating real web tasks.** It combines LLM-driven browser control with HITL approval gates, persistent session state, telemetry, and workflow hardening.
+
+Today it proves the pattern on social publishing workflows, and it is ready to expand into read-only research, QA smoke tests, internal dashboards, and structured form workflows.
+
+Current runtime engines: `browser-use` and `skyvern`.
 
 ---
 
@@ -10,11 +18,11 @@
 
 ## Post 1 — Hook / Awareness
 
-> I built **ai-vision**: give it a URL + a plain-English instruction → it navigates, clicks, types, and extracts like a human.  
+> I built **ai-vision**: a human-supervised browser workflow platform for safely automating real web tasks.  
 >
-> No CSS selectors. No brittle XPaths. Just your words.  
+> It combines LLM browser control with HITL approval gates, persistent sessions, telemetry, and workflow hardening.  
 >
-> Looking for builders to try it and help shape it. 🧵
+> It proves the pattern on X/Reddit publishing and is ready to expand into research, QA smoke tests, dashboards, and structured form workflows. 🧵
 > 
 > 👉 https://github.com/RobbyMo81/ai_vision
 > 
@@ -24,11 +32,11 @@
 
 ## Post 2 — Pain Point / Value Prop
 
-> Tired of your Selenium/Puppeteer scripts breaking every time a site changes?  
+> Browser automation gets risky when real side effects are involved: auth, drafts, submits, approvals, and final verification.  
 >
-> **ai-vision** replaces fragile selectors with LLM reasoning. The agent *reads* the page visually and semantically — and adapts.  
+> **ai-vision** is built for supervised workflows: LLM-driven browser control plus HITL gates, telemetry, persistent sessions, and deterministic guardrails.  
 >
-> Works for: web research, form automation, data extraction, UI testing, dashboards.  
+> Current proof point: social publishing. Next targets: read-only research, QA smoke tests, dashboards, and structured forms.  
 >
 > Open source. Try it → https://github.com/RobbyMo81/ai_vision  
 > #AI #Automation #DevTools
@@ -37,15 +45,15 @@
 
 ## Post 3 — Technical Deep-Dive (for builders)
 
-> Under the hood of **ai-vision**:  
+> Under the hood of **ai-vision** today:  
 >
-> 🔀 3 swappable engines: browser-use (Python/LangChain), stagehand (TS/Playwright), skyvern (computer-vision)  
+> 🔀 2 runtime engines: browser-use (Python/LangChain), skyvern (computer-vision)  
 > 🤖 Supports Claude & OpenAI  
 > 🦀 Rust config GUI  
 > 🔐 HashiCorp Vault for secrets  
 > 📜 TypeScript CLI + SQLite task history  
 >
-> Swap engines with one flag. No prompt changes needed.  
+> Plus HITL approval gates, persistent Chrome sessions, telemetry, and Forge workflow hardening.  
 >
 > Builders wanted → https://github.com/RobbyMo81/ai_vision  
 > #TypeScript #Rust #Python #OpenSource
@@ -70,13 +78,13 @@
 
 ## Post 5 — Quick Demo Format
 
-> One command. Real browser. LLM in control.  
+> One command. Real browser. Human-supervised workflow.  
 >
 > ```
 > ai-vision run "Go to HN and list the top 5 stories"
 > ```
 >
-> That's it. No selectors. No scripts.  
+> Good first expansion target: read-only research and QA smoke checks before higher-risk side effects.  
 >
 > Try **ai-vision** and tell me what breaks 🙏  
 > https://github.com/RobbyMo81/ai_vision  
@@ -95,22 +103,23 @@
 
 Hey r/MachineLearning,
 
-I've been building **ai-vision**, an AI-driven browser automation platform. The core idea: you give it a URL and a plain-English instruction, and it controls a real browser — navigating, clicking, typing, extracting — without any CSS selectors or XPaths.
+I've been building **ai-vision**, a human-supervised browser workflow platform for safely automating real web tasks. It combines LLM-driven browser control with HITL approval gates, persistent session state, telemetry, and workflow hardening.
 
-Instead of brittle DOM queries, it uses language-model reasoning to *read* the page visually and semantically and decide what to do next. When the page looks different than expected, it adapts.
+Instead of treating browser automation as a one-shot prompt, ai-vision treats it as a governed workflow: the agent can reason over the page, but side effects like auth, draft review, submit actions, and final verification are protected by explicit gates.
 
-**What you can do with it:**
-- Web research (navigate → summarize)
-- Multi-step form automation
-- Data extraction from dynamic/obfuscated UIs
-- Natural language UI testing (no selectors)
-- Dashboard interaction in plain English
-- End-to-end process automation
+**What it does well today:**
+- Supervised social publishing workflows
+- Read-only research and extraction
+- QA smoke checks
+- Dashboard inspection
+- Structured form workflows with review gates
+- Turning live failures into hardened workflow stories and tests
 
 **Architecture:**
-- 3 swappable engines: `browser-use` (Python/LangChain + headless Chromium), `stagehand` (TypeScript/Playwright), `skyvern` (computer-vision-centric)
+- 2 runtime engines: `browser-use` (Python/LangChain + Chromium), `skyvern` (computer-vision-centric)
 - Supports Claude (Haiku/Sonnet/Opus) and OpenAI (GPT-4o-mini / GPT-4o / o3)
 - TypeScript CLI, SQLite task history, Rust config GUI, optional HashiCorp Vault for secrets
+- HITL web control panel, persistent browser profile, telemetry, and Forge governance
 
 **Quick start:**
 ```bash
@@ -136,24 +145,25 @@ Hey r/webdev,
 
 You know the drill: you write a Puppeteer scraper, the site updates its class names, and your whole script breaks. You update it. It breaks again.
 
-I built **ai-vision** to solve this. Instead of targeting DOM elements with CSS selectors, it uses an LLM to *read the page* and figure out what to do — just like a human would. You give it a plain-English instruction, it controls a real browser.
+I built **ai-vision** to make browser automation safer when real workflows matter. It uses LLM-driven browser control, but wraps risky steps in HITL approval gates, deterministic checks, persistent session state, and telemetry.
 
 **Example:**
 ```bash
-# No selectors. Just English.
+# Natural-language-first, with workflow guardrails.
 node dist/cli/index.js run "Fill out the contact form on example.com with test data"
 node dist/cli/index.js run "Go to GitHub trending and extract the top 10 repos" --screenshot
 ```
 
 **Use cases:**
-- Replacing fragile scrapers
-- Automating form submissions
-- UI regression testing without selectors
-- Automating internal tools/dashboards
+- Read-only extraction and research
+- QA smoke checks
+- Structured form workflows with human review
+- Internal dashboard inspection
+- Supervised publishing and other side-effecting workflows
 
-**Stack:** TypeScript (83%), Python FastAPI bridges, Rust config GUI, Playwright, LangChain, SQLite, optional HashiCorp Vault
+**Stack:** TypeScript, Python FastAPI bridges, Rust config GUI, Playwright, LangChain, SQLite, optional HashiCorp Vault
 
-It supports 3 browser engines (browser-use, stagehand, skyvern) and both Claude and GPT-4o. Swap engines with `--engine stagehand` — no prompt changes.
+It currently supports `browser-use` and optional `skyvern`, plus Claude/OpenAI model configuration.
 
 I'm looking for devs to **test it on real-world sites**, report what breaks, and ideally contribute. The codebase is clean and documented.
 
@@ -173,17 +183,17 @@ Happy to answer any questions about architecture decisions!
 
 **Body:**
 
-**What I built:** ai-vision is an AI-driven browser automation CLI. You give it a URL and a plain-English instruction, and it drives a real browser — navigating, clicking, typing, extracting — using an LLM as the reasoning engine.
+**What I built:** ai-vision is a human-supervised browser workflow platform. It drives a real browser with LLM assistance, but wraps real side effects in approval gates, telemetry, persistent session state, and workflow hardening.
 
-**The problem it solves:** Traditional automation tools (Selenium, Puppeteer, Playwright scripts) require exact CSS selectors or XPaths. These break constantly. ai-vision uses language-model reasoning instead — the agent reads the page visually and adapts.
+**The problem it solves:** Browser automation gets fragile and risky when workflows include login, drafts, submit buttons, final confirmation, and changing UIs. ai-vision gives the agent room to reason while keeping humans and deterministic gates in the loop.
 
 **Cool bits of the stack:**
 - Written in **TypeScript** with Python FastAPI bridges for ML engines
 - **Rust** TUI config GUI (built with ratatui-style tooling)
-- 3 pluggable automation engines: browser-use, stagehand, skyvern
+- 2 runtime automation engines: browser-use and skyvern
 - **HashiCorp Vault** integration for local secrets management
 - **SQLite** for full task history
-- Supports Claude 4 (Haiku/Sonnet/Opus) and GPT-4o
+- Supports Claude/OpenAI model configuration
 
 **What I need from you:**
 1. Clone it and run a task on a site you care about
@@ -208,27 +218,29 @@ Built by **RobbyMo81** + Claude (yes, Claude co-authored this). AMA!
 
 ---
 
-For the past several months, I've been building **ai-vision**: an open-source platform that lets you control a real web browser with plain-English instructions, powered by a large language model.
+For the past several months, I've been building **ai-vision**: an open-source, human-supervised browser workflow platform for safely automating real web tasks.
 
-The insight behind it is simple: **traditional browser automation is too brittle.**
+The insight behind it is simple: **browser automation needs both agent reasoning and workflow safety.**
 
-Selenium, Puppeteer, and Playwright scripts rely on exact CSS selectors and XPaths. Every time a website redesigns, every time an element moves — your automation breaks. You maintain the selectors instead of the work.
+Selenium, Puppeteer, and Playwright scripts are powerful, but real workflows often involve more than clicking selectors: login state, draft review, submit actions, final confirmation, telemetry, and recovery when something goes wrong.
 
 ai-vision takes a different approach:
 - You give it a URL and a natural-language instruction
-- The LLM reads the page visually and semantically
-- It decides what to click, type, or extract — and adapts when things look different
+- The LLM reads the page visually and semantically where useful
+- HITL gates protect approval, login, secure input, and final confirmation
+- Deterministic checks, telemetry, and persistent history harden the workflow over time
 
-**Real-world use cases I've been testing it on:**
-✅ Web research — navigate, read, return structured summaries  
-✅ Form automation — multi-step forms in plain English  
-✅ Data extraction — dynamic and obfuscated UIs  
-✅ UI testing — human-readable test cases, no selectors  
-✅ Dashboard interaction — internal tools in plain English  
-✅ Process automation — chained end-to-end browser workflows  
+**Current proof point:** supervised social publishing workflows on X and Reddit.
+
+**Next expansion targets:**
+✅ Read-only research — navigate, read, return structured summaries  
+✅ QA smoke tests — repeatable browser checks with telemetry  
+✅ Dashboard interaction — inspect internal tools with persistent session state  
+✅ Structured form workflows — fill and review multi-step forms with approval boundaries  
+✅ Workflow hardening — turn live failures into tests and implementation stories  
 
 **The architecture is modular:**  
-Three swappable engines (browser-use with LangChain, stagehand with Playwright, skyvern with computer vision). One CLI. Swap engines with a single flag without changing your prompt.
+Two runtime engines today: browser-use with LangChain and optional skyvern with computer-vision-centric automation. One CLI. One HITL web control panel. SQLite task history. Persistent browser profile.
 
 **Stack:** TypeScript · Python · Rust · LangChain · Playwright · SQLite · HashiCorp Vault · Claude / GPT-4o
 
@@ -257,18 +269,18 @@ Star it, fork it, open an issue, submit a PR — or just clone it and tell me wh
 
 ## Post 2 — Shorter Engagement Post
 
-**Hot take:** CSS selectors are the wrong abstraction for browser automation in 2026.
+**Hot take:** browser automation needs agent reasoning, but real workflows still need guardrails.
 
-They assume the DOM is stable. It's not. They assume you know the exact structure. You often don't.
+Plain browser scripts assume the happy path. Real workflows have login, review, submit buttons, final confirmation, telemetry, and failure recovery.
 
-Language models can *read* a page the way a human does — and decide what to interact with based on meaning, not structure.
+Language models can help read a page and decide what to do next. But for real side effects, they need human supervision and deterministic checks.
 
 That's the core idea behind **ai-vision**, the open-source browser automation tool I've been building.
 
 You write: *"Go to the pricing page and extract the Pro plan cost"*  
-It navigates, finds the pricing page, reads it, returns the answer.
+It navigates, reads, and returns the answer.
 
-No selectors. No maintenance. Just intent.
+For riskier workflows, it adds HITL approval, persistent session state, telemetry, and workflow hardening.
 
 🔗 https://github.com/RobbyMo81/ai_vision
 
@@ -293,9 +305,9 @@ Looking for engineers and builders to test it and contribute. Drop a comment or 
 - Community: #BuildInPublic #SideProject
 
 ## Key Messages (consistent across platforms)
-1. **Problem:** Selector-based automation is fragile and high-maintenance
-2. **Solution:** LLM reasoning replaces selectors — reads the page like a human
-3. **Differentiation:** 3 swappable engines, multi-LLM support, production-ready stack
+1. **Problem:** Real browser workflows are brittle and risky without supervision
+2. **Solution:** LLM browser control plus HITL gates, deterministic checks, telemetry, and persistent session state
+3. **Differentiation:** governed workflow hardening, two runtime engines, multi-LLM configuration, SQLite history
 4. **CTA:** Test it, break it, open issues/PRs
 5. **Credibility:** Real codebase, 7 open issues, clean architecture, co-authored with Claude
 

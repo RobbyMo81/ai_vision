@@ -7,10 +7,8 @@ describe('EngineRegistry', () => {
     reg = new EngineRegistry();
   });
 
-  it('lists all two engines', () => {
-    expect(reg.availableEngines()).toEqual(
-      expect.arrayContaining(['browser-use', 'skyvern'])
-    );
+  it('lists only the current runtime engines', () => {
+    expect(reg.availableEngines()).toEqual(['browser-use', 'skyvern']);
   });
 
   it('returns the same instance on repeated get()', () => {
