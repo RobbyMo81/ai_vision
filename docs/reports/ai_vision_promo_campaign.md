@@ -107,11 +107,11 @@ I've been building **ai-vision**, a human-supervised browser workflow platform f
 
 Instead of treating browser automation as a one-shot prompt, ai-vision treats it as a governed workflow: the agent can reason over the page, but side effects like auth, draft review, submit actions, and final verification are protected by explicit gates.
 
-**What it does well today:**
+**What it proves today, plus where it is designed to expand next:**
 - Supervised social publishing workflows
-- Read-only research and extraction
-- QA smoke checks
-- Dashboard inspection
+- Read-only research and extraction workflows
+- QA smoke-check workflows
+- Dashboard inspection flows
 - Structured form workflows with review gates
 - Turning live failures into hardened workflow stories and tests
 
@@ -137,7 +137,7 @@ Would love to hear what you think breaks, what you'd want it to do, and any feed
 ---
 
 ## Post 2 — r/webdev
-**Title:** Tired of Selenium/Puppeteer breaking when sites change? I built an LLM-powered alternative — no selectors needed. OSS + looking for contributors.
+**Title:** Tired of Selenium/Puppeteer breaking when sites change? I built a natural-language-first browser automation alternative. OSS + looking for contributors.
 
 **Body:**
 
@@ -232,12 +232,12 @@ ai-vision takes a different approach:
 
 **Current proof point:** supervised social publishing workflows on X and Reddit.
 
-**Next expansion targets:**
-✅ Read-only research — navigate, read, return structured summaries  
-✅ QA smoke tests — repeatable browser checks with telemetry  
-✅ Dashboard interaction — inspect internal tools with persistent session state  
-✅ Structured form workflows — fill and review multi-step forms with approval boundaries  
-✅ Workflow hardening — turn live failures into tests and implementation stories  
+**Near-term expansion targets:**
+- Read-only research — navigate, read, return structured summaries  
+- QA smoke tests — repeatable browser checks with telemetry  
+- Dashboard interaction — inspect internal tools with persistent session state  
+- Structured form workflows — fill and review multi-step forms with approval boundaries  
+- Workflow hardening — turn live failures into tests and implementation stories  
 
 **The architecture is modular:**  
 Two runtime engines today: browser-use with LangChain and optional skyvern with computer-vision-centric automation. One CLI. One HITL web control panel. SQLite task history. Persistent browser profile.
@@ -277,8 +277,8 @@ Language models can help read a page and decide what to do next. But for real si
 
 That's the core idea behind **ai-vision**, the open-source browser automation tool I've been building.
 
-You write: *"Go to the pricing page and extract the Pro plan cost"*  
-It navigates, reads, and returns the answer.
+You write: *"Go to the pricing page and extract the Pro plan cost"*
+The platform is designed to navigate, read, and return the answer with workflow guardrails around higher-risk actions.
 
 For riskier workflows, it adds HITL approval, persistent session state, telemetry, and workflow hardening.
 

@@ -283,11 +283,11 @@ Defaults:
 export ANTHROPIC_API_KEY=...
 export OPENAI_API_KEY=...
 export GEMINI_API_KEY=...
-export BROWSER_USE_LLM_PROVIDER=openai
-export BROWSER_USE_LLM_MODEL=gpt-4o
-export BROWSER_USE_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
-export BROWSER_USE_LLM_MODEL_OPENAI=gpt-4o
-export BROWSER_USE_LLM_FALLBACK_PROVIDER=anthropic
+export AI_VISION_LLM_PROVIDER=openai
+export AI_VISION_LLM_MODEL=gpt-4o
+export AI_VISION_LLM_MODEL_ANTHROPIC=claude-sonnet-4-6
+export AI_VISION_LLM_MODEL_OPENAI=gpt-4o
+export AI_VISION_LLM_FALLBACK_PROVIDER=anthropic
 pnpm run vault:init
 ```
 

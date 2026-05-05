@@ -78,6 +78,21 @@
 - Added regression test `src/workflow/engine.test.ts` proving an `extract` step receives `{{x_post_text}}` produced by a prior `generate_content` step in the same run.
 - Validation passed: `npm test -- src/workflow/engine.test.ts` and `npm run typecheck`.
 
+[2026-05-04] US-045 README Neutral LLM Variable Follow-Up
+- Corrected the Vault seed example in `README.md` to use the neutral `AI_VISION_LLM_*` environment variable names instead of the legacy `BROWSER_USE_LLM_*` names.
+- This aligns the release-facing setup documentation with the neutral-name config resolution already implemented in runtime code.
+- Validation passed: targeted README scan confirmed the legacy variable names were removed from the Vault seed example.
+
+[2026-05-04] Promo Campaign Claim Alignment
+- Rewrote the promo campaign copy in `docs/reports/ai_vision_promo_campaign.md` to remove unsupported marketing claims and align wording with repo-verified capabilities.
+- Replaced the `no selectors needed` phrasing, softened `does well today` capability language, and changed LinkedIn expansion copy from completed-check phrasing to forward-looking targets.
+- Validation passed: targeted scans confirmed the report no longer uses the blocked `no selectors` language and no longer labels the broader non-social use-case list as established current capability.
+
+[2026-05-04] Issue Closeout Report
+- Consolidated the README fix, promo-claim verification, promo rewrite, GitHub issue/PR checks, and Forge tracker reconciliation notes into `docs/reports/2026-05-04_issue_closeout_report.md`.
+- Recorded that Forge stories `US-005` through `US-011` are complete in `prd.json` while GitHub issues `#2` through `#8` remain open, making this a tracker-reconciliation gap rather than open implementation work.
+- Validation passed: `pnpm run typecheck` exit code `0`, targeted release-copy scans clean, GitHub checks showed `0` open PRs and `7` open issues at verification time.
+
 [2026-04-19] FORGE-Backed SIC Storage And Governance Law
 - Remapped long-term SIC improvement persistence to use `forge-memory.db` (`context_store` key `sic.improvements.store`) as the primary store, with local-file fallback only when FORGE DB is unavailable.
 - Extended wrap-up so every SIC trigger is mirrored into FORGE memory (`context_store` key `sic.trigger.<sessionId>`) and optionally logged to FORGE discoveries when available.
